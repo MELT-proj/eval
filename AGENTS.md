@@ -63,15 +63,39 @@ pytest tests -q                                     # unit only
 MELTEVAL_SHAR_ROOT=/path/to/shar pytest tests -q    # + corpus integration
 ```
 
-Integration tests skip themselves without `MELTEVAL_SHAR_ROOT`. On artemis both
-run inside the container — see the README for the invocation, including
-`--userns` and the pytest shim.
+Integration tests skip themselves without `MELTEVAL_SHAR_ROOT`. Both need an
+environment with `inspect_ai`, `melt-proj` and `lhotse` together — see
+README.md "Install" for the venv (no existing site venv or container image had
+all three, which is why a dedicated one exists at
+`/mnt/scratch-artemis/giuseppe/venvs/melteval` on artemis). Provider tests that
+load an actual checkpoint go through `infra/runners/submit_eval.sh` instead
+(GPU work — see below), not through `pytest`.
 
 ## Environment notes (artemis)
 
+- Dev/test venv: `/mnt/scratch-artemis/giuseppe/venvs/melteval` — the full
+  stack (`inspect_ai`, `melt-proj`, `lhotse`, `torch`) in one place.
 - Container: `/mnt/scratch-artemis/giuseppe/melt-data/melt_cuda126_lhotse2_td.sif`
-  (the `_td` suffix matters: the other image has no torchdata, which the
-  training package imports).
+  has `melt`/`lhotse`/`torch` (the `_td` suffix matters: the other image has no
+  torchdata, which the training package imports) but no `inspect_ai` — useful
+  for exercising the shar reader against real corpora without the venv above,
+  not for a full eval run. `singularity` needs `--userns`, and the repo must be
+  bind-mounted and `cd`-ed into, or Python imports the container's baked-in
+  copy of `melt`.
 - Corpora: `/mnt/scratch-nyx/giuseppe/melt/melt-data/shar` (indexed tree).
-- `singularity` needs `--userns`, and the repo must be bind-mounted and `cd`-ed
-  into, or Python imports the container's baked-in copy of `melt`.
+- **Never run anything on an artemis GPU directly — always go through a SLURM
+  job (`sbatch`), never a bare `CUDA_VISIBLE_DEVICES=...` invocation on the
+  workstation, even for a quick smoke test.** artemis is shared, and GPUs sit
+  outside SLURM's accounting when used this way, invisible to everyone else
+  scheduling against them. CPU-only work (freezing, unit tests, linting) is
+  fine to run directly; anything that loads a model or touches a GPU is not.
+  Use `infra/runners/submit_eval.sh <site> <checkpoint> <frozen_set> [...]`
+  (see README.md "Running an evaluation on a cluster"), which mirrors the
+  `sbatch` + site-file pattern `training`'s `infra/runners/submit-container.sh`
+  uses.
+- **Never write anything sizeable under `/mnt/home/giuseppe`.** It is synced
+  via GlusterFS, so large or frequently-changing files there both eat a home
+  quota and generate sync churn. Venvs, eval outputs, frozen sets, logs and
+  caches all belong under `/mnt/scratch-artemis/giuseppe` or
+  `/mnt/data-artemis/giuseppe` — the repo checkout itself (source only) is the
+  one thing that belongs in `$HOME`.

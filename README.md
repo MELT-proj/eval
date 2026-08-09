@@ -27,23 +27,79 @@ Frozen sets **reference** audio rather than copying it — see
 
 ## Install
 
+melt-eval needs both `inspect_ai` and the training package (`melt-proj`) —
+`lhotse`, `torch`, `transformers` — in one environment, which no site's
+existing venv or container image happens to provide together. Build a
+dedicated venv **outside your home directory** (see "A note on artemis" below)
+with the training repo checked out as a sibling:
+
 ```bash
-uv venv && uv pip install -e ".[shar,metrics,dev]"
+# expects ../training to exist (sibling checkout); see [tool.uv.sources] in
+# pyproject.toml if you keep it somewhere else
+uv venv --python 3.12 /path/to/venvs/melteval
+VIRTUAL_ENV=/path/to/venvs/melteval uv pip install --prerelease=allow -e ".[shar,metrics,dev]"
 ```
 
-Extras are split by what you actually need: `shar` (local lhotse corpora, pulls
-in the training package), `hf` (remote HuggingFace test splits), `metrics`
-(jiwer, sacrebleu).
+`--prerelease=allow` is needed because `melt-proj` pins a pre-release lhotse
+(`2.0.0a3`). Extras are split by what you actually need: `shar` (local lhotse
+corpora, pulls in the training package), `hf` (remote HuggingFace test
+splits), `metrics` (jiwer, sacrebleu).
 
 ## Usage
 
 ```bash
-# Build a frozen set
+# Build a frozen set (CPU-only -- safe to run directly, no SLURM needed)
 LOCAL_DATASETS_DIR=/path/to/shar melteval freeze configs/smoke.yaml -o runs/smoke
 
 # Look at what it contains
 melteval show runs/smoke
+
+# Try it against a mock model, no GPU or checkpoint required
+inspect eval melteval/tasks.py@speech --model mockllm/model \
+  -T frozen_set=runs/smoke -T format_config=/path/to/a/training_config.yaml
 ```
+
+## Running an evaluation on a cluster
+
+`infra/runners/submit_eval.sh <site> <checkpoint_dir> <frozen_set_dir> [inspect eval args...]`
+is the whole interface: swap the checkpoint, swap the frozen set, run. The
+site (`infra/sites/<site>.sh`) supplies the venv, output directory and SLURM
+resources.
+
+```bash
+infra/runners/submit_eval.sh artemis \
+  /path/to/outputs/MA-v1.2.7 \
+  /path/to/eval-sets/asr-test-v1 \
+  -T task_filter=asr -M batch_size=16
+```
+
+Common overrides, all `-T` (task parameter) or `-M` (model parameter) flags
+appended after the two required paths:
+
+| Want to... | Add |
+|---|---|
+| Restrict to one task | `-T task_filter=asr` (or `st`) |
+| Restrict to one language | `-T lang=de` |
+| Restrict to one corpus | `-T dataset_id=fleurs` |
+| Cap the sample count | `-T limit=50` |
+| Bigger/smaller batches | `-M batch_size=32` |
+| Format from a different config than the checkpoint | `-T format_config=/path/to/training_config.yaml` |
+
+A debug run before a full one — few samples, short QoS:
+
+```bash
+MELT_QOS=gpu-debug MELT_TIME=00:15:00 infra/runners/submit_eval.sh artemis \
+  /path/to/checkpoint /path/to/frozen-set -T limit=5
+```
+
+`melteval freeze` itself is CPU-only and safe to run directly (no `sbatch`
+needed) — only the generation step touches a GPU.
+
+**Available sites:** `artemis` (a6000/h100/h200, working). `mn5` is scaffolded
+but its venv has not been built yet — MN5 has no outbound internet, so that
+venv has to be assembled elsewhere and copied over first; see the comment at
+the top of `infra/sites/mn5.sh`. Copy `infra/sites/example.sh` to add a new
+site.
 
 ## Development
 
@@ -53,19 +109,14 @@ MELTEVAL_SHAR_ROOT=/path/to/shar pytest tests -q    # adds corpus integration te
 ruff check melteval tests
 ```
 
-On artemis the tests run inside the container, which is the only environment
-with the full stack:
+### A note on artemis
 
-```bash
-singularity exec --userns \
-    -B /mnt/scratch-artemis:/mnt/scratch-artemis \
-    -B /mnt/scratch-nyx:/mnt/scratch-nyx \
-    -B /mnt/home/giuseppe:/mnt/home/giuseppe \
-    /mnt/scratch-artemis/giuseppe/melt-data/melt_cuda126_lhotse2_td.sif \
-    bash -c 'source /workspace/venv/bin/activate
-             export PYTHONPATH=/mnt/scratch-artemis/giuseppe/pytest-shim:/path/to/training:/path/to/melt-eval
-             cd /path/to/melt-eval && python -m pytest tests -q'
-```
+- **GPU work always goes through SLURM.** Never run `inspect eval`, or
+  anything else that loads a model, directly on the workstation — even for a
+  quick check. Use `infra/runners/submit_eval.sh`. Freezing, unit tests and
+  linting are CPU-only and fine to run directly.
+- **Nothing heavy goes under `/mnt/home/giuseppe`.** It's GlusterFS-synced and
+  quota-limited. Venvs, eval outputs and frozen sets belong under
+  `/mnt/scratch-artemis/giuseppe` or `/mnt/data-artemis/giuseppe`.
 
-The `--userns` flag is required on artemis, and the container ships neither
-pytest nor pip — hence the shim on `PYTHONPATH`.
+See `AGENTS.md` for the full detail behind both rules.
