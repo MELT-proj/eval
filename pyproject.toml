@@ -55,6 +55,11 @@ melteval = "melteval.cli:main"
 [project.entry-points.inspect_ai]
 melteval = "melteval"
 
+# The training package is not on PyPI. Point uv at the sibling checkout so
+# `uv pip install -e ".[shar]"` resolves it from source.
+[tool.uv.sources]
+melt-proj = { path = "../training", editable = true }
+
 [tool.setuptools.packages.find]
 where = ["."]
 include = ["melteval*"]
