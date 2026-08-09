@@ -1,0 +1,53 @@
+# Small mixed spec used to smoke-test the pipeline end to end.
+#
+# It deliberately covers the three reference conventions that differ across
+# corpora, because a harness that only works on `supervisions[0].text` looks
+# correct right up until it silently scores the wrong string:
+#
+#   librispeech -> custom.pnc_text        (punctuated/cased)
+#   cv22_sidon  -> custom.metadata.sentence
+#   covost2     -> supervisions[0].text is the *translation*,
+#                  custom.sentence is the source transcript
+name: smoke
+seed: 0
+
+input_cfg:
+  - type: lhotse_shar
+    shar_path: ${LOCAL_DATASETS_DIR}/librispeech/clean/test
+    text_field: custom.pnc_text
+    max_samples: 20
+    tags:
+      task: asr
+      lang: en
+      dataset_id: librispeech
+
+  - type: lhotse_shar
+    shar_path: ${LOCAL_DATASETS_DIR}/fleurs/de_de/test
+    text_field: custom.pnc_text
+    max_samples: 20
+    tags:
+      task: asr
+      lang: de
+      dataset_id: fleurs
+
+  - type: lhotse_shar
+    shar_path: ${LOCAL_DATASETS_DIR}/cv22_sidon/de/test
+    text_field: custom.metadata.sentence
+    max_samples: 20
+    tags:
+      task: asr
+      lang: de
+      dataset_id: cv22_sidon
+
+  # Speech translation: the reference is the English translation, and the
+  # Arabic transcript is kept as `source_text` so the run can be COMET-scored
+  # later. ST samples without a source transcript cannot be.
+  - type: lhotse_shar
+    shar_path: ${LOCAL_DATASETS_DIR}/covost2/ar_en/test
+    source_text_field: custom.sentence
+    max_samples: 20
+    tags:
+      task: st
+      src_lang: ar
+      tgt_lang: en
+      dataset_id: covost2

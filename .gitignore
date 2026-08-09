@@ -1,0 +1,19 @@
+__pycache__/
+*.py[cod]
+*.egg-info/
+build/
+dist/
+.venv/
+venv/
+.pytest_cache/
+.ruff_cache/
+
+# Eval outputs and frozen sets: manifests are cheap but they are artefacts of a
+# machine's paths, not source. Keep specs in configs/ instead.
+logs/
+runs/
+frozen/
+*.eval
+
+# Project notebook, as in the training repo.
+history/

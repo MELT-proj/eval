@@ -1,0 +1,79 @@
+[build-system]
+requires = ["setuptools>=61.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "melt-eval"
+version = "0.1.0"
+description = "Downstream evaluation harness for MELT speech models, built on inspect_ai"
+readme = "README.md"
+license = {text = "MIT"}
+authors = [
+    {name = "Giuseppe Attanasio", email = "gattanasio.work@gmail.com"}
+]
+requires-python = ">=3.10"
+dependencies = [
+    # Pinned: scorer output and log schema move between releases, and eval
+    # numbers should not move with them. Upstream tags are `release/YYYY-MM-DD`,
+    # not `v0.3.x`, if a git ref is ever needed.
+    "inspect_ai==0.3.254",
+    "omegaconf>=2.3",
+    "pyyaml>=6.0",
+    "numpy>=1.24",
+]
+
+[project.optional-dependencies]
+# Reading lhotse Shar sources, and the MELT provider itself. Heavy (torch,
+# transformers) because loading a checkpoint needs the training package.
+shar = [
+    "lhotse==2.0.0a3",
+    "melt-proj",
+    "soundfile>=0.13",
+]
+# Remote HuggingFace test splits, whose audio arrives at arbitrary sample rates.
+hf = [
+    "datasets>=4.0",
+    "librosa>=0.11",
+]
+# Lexical metrics. sacrebleu is pinned: BLEU is not comparable across versions
+# or tokenizer configurations, so the number and its signature must be stable.
+metrics = [
+    "jiwer>=4.0",
+    "sacrebleu==2.5.1",
+]
+dev = [
+    "pytest",
+    "ruff",
+]
+
+[project.scripts]
+melteval = "melteval.cli:main"
+
+# Registers melteval's providers, solvers, scorers and tasks with inspect_ai's
+# registry on demand, so `inspect eval ... --model melt/<ckpt>` resolves without
+# an explicit import. See inspect_ai/_util/entrypoints.py.
+[project.entry-points.inspect_ai]
+melteval = "melteval"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["melteval*"]
+
+[tool.ruff]
+target-version = "py310"
+line-length = 119
+include = ["melteval/**/*.py", "tests/**/*.py"]
+
+[tool.ruff.lint]
+select = ["C", "E", "F", "I", "W", "RUF013", "PERF102", "SIM", "UP", "FURB"]
+ignore = ["C901", "E501", "E741"]
+
+[tool.ruff.lint.isort]
+lines-after-imports = 2
+
+[tool.ruff.format]
+quote-style = "double"
+indent-style = "space"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
