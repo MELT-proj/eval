@@ -222,6 +222,14 @@ class MELTAPI(ModelAPI):
             for key, value in inputs.items()
             if hasattr(value, "to")
         }
+        # MELTProcessor always produces float32 features; a model loaded in a
+        # lower-precision dtype (bfloat16 by default here) fails inside the
+        # audio encoder's LayerNorm with "expected scalar type Float but found
+        # BFloat16" unless the features are cast to match. Read the dtype off
+        # the model itself rather than hardcoding it, so this keeps working
+        # under `-M dtype=float16` or `=float32` too.
+        if "input_features" in inputs:
+            inputs["input_features"] = inputs["input_features"].to(self.model.dtype)
 
         with torch.no_grad():
             generated = self.model.generate(
