@@ -1,0 +1,19 @@
+# One-off cross-check against tests/integration/inference/run_inference.py
+# (the training repo's older, single-prompt inference script).
+#
+# text_field is deliberately left at the default "text" (plain
+# supervisions[0].text) to match run_inference.py, which cannot read
+# custom.pnc_text -- this is NOT the reference field melteval's own configs
+# use for librispeech (custom.pnc_text). No max_samples: both tools then
+# iterate the same unshuffled CutSet.from_shar order, so `--max-samples N`
+# (old script) and `-T limit=N` (melteval) select the identical first N cuts.
+name: crosscheck
+seed: 0
+
+input_cfg:
+  - type: lhotse_shar
+    shar_path: ${LOCAL_DATASETS_DIR}/librispeech/clean/test
+    tags:
+      task: asr
+      lang: en
+      dataset_id: librispeech
