@@ -73,6 +73,13 @@ def asr(frozen_set: str, **kwargs) -> Task:
 
 @task
 def st(frozen_set: str, **kwargs) -> Task:
-    """:func:`speech` restricted to ``task_filter="st"`` with BLEU/chrF scoring."""
+    """:func:`speech` restricted to ``task_filter="st"`` with BLEU/chrF scoring.
+
+    A frozen set covering more than one target language must also be given
+    ``lang=`` (one run per target language). BLEU's tokenizer is chosen per
+    target language, and mixing languages in one ``corpus_bleu`` call has no
+    single correct tokenizer for the mix — the scorer raises rather than
+    silently pick one and produce a number that looks precise but is not.
+    """
     kwargs.setdefault("task_filter", "st")
     return speech(frozen_set, **kwargs)

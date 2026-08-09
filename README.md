@@ -85,6 +85,12 @@ appended after the two required paths:
 | Bigger/smaller batches | `-M batch_size=32` |
 | Format from a different config than the checkpoint | `-T format_config=/path/to/training_config.yaml` |
 
+**ST specifically:** a frozen set covering more than one target language needs
+one run per language (`-T lang=de`, then a separate run with `-T lang=ar`,
+...). BLEU's tokenizer is chosen per target language, so a corpus mixing
+languages has no single correct tokenizer for the mix — `corpus_bleu` raises
+rather than silently pick one.
+
 A debug run before a full one — few samples, short QoS:
 
 ```bash

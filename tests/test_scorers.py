@@ -2,6 +2,17 @@
 
 The central claim under test: corpus WER/BLEU is not the mean of per-sample
 rates. Everything else here supports getting that one number right.
+
+`TestStScorerThroughRealInspect` exists because of a real failure this design
+already had once: hand-building `SampleScore` objects and calling a metric
+function directly, as most tests below do, skips inspect's own scoring
+pipeline entirely -- including the epoch-reduction step that goes through
+every `Score.value` dict and applies `value_to_float()` to each entry. That
+step is exactly what silently turned `st_scorer`'s reference/hypothesis text
+into `0.0` when it lived in `Score.value` instead of `Score.metadata`, and no
+amount of directly-constructed `SampleScore` tests could have caught it --
+they all bypass the step that broke. Only a test that runs a real
+`inspect_ai.eval()` exercises it.
 """
 
 import asyncio
@@ -40,7 +51,22 @@ def _run(coro):
 
 
 def _sample_score(value: dict, metadata: dict | None = None) -> SampleScore:
+    """Build a `SampleScore` with a numeric `Score.value`, as `corpus_wer`/
+    `corpus_cer` (and any real scorer) expect -- *not* a vehicle for text; see
+    `_st_sample_score` for that."""
     return SampleScore(score=Score(value=value), sample_metadata=metadata or {})
+
+
+def _st_sample_score(reference: str, hypothesis: str, metadata: dict | None = None) -> SampleScore:
+    """Build a `SampleScore` shaped like `st_scorer`'s real output: text in
+    `Score.metadata`, not `Score.value` -- see this module's docstring."""
+    return SampleScore(
+        score=Score(
+            value={"hyp_tokens": len(hypothesis.split()), "ref_tokens": len(reference.split())},
+            metadata={"reference": reference, "hypothesis": hypothesis},
+        ),
+        sample_metadata=metadata or {},
+    )
 
 
 class TestNormalizers:
@@ -136,44 +162,106 @@ class TestStScorer:
 
         return st_scorer()
 
-    def test_records_the_pair_verbatim(self, score_fn):
+    def test_records_the_pair_in_metadata_not_value(self, score_fn):
+        """Not `Score.value`: see this module's docstring for why that
+        specific placement is load-bearing, not a style choice."""
         state = _state("Hello there")
         result = _run(score_fn(state, Target("Hi there")))
-        assert result.value == {"reference": "Hi there", "hypothesis": "Hello there"}
+        assert result.metadata == {"reference": "Hi there", "hypothesis": "Hello there"}
+
+    def test_value_carries_token_lengths_not_text(self, score_fn):
+        state = _state("Hello there")
+        result = _run(score_fn(state, Target("Hi there you")))
+        assert result.value == {"hyp_tokens": 2, "ref_tokens": 3}
 
 
 class TestCorpusBleuChrf:
     def test_bleu_of_identical_text_is_near_100(self):
         scores = [
-            _sample_score(
-                {"reference": "the cat sat on the mat", "hypothesis": "the cat sat on the mat"},
-                {"tgt_lang": "en"},
+            _st_sample_score(
+                "the cat sat on the mat", "the cat sat on the mat", {"tgt_lang": "en"}
             )
         ]
         assert corpus_bleu()(scores) > 99.0
 
     def test_chrf_does_not_need_a_language(self):
-        scores = [_sample_score({"reference": "hello", "hypothesis": "hello"})]
+        scores = [_st_sample_score("hello", "hello")]
         assert corpus_chrf()(scores) > 99.0
 
     def test_zh_routes_to_the_zh_tokenizer(self):
         """Would raise from sacrebleu if word-splitting were applied to
         unsegmented Chinese instead of the zh tokenizer."""
-        scores = [_sample_score({"reference": "你好世界", "hypothesis": "你好世界"}, {"tgt_lang": "zh"})]
+        scores = [_st_sample_score("你好世界", "你好世界", {"tgt_lang": "zh"})]
         assert corpus_bleu()(scores) > 99.0
 
     def test_mixed_target_languages_raise(self):
         scores = [
-            _sample_score({"reference": "a", "hypothesis": "a"}, {"tgt_lang": "en"}),
-            _sample_score({"reference": "b", "hypothesis": "b"}, {"tgt_lang": "de"}),
+            _st_sample_score("a", "a", {"tgt_lang": "en"}),
+            _st_sample_score("b", "b", {"tgt_lang": "de"}),
         ]
         with pytest.raises(ValueError, match="Mixed target languages"):
             corpus_bleu()(scores)
 
     def test_falls_back_to_lang_when_tgt_lang_absent(self):
         """speechqe-style metadata may only carry `lang`, not `tgt_lang`."""
-        scores = [_sample_score({"reference": "a", "hypothesis": "a"}, {"lang": "en"})]
+        scores = [_st_sample_score("a", "a", {"lang": "en"})]
         assert corpus_bleu()(scores) is not None
+
+    def test_a_single_sample_does_not_crash(self):
+        """The regression case: even n=1 hit the old bug, since the very
+        first live metric update after one sample already sees whatever
+        Score.value was reduced to."""
+        scores = [_st_sample_score("Ich gehe.", "I go.", {"tgt_lang": "de"})]
+        assert isinstance(corpus_bleu()(scores), float)
+
+
+class TestStScorerThroughRealInspect:
+    """Runs a real `inspect_ai.eval()` -- the only way to exercise inspect's
+    own score-reduction step, which is what actually broke last time."""
+
+    def test_corpus_bleu_survives_a_real_eval_run(self, tmp_path):
+        from inspect_ai import Task
+        from inspect_ai import eval as inspect_eval
+        from inspect_ai.dataset import MemoryDataset, Sample
+        from inspect_ai.model import ModelOutput as _ModelOutput
+
+        from melteval.scorers import st_scorer
+
+        dataset = MemoryDataset(
+            samples=[
+                Sample(
+                    input="translate",
+                    target="Ich gehe.",
+                    id="00-0",
+                    metadata={"tgt_lang": "de", "lang": "de"},
+                ),
+                Sample(
+                    input="translate",
+                    target="Guten Tag.",
+                    id="00-1",
+                    metadata={"tgt_lang": "de", "lang": "de"},
+                ),
+            ]
+        )
+        task = Task(dataset=dataset, scorer=st_scorer())
+
+        [log] = inspect_eval(
+            task,
+            model="mockllm/model",
+            model_args={
+                "custom_outputs": [
+                    _ModelOutput.from_content(model="mockllm/model", content="I go."),
+                    _ModelOutput.from_content(model="mockllm/model", content="Good day."),
+                ]
+            },
+            display="none",
+            log_dir=str(tmp_path),
+        )
+
+        assert log.status == "success"
+        metrics = log.results.scores[0].metrics
+        assert "corpus_bleu" in metrics
+        assert isinstance(metrics["corpus_bleu"].value, float)
 
 
 class TestRegistry:

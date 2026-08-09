@@ -9,11 +9,30 @@ per-sentence at all (its brevity penalty depends on the corpus's total
 length).
 
 So every scorer here stores raw counts in ``Score.value`` — error counts and
-reference-unit counts for ASR, hypothesis/reference pairs for ST — and the
-corpus-level number is a :class:`Metric` that sums or recomputes over the
-whole ``list[SampleScore]``. Reading ``score.value["wer_errors"]`` off one
-sample is not "that sample's error rate" in any meaningful sense; the raw
-count exists so the corpus metric has something to reduce over.
+reference-unit counts for ASR — and the corpus-level number is a
+:class:`Metric` that sums over the whole ``list[SampleScore]``. Reading
+``score.value["wer_errors"]`` off one sample is not "that sample's error
+rate" in any meaningful sense; the raw count exists so the corpus metric has
+something to reduce over.
+
+ST's hypothesis/reference pairs live in ``Score.metadata`` instead, **not**
+``Score.value``, and that split is load-bearing rather than a style choice:
+``Score.value`` goes through inspect's epoch-reduction machinery even for a
+single-epoch run, and a dict there is treated as named *numeric* sub-scores —
+``value_to_float()`` is applied to every entry. For ASR's integer counts that
+happens to be harmless (an int survives being read as a float). For ST's
+*text* it silently replaces every reference and hypothesis with ``0.0``
+(logging one "Unable to convert value to float" warning per string), and
+``corpus_bleu``/``corpus_chrf`` then hand sacrebleu a batch of zeros, which
+sacrebleu correctly refuses: ``TypeError: BLEU: refs should be a sequence of
+sequence of strings``, and it happens from the very first sample scored, not
+just at scale. Found by actually running a batch through it (both on real
+hardware and reproduced locally with `mockllm`, since the failure is in
+metric computation, not generation) — a scorer unit test that hand-builds
+`SampleScore` objects and calls the metric directly, as this module's tests
+originally did, bypasses inspect's reduction step entirely and cannot see
+this. ``Score.metadata`` carries arbitrary ``dict[str, Any]`` and is never
+touched by that reduction, which is why it is the right place for text.
 
 Metrics are attached to the scorers themselves (rather than left for a task to
 wire up) so ``inspect eval melteval/tasks.py@speech`` reports corpus WER/CER or
@@ -215,8 +234,8 @@ def corpus_bleu() -> Metric:
         import sacrebleu
 
         logger = logging.getLogger(__name__)
-        hypotheses = [s.score.value["hypothesis"] for s in scores]
-        references = [s.score.value["reference"] for s in scores]
+        hypotheses = [s.score.metadata["hypothesis"] for s in scores]
+        references = [s.score.metadata["reference"] for s in scores]
 
         tokenizer = BLEU_TOKENIZER_BY_LANG.get(_target_lang(scores).lower(), "13a")
         bleu = sacrebleu.BLEU(tokenize=tokenizer)
@@ -237,8 +256,8 @@ def corpus_chrf() -> Metric:
         import sacrebleu
 
         logger = logging.getLogger(__name__)
-        hypotheses = [s.score.value["hypothesis"] for s in scores]
-        references = [s.score.value["reference"] for s in scores]
+        hypotheses = [s.score.metadata["hypothesis"] for s in scores]
+        references = [s.score.metadata["reference"] for s in scores]
 
         chrf = sacrebleu.CHRF(word_order=2)  # chrF++
         result = chrf.corpus_score(hypotheses, [references])
@@ -259,20 +278,29 @@ def corpus_chrf() -> Metric:
 def st_scorer() -> Scorer:
     """Score a translation by recording the (reference, hypothesis) pair.
 
-    Unlike ASR, nothing is computed per sample: BLEU and chrF are corpus-level
-    metrics by construction, so a "per-sample BLEU" would not combine into the
-    same number a single ``corpus_score`` call produces. The pair is carried
-    in ``Score.value`` purely so :func:`corpus_bleu` / :func:`corpus_chrf`
-    have something to recompute over.
+    Corpus BLEU/chrF are not the mean of per-sample scores (see the module
+    docstring), so nothing meaningful is computed per sample here. The pair is
+    carried in ``Score.metadata`` — deliberately not ``Score.value``, which
+    goes through inspect's epoch-reduction/``value_to_float`` machinery even
+    for a single epoch and would silently replace this pair's text with
+    ``0.0`` — purely so :func:`corpus_bleu` / :func:`corpus_chrf` have
+    something to recompute over.
+
+    ``Score.value`` itself carries token lengths: not a metric, just enough to
+    make an empty hypothesis or a wildly short/long one visible in the log's
+    per-sample view without decoding the metadata by hand.
 
     Returns:
-        A scorer whose ``Score.value`` carries ``{reference, hypothesis}``.
+        A scorer whose ``Score.metadata`` carries ``{reference, hypothesis}``.
     """
 
     async def score(state: TaskState, target: Target) -> Score:
+        hypothesis = state.output.completion
+        reference = target.text
         return Score(
-            value={"reference": target.text, "hypothesis": state.output.completion},
-            answer=state.output.completion,
+            value={"hyp_tokens": len(hypothesis.split()), "ref_tokens": len(reference.split())},
+            answer=hypothesis,
+            metadata={"reference": reference, "hypothesis": hypothesis},
         )
 
     return score
