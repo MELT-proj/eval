@@ -107,6 +107,12 @@ venv has to be assembled elsewhere and copied over first; see the comment at
 the top of `infra/sites/mn5.sh`. Copy `infra/sites/example.sh` to add a new
 site.
 
+Recap of recent jobs on a site — QoS, state, resources used:
+
+```bash
+infra/job_recap.sh artemis 20   # or: infra/job_recap.sh mn5 20
+```
+
 ## Rescoring ST output with COMET/MetricX
 
 `inspect eval` reports BLEU/chrF; a neural MT metric is a separate step, run
