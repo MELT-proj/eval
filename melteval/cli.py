@@ -31,6 +31,14 @@ def main(argv: list[str] | None = None) -> int:
     show_parser.add_argument("frozen_set", help="Frozen-set directory.")
     show_parser.set_defaults(func=_cmd_show)
 
+    rescore_parser = subparsers.add_parser(
+        "rescore",
+        help="Extract (src, mt, ref) triples from a completed eval log for COMET/MetricX.",
+    )
+    rescore_parser.add_argument("log", help="Path to a .eval log.")
+    rescore_parser.add_argument("-o", "--out", required=True, help="Output JSONL path.")
+    rescore_parser.set_defaults(func=_cmd_rescore)
+
     args = parser.parse_args(argv)
     logging.basicConfig(
         stream=sys.stderr,
@@ -60,6 +68,16 @@ def _cmd_show(args: argparse.Namespace) -> int:
         return 1
     summary = json.loads(summary_path.read_text(encoding="utf-8"))
     print(json.dumps(_headline(summary), indent=2, ensure_ascii=False))
+    return 0
+
+
+def _cmd_rescore(args: argparse.Namespace) -> int:
+    """Extract rescoring triples from a log and print how many were usable."""
+    from melteval.rescore import extract_triples, write_triples
+
+    triples, stats = extract_triples(args.log)
+    write_triples(triples, args.out)
+    print(json.dumps(stats, indent=2))
     return 0
 
 

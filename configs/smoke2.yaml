@@ -1,0 +1,54 @@
+# Broader smoke set: sources and a task not yet exercised on real hardware.
+#
+#   asr: voxpopuli (en, de) -- plain supervisions[0].text, no text_field override
+#        librispeech/other  -- custom.pnc_text, like clean
+#   st:  covost2 en->de, en->ar -- reference is the translation;
+#        custom.sentence is the English source transcript
+name: smoke2
+seed: 0
+
+input_cfg:
+  - type: lhotse_shar
+    shar_path: ${LOCAL_DATASETS_DIR}/voxpopuli/en/test
+    max_samples: 15
+    tags:
+      task: asr
+      lang: en
+      dataset_id: voxpopuli
+
+  - type: lhotse_shar
+    shar_path: ${LOCAL_DATASETS_DIR}/voxpopuli/de/test
+    max_samples: 15
+    tags:
+      task: asr
+      lang: de
+      dataset_id: voxpopuli
+
+  - type: lhotse_shar
+    shar_path: ${LOCAL_DATASETS_DIR}/librispeech/other/test
+    text_field: custom.pnc_text
+    max_samples: 15
+    tags:
+      task: asr
+      lang: en
+      dataset_id: librispeech
+
+  - type: lhotse_shar
+    shar_path: ${LOCAL_DATASETS_DIR}/covost2/en_de/test
+    source_text_field: custom.sentence
+    max_samples: 15
+    tags:
+      task: st
+      src_lang: en
+      tgt_lang: de
+      dataset_id: covost2
+
+  - type: lhotse_shar
+    shar_path: ${LOCAL_DATASETS_DIR}/covost2/en_ar/test
+    source_text_field: custom.sentence
+    max_samples: 15
+    tags:
+      task: st
+      src_lang: en
+      tgt_lang: ar
+      dataset_id: covost2
