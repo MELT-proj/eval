@@ -55,6 +55,18 @@ forces it.
 - **Shar layouts.** Both plain (`cuts.*.jsonl.gz`) and indexed
   (`cuts.*.jsonl` + `.idx`) exist. Globbing only the gzipped form reports a
   fully populated source as empty — use `shar_manifest_files`.
+- **`Score.value` is not a free-form payload slot.** It goes through inspect's
+  epoch-reduction machinery even for a single-epoch task, and a dict there is
+  treated as named *numeric* sub-scores — `value_to_float()` runs on every
+  entry. Text payloads (anything a corpus-level metric needs to recompute
+  over, like `st_scorer`'s hypothesis/reference pairs) belong in
+  `Score.metadata` instead, which is never touched by that reduction. This
+  bit `st_scorer` for real (see the git history on `scorers.py`): every
+  reference/hypothesis silently became `0.0` before `corpus_bleu` ever ran.
+  A test that hand-builds `SampleScore` objects and calls a metric function
+  directly bypasses this reduction entirely and cannot catch a regression
+  here — only a test that runs a real `inspect_ai.eval()` can (see
+  `TestStScorerThroughRealInspect` in `test_scorers.py`).
 
 ## Testing
 
