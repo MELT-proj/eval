@@ -107,6 +107,32 @@ venv has to be assembled elsewhere and copied over first; see the comment at
 the top of `infra/sites/mn5.sh`. Copy `infra/sites/example.sh` to add a new
 site.
 
+## Rescoring ST output with COMET/MetricX
+
+`inspect eval` reports BLEU/chrF; a neural MT metric is a separate step, run
+from the `comet`/`metricx` venv rather than this one, so a GPU metric stack
+never has to install next to the model under evaluation:
+
+```bash
+# in the melteval venv: extract (src, mt, ref) triples from a finished ST run
+melteval rescore path/to/log.eval -o triples.jsonl
+```
+
+```python
+# then, from the comet venv:
+import json
+from comet import download_model, load_from_checkpoint
+
+samples = [json.loads(line) for line in open("triples.jsonl")]
+model = load_from_checkpoint(download_model("Unbabel/wmt22-comet-da"))
+print(model.predict(samples, batch_size=8, gpus=1).system_score)
+```
+
+Only samples whose frozen-set source set `source_text_field` at freeze time
+produce a triple — that field is the `src` a reference-based MT metric needs,
+and it doesn't exist unless a source config asked for it (see
+[docs/frozen-sets.md](docs/frozen-sets.md)).
+
 ## Development
 
 ```bash
