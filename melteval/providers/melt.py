@@ -210,10 +210,9 @@ class MELTAPI(ModelAPI):
         """Run one padded batch through the model."""
         import torch
 
-        audios = [r.audio for r in batch if r.audio is not None]
         inputs = self.processor(
             text=[r.text for r in batch],
-            audio=audios or None,
+            audio=_batched_audio(batch),
             sampling_rate=batch[0].sample_rate,
             return_tensors="pt",
             padding=True,
@@ -239,6 +238,27 @@ class MELTAPI(ModelAPI):
         # generate() delegates with inputs_embeds, so the decoder returns only
         # the newly generated tokens -- no prompt to strip.
         return [text.strip() for text in self.processor.batch_decode(generated, skip_special_tokens=True)]
+
+
+def _batched_audio(batch: list[_Request]) -> list[list[Any]] | None:
+    """Build the ``audio`` argument for a batched :class:`MELTProcessor` call.
+
+    The processor's batched contract is list-of-lists aligned with ``text``:
+    ``audio[i]`` is the (possibly empty) list of audio arrays for ``text[i]``'s
+    audio tokens, not a flat list of arrays belonging to the batch as a whole.
+    A flat list -- what this returned before the bug that motivated this
+    function's extraction -- fails inside the processor with "audio[0] must be
+    a list of audio arrays", found running a real batch end to end (no unit
+    test exercised this shape before).
+
+    Returns:
+        ``None`` when no request in the batch carries audio (an all-text
+        batch); otherwise one list per request, `[]` for a text-only request
+        mixed into an otherwise-audio batch.
+    """
+    if not any(r.audio is not None for r in batch):
+        return None
+    return [[r.audio] if r.audio is not None else [] for r in batch]
 
 
 def _extract(messages: list[ChatMessage]) -> tuple[str, dict | None]:

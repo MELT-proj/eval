@@ -13,6 +13,7 @@ manifests only, and audio is decoded one batch at a time inside the provider.
 
 from __future__ import annotations
 
+import threading
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Protocol, runtime_checkable
 
@@ -75,6 +76,14 @@ class Reader(Protocol):
 
 _READERS: dict[str, Reader] = {}
 _LOADED = False
+#: Guards _LOADED / _READERS against the provider's batching worker thread and
+#: inspect's own concurrent sample execution both calling get_reader() /
+#: reader_for_locator() for the first time at once. Without it, a second
+#: thread can observe _LOADED == True before the first thread's imports (and
+#: thus their register_reader() calls) have actually finished, and finds an
+#: empty registry -- "No reader can resolve audio locator of kind 'shar'" on a
+#: perfectly correct locator, and only under concurrency.
+_LOAD_LOCK = threading.Lock()
 
 
 def register_reader(reader: Reader) -> Reader:
@@ -112,13 +121,20 @@ def _load_builtin_readers() -> None:
 
     ``lhotse`` and ``datasets`` are extras, so a harness installed for one
     source type must not fail to start because the other is missing.
+
+    Double-checked locking: the fast path (already loaded) stays lock-free,
+    since this runs on every ``get_reader``/``reader_for_locator`` call and
+    those happen once per generated sample.
     """
     global _LOADED
     if _LOADED:
         return
-    _LOADED = True
-    for module in ("melteval.readers.shar", "melteval.readers.hf"):
-        try:
-            __import__(module)
-        except ImportError:
-            continue
+    with _LOAD_LOCK:
+        if _LOADED:  # another thread finished loading while this one waited
+            return
+        for module in ("melteval.readers.shar", "melteval.readers.hf"):
+            try:
+                __import__(module)
+            except ImportError:
+                continue
+        _LOADED = True

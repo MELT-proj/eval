@@ -7,10 +7,12 @@ covered by the end-to-end smoke test against a real checkpoint instead, since
 faking a transformers model would test the fake more than the code.
 """
 
+from dataclasses import dataclass, field
+
 from inspect_ai.model import ChatMessageUser, ContentAudio, ContentData, ContentText, GenerateConfig
 
 from melteval.dataset import AUDIO_DATA_KEY
-from melteval.providers.melt import _extract, _generate_kwargs
+from melteval.providers.melt import _batched_audio, _extract, _generate_kwargs
 
 
 class TestExtract:
@@ -48,6 +50,41 @@ class TestExtract:
             [ChatMessageUser(content="a"), ChatMessageUser(content="b")]
         )
         assert text == "ab"
+
+
+@dataclass
+class _FakeRequest:
+    """Stands in for `_Request` -- only `.audio` matters to `_batched_audio`."""
+
+    audio: object = None
+    text: str = ""
+    sample_rate: int = 16000
+    config: object = None
+    future: object = field(default=None)
+
+
+class TestBatchedAudio:
+    """Regression coverage for the shape bug found running a real batch:
+    MELTProcessor wants one list per text sample, not a flat list of arrays."""
+
+    def test_all_text_batch_is_none(self):
+        """None, not an empty list -- MELTProcessor treats `audio=[]` as a
+        (mismatched-length) batch of zero, not as "no audio at all"."""
+        batch = [_FakeRequest(audio=None), _FakeRequest(audio=None)]
+        assert _batched_audio(batch) is None
+
+    def test_each_sample_gets_its_own_singleton_list(self):
+        batch = [_FakeRequest(audio="a"), _FakeRequest(audio="b")]
+        assert _batched_audio(batch) == [["a"], ["b"]]
+
+    def test_text_only_sample_in_a_mixed_batch_gets_an_empty_list(self):
+        """Length must still match `text` even for the sample with no audio
+        token -- that's what "aligned with text" means."""
+        batch = [_FakeRequest(audio="a"), _FakeRequest(audio=None)]
+        assert _batched_audio(batch) == [["a"], []]
+
+    def test_single_sample_batch(self):
+        assert _batched_audio([_FakeRequest(audio="only")]) == [["only"]]
 
 
 class TestGenerateKwargs:
