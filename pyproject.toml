@@ -23,6 +23,12 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
+# There is deliberately no `smurf` extra. That provider needs NeMo Speech and
+# the private fbk_speechllm package, whose torch/megatron pins conflict with
+# `shar`'s -- an extra that can never resolve next to the others is worse than
+# none. Install it the other way round (SMURF venv first, melt-eval into it):
+# see docs/smurf-provider.md.
+#
 # Reading lhotse Shar sources, and the MELT provider itself. Heavy (torch,
 # transformers) because loading a checkpoint needs the training package.
 shar = [
