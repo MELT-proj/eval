@@ -20,8 +20,9 @@ forces it.
 - `melteval/freeze.py` — builds frozen sets from a source spec.
 - `melteval/readers/` — one module per source type. The only code that knows
   about corpus formats.
-- `melteval/providers/` — one module per model family. The seam that lets a
-  NeMo/Smurf model be evaluated without touching anything else.
+- `melteval/providers/` — one module per model family (`melt`, `smurf`), over a
+  shared `base.py` that owns batching and audio resolution. The seam that lets
+  a NeMo/SMURF model be evaluated without touching anything else.
 - `configs/` — frozen-set specs.
 - `docs/` — design notes worth reading before changing behaviour.
 
@@ -46,6 +47,14 @@ forces it.
   trained in. Read it from the run's `training_config.yaml`; never default
   silently. This has already been shipped as a bug once
   ([training#58](https://github.com/MELT-proj/training/issues/58)).
+- **One prompt path per family, and they are not interchangeable.** MELT's
+  `speech_prompt` renders the whole sequence, chat template and `<|audio|>`
+  token included. A SMURF checkpoint applies its own chat template and expands
+  its own `<|audioplaceholder|>` inside `generate()`, so `smurf_prompt` renders
+  the bare instruction and nothing else. Crossing them double-wraps the prompt
+  or drops the audio — fluent output, plausible score, wrong number. The task's
+  `prompt_style` selects the path and the solver checks it against the provider
+  at generation time; see [docs/smurf-provider.md](docs/smurf-provider.md).
 - **Corpus vs per-sample metrics.** Corpus WER is total errors over total
   reference words, not the mean of per-sample rates. Same for BLEU.
 - **Sample identity.** FLEURS cut IDs are not unique. Never key an eval log by

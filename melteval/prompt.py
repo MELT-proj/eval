@@ -10,6 +10,14 @@ deep and silently used their defaults).
 So nothing here has a "sensible default". The four keys that decide the
 sequence format are read from the run's ``training_config.yaml`` and, if that
 file is missing, the harness refuses to guess.
+
+The same rule applies to SMURF checkpoints, but the config that answers it is
+a different one. There, the chat wrapping is applied by the model itself (a
+NeMo ``PromptFormatter`` named in the checkpoint) and the only free variable is
+the instruction text, which lives in the *data* config as the conversation's
+``context`` tag. :func:`load_smurf_prompt_spec` reads it from there, for the
+same reason: so the prompt comes from a file somebody wrote deliberately
+rather than from a default nobody chose.
 """
 
 from __future__ import annotations
@@ -255,3 +263,223 @@ def apply_generation_format(prompt: str, spec: FormatSpec, tokenizer) -> str:
         add_generation_prompt=True,
         enable_thinking=False,
     )
+
+
+# --- SMURF ------------------------------------------------------------------
+#
+# A SMURF checkpoint is a NeMo SALM. Three of the four MELT format keys have no
+# counterpart there: the chat template is applied by the model's own
+# ``PromptFormatter``, and there is no template pool to select from. What is
+# left is the instruction text, which SMURF puts in the data config as the
+# conversation's ``context`` tag -- one fixed string per data source, not one
+# per sample.
+
+
+@dataclass(frozen=True)
+class SmurfPromptSpec:
+    """The instruction a SMURF checkpoint expects, and where it came from.
+
+    Attributes:
+        instruction: The instruction template, before per-sample placeholders
+            are filled. ``None`` when the config carried no ``context`` tag,
+            which is a valid SMURF setup (the conversation is then audio-only,
+            with the task implied by training).
+        prompt_format: Name of the NeMo ``PromptFormatter`` the config names.
+            Recorded only: the model applies its own, read from its weights'
+            config, and a disagreement between the two is worth seeing in the
+            log rather than resolving silently here.
+        audio_locator_tag: The placeholder named by the config, recorded for
+            the same reason. The provider uses the checkpoint's own.
+        source: Where this spec was read from.
+    """
+
+    instruction: str | None
+    prompt_format: str | None
+    audio_locator_tag: str | None
+    source: str
+
+    def to_dict(self) -> dict:
+        """Serialise for the eval log."""
+        return {
+            "provider": "smurf",
+            "instruction": self.instruction,
+            "prompt_format": self.prompt_format,
+            "audio_locator_tag": self.audio_locator_tag,
+            "source": self.source,
+        }
+
+
+def load_smurf_prompt_spec(path: str | Path) -> SmurfPromptSpec:
+    """Read the instruction context out of a SMURF data or inference config.
+
+    Handles every shape those configs come in -- ``data.test_ds.input_cfg``,
+    ``data.validation_ds.datasets.<name>.input_cfg``, a bare ``input_cfg`` --
+    by scanning for the keys rather than walking a fixed path, because the
+    inference configs and the training configs nest them differently and both
+    are legitimate sources.
+
+    Args:
+        path: Path to the YAML.
+
+    Returns:
+        The instruction and the identifiers worth recording alongside it.
+
+    Raises:
+        FileNotFoundError: If *path* does not exist.
+        ValueError: If the config carries more than one distinct ``context``,
+            which would make "the prompt this eval used" a per-source detail
+            that a single run cannot honour.
+    """
+    import yaml
+
+    config_path = Path(path)
+    if not config_path.exists():
+        raise FileNotFoundError(f"No SMURF config at {config_path}.")
+
+    config = yaml.safe_load(config_path.read_text(encoding="utf-8")) or {}
+
+    contexts = _collect_tag_values(config, "context")
+    if len(contexts) > 1:
+        raise ValueError(
+            f"{config_path} defines {len(contexts)} different context prompts "
+            f"({contexts!r}). One eval run sends one prompt, so pick the source you mean "
+            "(or pass the instruction explicitly)."
+        )
+
+    prompt_formats = _collect_values(config, "prompt_format")
+    audio_tags = _collect_values(config, "audio_locator_tag")
+
+    return SmurfPromptSpec(
+        instruction=contexts[0] if contexts else None,
+        prompt_format=prompt_formats[0] if len(prompt_formats) == 1 else None,
+        audio_locator_tag=audio_tags[0] if len(audio_tags) == 1 else None,
+        source=str(config_path),
+    )
+
+
+def render_smurf_prompt(
+    instruction: str,
+    task: str = "",
+    lang: str = "",
+    src_lang: str = "",
+    tgt_lang: str = "",
+) -> str:
+    """Fill a SMURF instruction template for one sample.
+
+    Templates are usually literal in SMURF's own configs ("Transcribe this
+    English audio: "), so a template with no placeholder is the common case and
+    passes through untouched. The placeholders exist so that one frozen set
+    covering several languages does not need one config per language:
+
+    * ``{lang}``, ``{src_lang}``, ``{tgt_lang}`` — the language *name*
+      ("English"), resolved with the training package's table so that a name
+      here and a name in a MELT prompt are the same string.
+    * ``{lang_code}``, ``{src_lang_code}``, ``{tgt_lang_code}`` — the ISO code,
+      which needs no table and so works in a SMURF-only environment.
+    * ``{task}`` — the frozen set's task id.
+
+    Args:
+        instruction: The template.
+        task: Task identifier.
+        lang: Language of the expected output.
+        src_lang: Source language, where the task has one.
+        tgt_lang: Target language, where the task has one.
+
+    Returns:
+        The instruction to send, before the audio placeholder is attached (the
+        provider does that, using the checkpoint's own tag).
+
+    Raises:
+        ValueError: If the template names a placeholder that does not exist, or
+            a language name cannot be resolved. Both are better as errors than
+            as a prompt with a literal ``{lang}`` in it, which no model was
+            trained on and which every sample would still score against.
+    """
+    values = {
+        "task": task,
+        "lang_code": lang,
+        "src_lang_code": src_lang,
+        "tgt_lang_code": tgt_lang,
+    }
+    for key, code in (("lang", lang), ("src_lang", src_lang), ("tgt_lang", tgt_lang)):
+        if "{" + key + "}" in instruction:
+            values[key] = _language_name(code, key)
+
+    try:
+        return instruction.format_map(values)
+    except KeyError as exc:
+        known = ("task", "lang", "src_lang", "tgt_lang", "lang_code", "src_lang_code", "tgt_lang_code")
+        raise ValueError(
+            f"Unknown placeholder {exc} in the SMURF instruction {instruction!r}. "
+            f"Available: {', '.join('{' + name + '}' for name in known)}."
+        ) from exc
+
+
+def _language_name(code: str, key: str) -> str:
+    """Resolve an ISO code to the language name the training code uses.
+
+    Raises:
+        ValueError: If the table is unavailable or the code is not in it. The
+            table lives in the training package, which a SMURF-only
+            environment has no reason to install -- hence the suggestion to use
+            the ``_code`` placeholder or a literal instruction instead.
+    """
+    try:
+        from melt.training.data.audio.lhotse.helpers import LANGUAGE_ISO_TO_NAME
+    except ImportError as exc:
+        raise ValueError(
+            f"The instruction uses {{{key}}}, which needs the training package's language table "
+            f"(melt-proj is not importable: {exc}). In a SMURF-only environment use "
+            f"{{{key}_code}} for the ISO code, or write the language into the instruction."
+        ) from exc
+
+    name = LANGUAGE_ISO_TO_NAME.get((code or "").lower())
+    if name is None:
+        raise ValueError(
+            f"Unsupported language ISO code {code!r} for {{{key}}}. "
+            f"Expected one of: {', '.join(sorted(LANGUAGE_ISO_TO_NAME))}"
+        )
+    return name
+
+
+def _collect_values(node, key: str) -> list:
+    """Collect the distinct values of *key* anywhere in a nested config."""
+    found: list = []
+
+    def walk(value) -> None:
+        if isinstance(value, dict):
+            for name, child in value.items():
+                if name == key and not isinstance(child, (dict, list)):
+                    if child not in found:
+                        found.append(child)
+                else:
+                    walk(child)
+        elif isinstance(value, list):
+            for child in value:
+                walk(child)
+
+    walk(node)
+    return found
+
+
+def _collect_tag_values(node, key: str) -> list:
+    """Collect the distinct values of ``tags.<key>`` anywhere in a nested config.
+
+    Scoped to ``tags`` mappings so that a coincidental key of the same name
+    elsewhere in the config is not mistaken for a prompt.
+    """
+    found: list = []
+
+    def walk(value) -> None:
+        if isinstance(value, dict):
+            tags = value.get("tags")
+            if isinstance(tags, dict) and key in tags and tags[key] not in found:
+                found.append(tags[key])
+            for child in value.values():
+                walk(child)
+        elif isinstance(value, list):
+            for child in value:
+                walk(child)
+
+    walk(node)
+    return found

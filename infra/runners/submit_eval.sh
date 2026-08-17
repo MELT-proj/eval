@@ -2,7 +2,7 @@
 #
 # Submit an evaluation job to SLURM.
 #
-#   infra/runners/submit_eval.sh <site> <checkpoint_dir> <frozen_set_dir> [inspect eval args...]
+#   infra/runners/submit_eval.sh <site> <checkpoint> <frozen_set_dir> [inspect eval args...]
 #
 # This is the whole interface a collaborator needs: swap the checkpoint, swap
 # the frozen set, run. Everything else (venv, output dir, GPU/QoS) comes from
@@ -24,16 +24,24 @@
 #   MELT_QOS=gpu-debug infra/runners/submit_eval.sh artemis \
 #     /path/to/checkpoint /path/to/frozen-set -T limit=5
 #
+#   # A SMURF checkpoint: its own provider, its own venv, a .ckpt not a dir
+#   MELTEVAL_PROVIDER=smurf VENV_PATH=/path/to/venvs/smurf-eval/bin/activate \
+#     infra/runners/submit_eval.sh artemis \
+#     /path/to/checkpoints/epoch=0-step=3600.ckpt /path/to/frozen-set \
+#     -T instruction="Transcribe this English audio: "
+#
 # <site> selects infra/sites/<site>.sh, which exports VENV_PATH/OUTPUT_DIR/
 # LOCAL_DATASETS_DIR and defines the SBATCH_ARGS array (partition/QoS/time).
-# Run from the repo root.
+# Every site file takes its values as `${VAR:-default}`, so an environment
+# override wins -- which is how a SMURF run reaches its own venv without a
+# second site file. Run from the repo root.
 set -euo pipefail
 
 die() { echo "ERROR: $*" >&2; exit 1; }
 
-SITE="${1:?usage: $0 <site> <checkpoint_dir> <frozen_set_dir> [inspect eval args...]}"; shift
+SITE="${1:?usage: $0 <site> <checkpoint> <frozen_set_dir> [inspect eval args...]}"; shift
 [[ -f melteval/tasks.py ]] || die "run this from the melt-eval repo root (melteval/tasks.py not found here)"
-[[ $# -ge 2 ]] || die "usage: $0 <site> <checkpoint_dir> <frozen_set_dir> [inspect eval args...]"
+[[ $# -ge 2 ]] || die "usage: $0 <site> <checkpoint> <frozen_set_dir> [inspect eval args...]"
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 SITE_FILE="${SCRIPT_DIR}/../sites/${SITE}.sh"

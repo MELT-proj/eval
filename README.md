@@ -84,6 +84,7 @@ appended after the two required paths:
 | Cap the sample count | `-T limit=50` |
 | Bigger/smaller batches | `-M batch_size=32` |
 | Format from a different config than the checkpoint | `-T format_config=/path/to/training_config.yaml` |
+| Evaluate a SMURF checkpoint instead | `MELTEVAL_PROVIDER=smurf` in the environment — see below |
 
 **ST specifically:** a frozen set covering more than one target language needs
 one run per language (`-T lang=de`, then a separate run with `-T lang=ar`,
@@ -112,6 +113,41 @@ Recap of recent jobs on a site — QoS, state, resources used:
 ```bash
 infra/job_recap.sh artemis 20   # or: infra/job_recap.sh mn5 20
 ```
+
+## Evaluating SMURF checkpoints
+
+SMURF models are trained with NeMo Speech rather than MELT, and are evaluated
+over the same frozen sets, tasks and scorers. Two things change: the provider
+and the prompt format.
+
+```bash
+inspect eval melteval/tasks.py@asr \
+  --model smurf/path/to/epoch=0-step=3600.ckpt \
+  -T frozen_set=runs/asr-test-v1 \
+  -T prompt_style=smurf \
+  -T instruction="Transcribe this English audio: " \
+  -M batch_size=4
+```
+
+On a cluster, `MELTEVAL_PROVIDER=smurf` selects both (the runner passes
+`-T prompt_style` to match), and `VENV_PATH=` points at the SMURF venv, since
+the two model stacks cannot be installed together:
+
+```bash
+MELTEVAL_PROVIDER=smurf VENV_PATH=/path/to/venvs/smurf-eval/bin/activate \
+  infra/runners/submit_eval.sh artemis \
+  /path/to/epoch=0-step=3600.ckpt /path/to/frozen-set \
+  -T instruction="Transcribe this English audio: "
+```
+
+A SMURF checkpoint applies its own chat template and expands its own audio
+placeholder inside `generate()`, so the harness sends the bare instruction —
+which is why the two prompt styles are not interchangeable, and why pairing a
+checkpoint with the wrong one is an error rather than a bad score. The
+instruction can also be read from the SMURF data config it was trained with
+(`-T prompt_config=/path/to/asr_inference.yaml`). See
+[docs/smurf-provider.md](docs/smurf-provider.md) for the environment, the
+parity argument and a cross-check recipe against `fbk_speechllm.inference`.
 
 ## Rescoring ST output with COMET/MetricX
 
