@@ -65,8 +65,10 @@ class SmurfAPI(BatchedSpeechAPI):
         config: GenerateConfig = GenerateConfig(),
         model_config_override: str | None = None,
         device: str | None = None,
+        device_map: str | None = None,
         dtype: str = "bfloat16",
         map_location: str | None = None,
+        device_map_reserve: float = 0.35,
         batch_size: int = DEFAULT_BATCH_SIZE,
         audio_placement: str = "suffix",
         num_beams: int = 1,
@@ -86,12 +88,18 @@ class SmurfAPI(BatchedSpeechAPI):
                 use in place of the one stored in the checkpoint -- the
                 ``hparams.yaml`` shape that NeMo's ``exp_manager`` writes. Same
                 key as SMURF's own inference config.
-            device: Torch device. Defaults to CUDA when available.
+            device: Torch device. Defaults to CUDA when available. Mutually
+                exclusive with device_map.
+            device_map: ``"auto"`` shards the checkpoint across every visible
+                CUDA device instead of loading it onto one. Mutually exclusive with device.
             dtype: Compute dtype the weights are cast to.
             map_location: Where to materialise the checkpoint while loading.
-                Left unset by default, matching ``fbk_speechllm.inference``;
-                ``cpu`` is the useful override when the saved device is not
-                the device being loaded onto.
+                Left unset by default, matching ``fbk_speechllm.inference``,
+                which loads the weights straight back onto the device they
+                were saved from.
+            device_map_reserve: Fraction of each GPU's free memory left
+                unassigned to weights when *device_map* is ``"auto"``, for
+                activations and the KV cache during generation.
             batch_size: Samples per forward pass. Also the concurrency inspect
                 is allowed, since more in flight than fit in a batch only adds
                 queueing.
@@ -109,7 +117,10 @@ class SmurfAPI(BatchedSpeechAPI):
             **model_args: Forwarded to the checkpoint loader.
 
         Raises:
-            ValueError: If *audio_placement* is not one of :data:`AUDIO_PLACEMENTS`.
+            ValueError: If *audio_placement* is not one of :data:`AUDIO_PLACEMENTS`,
+                if *device* and *device_map* are both given, if *device_map* is
+                given and is not ``"auto"``, or if it's given alongside a
+                *map_location* other than ``"cpu"``.
         """
         super().__init__(model_name, base_url, api_key, config, batch_size=batch_size)
 
@@ -117,24 +128,52 @@ class SmurfAPI(BatchedSpeechAPI):
             raise ValueError(
                 f"audio_placement must be one of {AUDIO_PLACEMENTS}, got {audio_placement!r}."
             )
+        if device is not None and device_map is not None:
+            raise ValueError(
+                "device and device_map are mutually exclusive: device pins the whole model on "
+                "one device, device_map shards it across several."
+            )
+        if device_map is not None and device_map != "auto":
+            raise ValueError(f'device_map only supports "auto", got {device_map!r}.')
+        if device_map is not None and map_location not in (None, "cpu"):
+            raise ValueError(
+                f"device_map=\"auto\" loads the checkpoint on CPU before sharding it across GPUs; "
+                f"map_location must be \"cpu\" or left unset, not {map_location!r}."
+            )
 
         import torch
 
-        self.device = device or ("cuda" if torch.cuda.is_available() else "cpu")
         self.audio_placement = audio_placement
         self.num_beams = int(num_beams)
         self.use_model_defaults = use_model_defaults
         self.enable_thinking = enable_thinking
 
-        logger.info("Loading SMURF checkpoint from %s onto %s", model_name, self.device)
+        logger.info(
+            "Loading SMURF checkpoint from %s (%s)",
+            model_name,
+            "sharded across every visible GPU" if device_map else f"onto {device or 'cuda if available'}",
+        )
         self.model = _load_speechllm(
             model_name,
             model_config_override=model_config_override,
-            map_location=map_location,
+            map_location="cpu" if device_map else map_location,
             **model_args,
         )
-        self.model = self.model.to(getattr(torch, dtype) if isinstance(dtype, str) else dtype)
-        self.model = self.model.to(self.device)
+        target_dtype = getattr(torch, dtype) if isinstance(dtype, str) else dtype
+        if device_map:
+            # Shrink to bf16 first, still on CPU (cheap: no GPU involved), so
+            # _shard_across_devices measures and moves the small copy instead
+            # of the full-precision one.
+            self.model = self.model.to(dtype=target_dtype)
+            self.model = _shard_across_devices(self.model, reserve_fraction=device_map_reserve)
+            self.device = self.model.device
+        else:
+            # One call, not `.to(dtype).to(device)`: two calls would put the
+            # full-precision weights on the GPU first and only shrink them
+            # there, so a checkpoint that just fits at the target dtype OOMs
+            # before it ever gets that small.
+            self.device = device or ("cuda" if torch.cuda.is_available() else "cpu")
+            self.model = self.model.to(device=self.device, dtype=target_dtype)
         self.model.eval()
 
         self.audio_locator_tag = self.model.audio_locator_tag
@@ -196,6 +235,115 @@ class SmurfAPI(BatchedSpeechAPI):
             pad_token_id=self.model.text_pad_id,
             **_generation_kwargs(config, num_beams=self.num_beams),
         )
+
+
+# These modules must all land on the same GPU as the LLM's decoder layer 0. This is due to how HF-s generate() picks devices for its own
+_ANCHOR_MODULES = ("embed_tokens", "perception", "llm.lm_head", "llm.model.norm", "llm.model.rotary_emb")
+
+
+def _plan_device_map(
+    anchor_names: list[str], anchor_bytes: int, layer_bytes: list[int], budgets: list[int]
+) -> dict[str, int]:
+    """Decide which GPU every anchor module and every decoder layer goes on.
+
+    Pure arithmetic: we are just looking at the sizes of modules and the available budgets to decide placement, without touching any actual GPUs.
+
+    Args:
+        anchor_names: Dotted attribute paths of the modules that must all
+            share one device (:data:`_ANCHOR_MODULES`, filtered to what the
+            loaded model actually has).
+        anchor_bytes: Combined size of those modules, in bytes.
+        layer_bytes: Size of each decoder layer, in order, in bytes.
+        budgets: Bytes available for weights on each GPU, in device order --
+            already net of whatever headroom the caller wants reserved.
+
+    Returns:
+        A ``dispatch_model``-shaped device map: every anchor name and every
+        ``llm.model.layers.{i}`` mapped to a GPU index.
+    """
+    device_map = {name: 0 for name in anchor_names}
+    device, budget_left = 0, budgets[0] - anchor_bytes
+    last_device = len(budgets) - 1
+    for i, size in enumerate(layer_bytes):
+        if size > budget_left and device < last_device:
+            device += 1
+            budget_left = budgets[device]
+        device_map[f"llm.model.layers.{i}"] = device
+        budget_left -= size
+    return device_map
+
+
+def _shard_across_devices(model, reserve_fraction: float = 0.35):
+    """Split a CPU-resident, already-cast SpeechLLM across every visible GPU.
+
+    NeMo's SALM has no ``device_map="auto"`` of its own, so this builds the
+    equivalent by hand, in five steps:
+
+    1. Weigh every anchor module and every decoder layer.
+    2. Check how much memory is actually *free* on each GPU right now, minus
+       a reserved cushion for activations and the KV cache during generation.
+    3. Hand those weights and budgets to :func:`_plan_device_map`, which
+       decides a GPU for every piece.
+    4. Move everything there for real with ``accelerate.dispatch_model``.
+    5. Patch ``.device`` by hand: ``dispatch_model`` moves each submodule
+       directly rather than through the model's own ``.to()``, so the
+       ``.device`` that Lightning normally keeps up to date via that override
+       is left stale, still pointing at wherever the model was before the
+       move.
+
+    Args:
+        model: The loaded SpeechLLM/SALM, on CPU and already at its final
+            compute dtype -- sharding measures module sizes to plan the split,
+            so it has to weigh what will actually occupy the GPUs.
+        reserve_fraction: Share of each GPU's *currently free* memory left
+            unassigned to weights, for activations and the KV cache during
+            generation. Free, not total, so this plays fair with anything
+            else already resident on a shared box.
+
+    Returns:
+        The model, dispatched across ``torch.cuda.device_count()`` GPUs (see
+        step 5 above for the ``.device`` patch).
+
+    Raises:
+        RuntimeError: If no CUDA device is visible.
+        AttributeError: If the loaded model's LLM is not shaped like a
+            standard HuggingFace decoder-only model (``model.llm.model.layers``).
+    """
+    import torch
+    from accelerate import dispatch_model
+
+    n_gpus = torch.cuda.device_count()
+    if n_gpus == 0:
+        raise RuntimeError('device_map="auto" needs at least one visible CUDA device to shard across.')
+
+    def module_bytes(m) -> int:
+        """How many bytes *m*'s parameters and buffers take up right now."""
+        return sum(p.numel() * p.element_size() for p in m.parameters()) + sum(
+            b.numel() * b.element_size() for b in m.buffers()
+        )
+
+    def get(dotted: str):
+        """Resolve a dotted name like "llm.model.norm" to the actual submodule."""
+        m = model
+        for part in dotted.split("."):
+            m = getattr(m, part)
+        return m
+
+    # Step 1: weigh the pieces (skip an anchor the model doesn't have -- some
+    # checkpoints may not carry every one of _ANCHOR_MODULES).
+    anchors = [name for name in _ANCHOR_MODULES if hasattr(model, name.split(".")[0])]
+    anchor_bytes = sum(module_bytes(get(name)) for name in anchors)
+    layer_bytes = [module_bytes(layer) for layer in model.llm.model.layers]
+    # Step 2: how much room is actually free on each GPU right now.
+    budgets = [int(torch.cuda.mem_get_info(i)[0] * (1 - reserve_fraction)) for i in range(n_gpus)]
+
+    # Step 3: get the plan, step 4: carry it out for real.
+    device_map = _plan_device_map(anchors, anchor_bytes, layer_bytes, budgets)
+    model = dispatch_model(model, device_map=device_map)
+    # Step 5: fix the stale `.device` -- point it at wherever the anchors
+    # (and so layer 0, always grouped with them) actually ended up.
+    model._device = next(get(anchors[0]).parameters()).device
+    return model
 
 
 def _load_speechllm(

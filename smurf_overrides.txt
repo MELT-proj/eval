@@ -1,0 +1,3 @@
+scipy>=1.11
+peft
+fiddle

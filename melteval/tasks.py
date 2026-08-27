@@ -17,6 +17,7 @@ from inspect_ai.solver import Solver
 
 from melteval.dataset import frozen_dataset, spec_dataset
 from melteval.registry import default_scorer
+from melteval.scorers import asr_scorer
 from melteval.solver import smurf_prompt, speech_prompt
 
 
@@ -42,6 +43,7 @@ def speech(
     tokenizer: str | None = None,
     instruction: str | None = None,
     prompt_config: str | None = None,
+    normalizer: str | None = None,
     scorer: Scorer | None = None,
     solver: Solver | None = None,
 ) -> Task:
@@ -75,18 +77,24 @@ def speech(
             not carry their own.
         prompt_config: ``smurf`` only. SMURF data/inference config to read the
             instruction (``tags.context``) from.
+        normalizer: ``task_filter="asr"`` only. Text normalizer for the WER/CER
+            scorer -- ``"basic"`` (default) and ``"english"`` both import
+            ``melt.evaluation``, which is not installed in a SMURF-only
+            environment (see "Environment" in docs/smurf-provider.md); pass
+            ``"none"`` there to score raw strings instead. See
+            :func:`melteval.scorers.get_normalizer`.
         scorer: Scorer to apply. Defaults to the task's registered scorer, or
             ``exact()`` (a plumbing check, not a real metric) when
-            *task_filter* is unset.
+            *task_filter* is unset. Mutually exclusive with *normalizer*.
         solver: Override the solver. Defaults to the one *prompt_style* selects.
 
     Returns:
         The configured task.
 
     Raises:
-        ValueError: If neither or both of *frozen_set* and *spec* are given.
-            There is no useful default: guessing which one was meant would
-            evaluate a different sample set than the caller asked for.
+        ValueError: If neither or both of *frozen_set* and *spec* are given;
+            if *normalizer* is given together with an explicit *scorer*, or
+            with a *task_filter* other than ``"asr"``.
     """
     if bool(frozen_set) == bool(spec):
         raise ValueError(
@@ -94,6 +102,23 @@ def speech(
             "`spec` (a source spec YAML, read live). "
             f"Got frozen_set={frozen_set!r}, spec={spec!r}."
         )
+    if normalizer is not None:
+        if scorer is not None:
+            raise ValueError(
+                "normalizer is ignored when scorer is given explicitly; pass it into your own "
+                "asr_scorer(normalizer=...) instead."
+            )
+        if task_filter != "asr":
+            raise ValueError(
+                f"normalizer configures the WER/CER scorer and only applies to task_filter='asr', "
+                f"got task_filter={task_filter!r}."
+            )
+    if scorer is not None:
+        resolved_scorer = scorer
+    elif normalizer is not None:
+        resolved_scorer = asr_scorer(normalizer=normalizer)
+    else:
+        resolved_scorer = default_scorer(task_filter)
 
     filters = {"task": task_filter, "lang": lang, "dataset_id": dataset_id, "limit": limit}
     dataset = (
@@ -122,7 +147,7 @@ def speech(
             instruction=instruction,
             prompt_config=prompt_config,
         ),
-        scorer=scorer or default_scorer(task_filter),
+        scorer=resolved_scorer,
         name=name,
     )
 
