@@ -1,11 +1,5 @@
-"""Tests for the model providers' message handling and config translation.
-
-These exercise the parts that don't need a loaded model: extracting the prompt
-and audio locator from a message (shared by every provider), and each
-provider's own translation of an inspect ``GenerateConfig`` into generation
-kwargs. The batching thread and the actual forward pass are covered by the
-end-to-end smoke test against a real checkpoint instead, since faking a
-transformers model would test the fake more than the code.
+"""
+Tests for the model providers' message handling and config translation, that is, extracting prompts and audio locators from messages and converting GenerateConfig into generation kwargs.
 """
 
 from dataclasses import dataclass, field
@@ -16,7 +10,7 @@ from inspect_ai.model import ChatMessageUser, ContentAudio, ContentData, Content
 from melteval.dataset import AUDIO_DATA_KEY
 from melteval.providers.base import _extract
 from melteval.providers.melt import _batched_audio, _generate_kwargs
-from melteval.providers.smurf import _collate_audio, _generation_kwargs, _with_audio_tag
+from melteval.providers.smurf import _collate_audio, _generation_kwargs, _plan_device_map, _with_audio_tag
 
 
 class TestExtract:
@@ -247,3 +241,54 @@ class TestSmurfCollateAudio:
         batch = [_FakeRequest(audio=[0.1], sample_rate=8000)]
         with pytest.raises(ValueError, match="8000"):
             _collate_audio(batch, 16000)
+
+
+class TestPlanDeviceMap:
+    """Pure placement arithmetic for `device_map="auto"` -- no CUDA needed.
+
+    Verified separately against a real checkpoint (a 9B-parameter LLM backbone
+    plus a Conformer speech encoder) sharded across two 24 GB GPUs: this is
+    the logic that made `generate()` stop crashing cross-device once the
+    anchors (embed_tokens, perception, the LLM's head/norm/rotary) were forced
+    onto the same GPU as decoder layer 0.
+    """
+
+    ANCHORS = ["embed_tokens", "perception", "llm.lm_head", "llm.model.norm"]
+
+    def test_anchors_all_land_on_device_zero(self):
+        device_map = _plan_device_map(self.ANCHORS, anchor_bytes=10, layer_bytes=[], budgets=[100])
+        assert all(device_map[name] == 0 for name in self.ANCHORS)
+
+    def test_layers_stay_on_device_zero_while_they_fit(self):
+        device_map = _plan_device_map(
+            self.ANCHORS, anchor_bytes=10, layer_bytes=[20, 20, 20], budgets=[100, 100]
+        )
+        assert [device_map[f"llm.model.layers.{i}"] for i in range(3)] == [0, 0, 0]
+
+    def test_overflow_moves_to_the_next_device(self):
+        """Anchors (10) + 3 layers of 20 leave only 30 free on device 0 -- the
+        4th layer doesn't fit and spills to device 1."""
+        device_map = _plan_device_map(
+            self.ANCHORS, anchor_bytes=10, layer_bytes=[20, 20, 20, 20], budgets=[70, 100]
+        )
+        assert [device_map[f"llm.model.layers.{i}"] for i in range(4)] == [0, 0, 0, 1]
+
+    def test_a_layer_bigger_than_every_budget_still_lands_somewhere(self):
+        """No device ever refuses a layer outright -- packing is best-effort;
+        an actual OOM at dispatch time is the real signal the model doesn't
+        fit, not a silent wrong placement here. With more than one device it
+        moves on to try the next one first, same as an ordinary overflow."""
+        device_map = _plan_device_map(self.ANCHORS, anchor_bytes=10, layer_bytes=[500], budgets=[100, 100])
+        assert device_map["llm.model.layers.0"] == 1
+
+    def test_the_last_device_absorbs_everything_left_once_reached(self):
+        """Once packing reaches the last device, later layers land there even
+        over budget -- there is nowhere else to spill to."""
+        device_map = _plan_device_map(
+            self.ANCHORS, anchor_bytes=10, layer_bytes=[20, 20, 20, 20, 20], budgets=[30, 40]
+        )
+        assert [device_map[f"llm.model.layers.{i}"] for i in range(5)] == [0, 1, 1, 1, 1]
+
+    def test_a_single_gpu_keeps_everything_on_device_zero(self):
+        device_map = _plan_device_map(self.ANCHORS, anchor_bytes=10, layer_bytes=[20, 20, 20], budgets=[1])
+        assert set(device_map.values()) == {0}

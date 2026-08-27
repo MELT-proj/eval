@@ -1,11 +1,4 @@
-"""Tests for the SMURF prompt path.
-
-Kept apart from ``test_prompt.py``, which skips itself without the training
-package: none of this may depend on ``melt-proj``. A SMURF checkpoint is
-evaluated in an environment built around NeMo, where MELT's stack is not
-installed and cannot be — that is the whole reason this path exists rather
-than reusing :func:`melteval.solver.speech_prompt`.
-"""
+"""Tests for the SMURF prompt handling in the melteval package."""
 
 import pytest
 
@@ -174,6 +167,65 @@ class TestPromptStyleSelection:
         config.write_text(ASR_INFERENCE_YAML, encoding="utf-8")
         with pytest.raises(ValueError, match="not both"):
             _prompt_solver("smurf", None, None, "Transcribe: ", str(config))
+
+
+class TestAsrNormalizerInASmurfOnlyEnvironment:
+    """The WER/CER scorer's default normalizer imports ``melt.evaluation`` --
+    fine for a MELT checkpoint, but a SMURF environment has no ``melt-proj``
+    installed at all (see the module docstring), so building the ``asr`` task
+    with its default scorer crashes before generation ever starts. ``-T
+    normalizer=none`` is the way out; these pin that it stays available and
+    that it doesn't leak into the tasks it doesn't apply to.
+    """
+
+    @pytest.fixture
+    def frozen(self, tmp_path):
+        from melteval.manifest import MANIFEST_NAME, AudioLocator, EvalRecord, write_manifest
+
+        write_manifest(
+            tmp_path / MANIFEST_NAME,
+            [
+                EvalRecord(
+                    sample_key="00-000000",
+                    task="asr",
+                    target="hello",
+                    audio=AudioLocator(kind="file", params={"path": "/tmp/a.wav"}),
+                    lang="en",
+                    dataset_id="librispeech",
+                    duration=2.0,
+                )
+            ],
+        )
+        return str(tmp_path)
+
+    def test_normalizer_none_builds_the_task_without_melt(self, frozen):
+        from melteval.tasks import asr
+
+        task = asr(frozen, prompt_style="smurf", instruction="Transcribe: ", normalizer="none")
+        assert task.name == "speech-asr"
+
+    @pytest.mark.skipif(HAS_MELT, reason="documents the failure this unblocks; only happens without melt-proj")
+    def test_the_default_normalizer_still_needs_melt(self, frozen):
+        """Documents the failure this unblocks, so it doesn't regress silently
+        back to `basic` becoming importable-and-wrong in this environment."""
+        from melteval.tasks import asr
+
+        with pytest.raises(ModuleNotFoundError, match="melt"):
+            asr(frozen, prompt_style="smurf", instruction="Transcribe: ")
+
+    def test_normalizer_is_rejected_for_st(self, frozen):
+        from melteval.tasks import st
+
+        with pytest.raises(ValueError, match="task_filter='asr'"):
+            st(frozen, normalizer="none")
+
+    def test_normalizer_conflicts_with_an_explicit_scorer(self, frozen):
+        from inspect_ai.scorer import exact
+
+        from melteval.tasks import asr
+
+        with pytest.raises(ValueError, match="ignored when scorer is given"):
+            asr(frozen, prompt_style="smurf", instruction="Transcribe: ", normalizer="none", scorer=exact())
 
 
 class TestSmurfSolverThroughRealInspect:
