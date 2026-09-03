@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import os
 import random
+import threading
 from pathlib import Path
 
 from melteval.manifest import AudioLocator, EvalRecord
@@ -211,9 +212,21 @@ class SharReader:
         return audio.astype(np.float32), int(cut.sampling_rate)
 
     def _cut_at(self, shar_dir: str, index: int, indexes_root=None):
-        """Return the cut at global *index*, reusing one open reader per dir."""
-        reader = _indexed_reader(shar_dir, str(indexes_root) if indexes_root else None)
-        return reader[index]
+        """Return the cut at global *index*, reusing one open reader per dir.
+
+        The reader's ``__getitem__`` does a bare ``seek`` + ``read`` against one
+        shared file handle with no locking of its own (lhotse's indexed shar
+        readers assume single-threaded access -- see the comment on
+        ``IndexedTarReader._fh`` about reopening per *process*, which says
+        nothing about threads). melt-eval's own provider calls this from
+        several threads at once, so the per-directory lock below is load
+        bearing: without it, concurrent seeks interleave and a read lands at
+        the wrong offset, which decodes as tar-header garbage
+        (`InvalidHeaderError: bad checksum`, MELT-proj/eval#2).
+        """
+        reader, lock = _indexed_reader(shar_dir, str(indexes_root) if indexes_root else None)
+        with lock:
+            return reader[index]
 
 
 def effective_text_field(cut, source_default: str) -> str:
@@ -256,37 +269,49 @@ def _reject_group_form(source_cfg, source_index: int) -> None:
 
 
 _READER_CACHE: dict[tuple[str, str | None], object] = {}
+_READER_LOCKS: dict[tuple[str, str | None], threading.Lock] = {}
+# Guards creation of cache/lock entries above, not reads through them -- held
+# only for the brief get-or-create below, never across a `reader[index]` call.
+_CACHE_LOCK = threading.Lock()
 
 
-def _indexed_reader(shar_dir: str, indexes_root: str | None):
+def _indexed_reader(shar_dir: str, indexes_root: str | None) -> tuple[object, threading.Lock]:
     """Open (once per directory) an indexed reader with O(1) random access.
+
+    Returns the reader alongside a per-directory lock. The reader's
+    ``__getitem__`` is not thread-safe (one shared, unsynchronized file handle
+    per shard -- see ``_cut_at``), so every caller must hold the lock for the
+    duration of a lookup; it is not enforced here because it must wrap the
+    lookup itself, not construction.
 
     Raises:
         RuntimeError: If the directory has no ``.idx`` sidecars, since without
             them every lookup would rescan the shard.
     """
     key = (shar_dir, indexes_root)
-    cached = _READER_CACHE.get(key)
-    if cached is not None:
-        return cached
+    with _CACHE_LOCK:
+        cached = _READER_CACHE.get(key)
+        if cached is not None:
+            return cached, _READER_LOCKS[key]
 
-    from lhotse import CutSet
+        from lhotse import CutSet
 
-    kwargs = {"in_dir": shar_dir, "shuffle_shards": False, "split_for_dataloading": False}
-    if indexes_root:
-        kwargs["indexes_root"] = indexes_root
-    reader = CutSet.from_shar(**kwargs).data
+        kwargs = {"in_dir": shar_dir, "shuffle_shards": False, "split_for_dataloading": False}
+        if indexes_root:
+            kwargs["indexes_root"] = indexes_root
+        reader = CutSet.from_shar(**kwargs).data
 
-    # Exposed as a property on some lhotse builds and a method on others.
-    access = getattr(reader, "has_constant_time_access", False)
-    if not (access() if callable(access) else access):
-        raise RuntimeError(
-            f"{shar_dir} has no .idx sidecars, so audio lookup would rescan a shard per sample. "
-            "Point at the indexed copy of the tree, or pass `indexes_root` for a plain tree "
-            "whose sidecars live elsewhere."
-        )
-    _READER_CACHE[key] = reader
-    return reader
+        # Exposed as a property on some lhotse builds and a method on others.
+        access = getattr(reader, "has_constant_time_access", False)
+        if not (access() if callable(access) else access):
+            raise RuntimeError(
+                f"{shar_dir} has no .idx sidecars, so audio lookup would rescan a shard per sample. "
+                "Point at the indexed copy of the tree, or pass `indexes_root` for a plain tree "
+                "whose sidecars live elsewhere."
+            )
+        _READER_CACHE[key] = reader
+        _READER_LOCKS[key] = threading.Lock()
+        return reader, _READER_LOCKS[key]
 
 
 register_reader(SharReader())

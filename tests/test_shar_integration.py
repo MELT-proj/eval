@@ -7,6 +7,7 @@ config names.
 """
 
 import os
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
 import pytest
@@ -101,6 +102,47 @@ class TestReferenceResolution:
             # get_tags_from_cut reports the *target* language as `lang` for st.
             assert record.lang == "en"
             assert record.source_text and record.source_text != record.target
+
+
+class TestConcurrentAccess:
+    """Regression test for MELT-proj/eval#2.
+
+    MELTAPI.generate() resolves audio for up to ``batch_size`` samples at once
+    via a thread pool, so several threads hit the same cached indexed reader
+    concurrently. That reader's ``__getitem__`` does a bare seek+read against
+    one shared file handle with no locking of its own -- lhotse assumes
+    single-threaded access. Without a lock in ``_cut_at``, concurrent lookups
+    interleave and a read lands at the wrong offset, decoding as tar-header
+    garbage (``InvalidHeaderError: bad checksum``).
+    """
+
+    def test_concurrent_cut_at_calls_do_not_corrupt_reads(self, tmp_path: Path):
+        out = tmp_path / "librispeech"
+        freeze(
+            _spec("librispeech/clean/test", max_samples=64,
+                  text_field="custom.pnc_text", tags={"task": "asr", "lang": "en"}),
+            out,
+        )
+        records = read_manifest(out / MANIFEST_NAME)
+        assert len(records) == 64
+
+        from melteval.readers.base import reader_for_locator
+
+        reader = reader_for_locator(records[0].audio)
+        shar_dir = records[0].audio.params["dir"]
+
+        # Every thread hammers the same directory's cached reader, several
+        # times over, so a real race has many chances to show up.
+        def resolve(record):
+            cut = reader._cut_at(shar_dir, record.audio.params["index"])
+            return record.cut_id, str(cut.id)
+
+        jobs = records * 4
+        with ThreadPoolExecutor(max_workers=8) as pool:
+            results = list(pool.map(resolve, jobs))
+
+        for expected_id, actual_id in results:
+            assert actual_id == expected_id
 
 
 class TestSubsetting:
