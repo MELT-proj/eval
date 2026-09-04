@@ -9,9 +9,14 @@
 ```bash
 uv venv --python 3.12
 source .venv/bin/activate
-uv pip install -e ../smurf/speechllm --override smurf_overrides.txt
+uv pip install -e ../speechllm --override smurf_overrides.txt
+uv pip install -r smurf_overrides.txt
 uv pip install -e ".[hf,metrics]"
 ```
+
+`--override` only pins packages the resolution already installs; it can't add new ones. `speechllm`'s `pyproject.toml` never requests `peft` or `fiddle` (they come with NeMo's unused `speechlm2` extra), so the override skips them; hence the second `uv pip install -r smurf_overrides.txt`, which installs them directly.
+
+`smurf_overrides.txt` also pins `nemo_toolkit<3.0.0`. `speechllm` only requires `>=2.7.0`, so an unpinned install picks 3.0.0, where `collate_conversation_audio_fault_tolerant` now demands a `load_audio` argument that upstream's `SpeechLLMInferenceDataset` doesn't pass — a `TypeError` on the first batch of `fbk_speechllm.inference`. `2.7.3` is the last release before that.
 
 ## 1.2 Unit tests
 
@@ -127,7 +132,7 @@ Knobs (environment variables, forwarded into the job):
 | `INSTRUCTION`             | `"Transcribe this English audio: "`          | prompt (must match upstream)                            |
 | `MAX_TOKENS`              | `128`                                        | generation cap on both sides                            |
 | `MELTEVAL_DEVICE_MAP`     | (one GPU)                                      | `auto` to shard the melteval side                     |
-| `SMURF_GEN_DIR`           | `../smurf/speechllm/working_config/generate` | dir of the upstream config                              |
+| `SMURF_GEN_DIR`           | `../speechllm/working_config/generate` | dir of the upstream config                              |
 | `WORK`                    | `runs`                                       | output root                                             |
 | `FORCE=1`                 | —                                             | redo steps already finished                             |
 | `FROM_STEP` / `TO_STEP` | `2` / `5`                                  | run a sub-range (e.g.`FROM_STEP=5` = re-compare only) |
@@ -163,7 +168,7 @@ DATA_PATH=$(pwd)/runs/crosscheck-smurf-cuts/cuts.jsonl.gz \
 OUTPUT_PATH=$(pwd)/runs/crosscheck-smurf/upstream.jsonl \
 sbatch --wait --nodes=1 --gpus-per-node=1 --partition=h100 --qos=<qos> \
   infra/crosscheck_upstream.sbatch \
-  $(pwd)/../smurf/speechllm/working_config/generate asr_inference \
+  $(pwd)/../speechllm/working_config/generate asr_inference \
   generation.max_new_tokens=128
 ```
 
@@ -174,7 +179,7 @@ MODEL_PATH=$(pwd)/data/checkpoints/step=2784-last.ckpt \
 DATA_PATH=$(pwd)/runs/crosscheck-smurf-cuts/cuts.jsonl.gz \
 OUTPUT_PATH=$(pwd)/runs/crosscheck-smurf/upstream.jsonl \
 python -m fbk_speechllm.inference \
-  --config-path $(pwd)/../smurf/speechllm/working_config/generate \
+  --config-path $(pwd)/../speechllm/working_config/generate \
   --config-name asr_inference \
   data.test_ds.batch_size=1 generation.max_new_tokens=128
 ```
@@ -224,7 +229,11 @@ python scripts/compare_crosscheck.py \
 Joins the two outputs (by `cut_id`/`id`, with a positional fallback) and reports:
 
 - exact matches;
-- a WER/CER between the two transcription sets, computed as if upstream's were the ground truth, i.e., the number is how far melteval's text has drifted from upstream's;
+- the **hyp-vs-hyp WER/CER**: a WER/CER between the two systems' hypotheses (not against a
+  reference transcript — there is no gold side here), computed as if upstream's hypothesis
+  were the ground truth. So the number is how far melteval's text has drifted from
+  upstream's; 0 means the two code paths produce identical output. It is an
+  implementation-equivalence check, not a measure of transcription accuracy;
 - and systematic-pattern flags (one hypothesis a prefix of the other; the instruction present in the answer; length off by >50 %). Shows the most divergent pairs with a colour word-level diff.
 
 Then it reports

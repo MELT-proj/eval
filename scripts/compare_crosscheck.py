@@ -155,9 +155,7 @@ def main() -> None:
     exact = sum(1 for _, m, u in pairs if m.strip() == u.strip())
     normalized = sum(1 for _, m, u in pairs if _norm(m) == _norm(u))
 
-    # Upstream is the "reference" side, so this reads as drift of melteval away
-    # from it. jiwer rejects an empty reference (same edge melteval's own
-    # asr_scorer excludes), so drop those pairs from the corpus figure.
+    # Upstream is the "reference" side, so this reads as drift of melteval away from it. jiwer rejects an empty reference (same edge melteval's own asr_scorer excludes), so drop those pairs from the corpus figure.
     scored = [(m, u) for _, m, u in pairs if u.strip()]
     n_empty_ref = len(pairs) - len(scored)
     if scored:
@@ -200,10 +198,15 @@ def main() -> None:
     print(f"match after normalizing: {pal.paint(str(normalized), 'bold')}  ({normalized / len(pairs):.1%})")
     if n_empty_ref:
         print(f"excluded (empty upstream hyp): {pal.paint(str(n_empty_ref), 'yellow')}")
+    print(pal.paint(
+        "  (hyp-vs-hyp = the two systems' outputs against each other, no reference "
+        "transcript; 0 = identical. An implementation-equivalence check, not accuracy.)",
+        "dim",
+    ))
     print(f"hyp-vs-hyp WER:           {pal.paint(f'{corpus_wer:.4f}', wer_colour, 'bold')}")
     print(f"hyp-vs-hyp CER:           {corpus_cer:.4f}")
     print()
-    print("systematic-pattern flags (any non-zero = investigate, likely a prompt-assembly bug):")
+    print("systematic-pattern flags:")
     print(_count("one hyp a prefix of the other (truncation):", truncations))
     print(_count("instruction echoed into the answer:        ", echoes))
     print(_count("length differs by >50%:                    ", length_outliers))

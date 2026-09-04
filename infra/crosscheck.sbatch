@@ -27,7 +27,7 @@
 #
 # Optional env (forwarded to scripts/run_crosscheck.sh):
 #   CONFIG               freeze config      [configs/librispeech-hf-smoke.yaml]
-#   SMURF_GEN_DIR        upstream gen-config dir  [../smurf/speechllm/working_config/generate]
+#   SMURF_GEN_DIR        upstream gen-config dir  [../speechllm/working_config/generate]
 #   SMURF_GEN_NAME       --config-name            [asr_inference]
 #   INSTRUCTION          prompt text        ["Transcribe this English audio: "]
 #   MAX_TOKENS           generation cap     [128]

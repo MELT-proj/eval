@@ -7,6 +7,8 @@
 #   3. python -m fbk_speechllm.inference             (GPU)
 #   4. inspect eval  melteval/tasks.py@asr           (GPU)
 #   5. scripts/compare_crosscheck.py                 (CPU, always local)
+#        + scripts/score_asr.py: WER/CER of *each* side against the frozen
+#          set's gold transcripts (informational; not part of the verdict).
 #
 # Two GPU modes:
 #   local   (default)   -- run steps 3 and 4 here, in the current venv.
@@ -25,10 +27,12 @@
 #
 # Knobs (env):
 #   CONFIG               melteval freeze config            [configs/librispeech-hf-smoke.yaml]
-#   SMURF_GEN_DIR        dir with the upstream gen config  [../smurf/speechllm/working_config/generate]
+#   SMURF_GEN_DIR        dir with the upstream gen config  [../speechllm/working_config/generate]
 #   SMURF_GEN_NAME       --config-name for that config     [asr_inference]
 #   INSTRUCTION          prompt text (must match upstream) ["Transcribe this English audio: "]
 #   MAX_TOKENS           generation cap, both sides        [128]
+#   SCORE_NORMALIZER     normalizer for the step-5 accuracy table (lower |
+#                        basic | english | none; basic/english need `melt`)  [lower]
 #   MELTEVAL_DEVICE_MAP  "" (default) loads on one GPU; "auto" shards across all  [""]
 #   WORK                output root                        [runs]
 #   FORCE=1             redo steps whose output exists
@@ -61,10 +65,11 @@ run()     { printf '%s\n' "${DIM}\$ $*${X}"; "$@"; }
 # ------------------------------------------------------------------ config ----
 CONFIG="${CONFIG:-configs/librispeech-hf-smoke.yaml}"
 MODEL_CKPT="${1:-${MODEL_CKPT:-}}"
-SMURF_GEN_DIR="${SMURF_GEN_DIR:-$(pwd)/../smurf/speechllm/working_config/generate}"
+SMURF_GEN_DIR="${SMURF_GEN_DIR:-$(pwd)/../speechllm/working_config/generate}"
 SMURF_GEN_NAME="${SMURF_GEN_NAME:-asr_inference}"
 INSTRUCTION="${INSTRUCTION:-Transcribe this English audio: }"
 MAX_TOKENS="${MAX_TOKENS:-128}"
+SCORE_NORMALIZER="${SCORE_NORMALIZER:-lower}"
 WORK="${WORK:-runs}"
 FROM_STEP="${FROM_STEP:-2}"
 TO_STEP="${TO_STEP:-5}"
@@ -186,7 +191,11 @@ if (( FROM_STEP <= 4 && TO_STEP >= 4 )); then
     common_targs=(
         -T "frozen_set=$(pwd)/${FROZEN_DIR}"
         -T prompt_style=smurf
-        -T "instruction=${INSTRUCTION}"
+        # -T is parsed as YAML; INSTRUCTION contains ": " (colon-space), which
+        # YAML would otherwise read as a mapping, not a string (see
+        # docs/replication_notes.md) -- the embedded double quotes force it to
+        # parse as a plain string.
+        -T "instruction=\"${INSTRUCTION}\""
         -T normalizer=none
         --max-tokens "$MAX_TOKENS"
         -M batch_size=1
@@ -229,6 +238,20 @@ if (( WITH_UPSTREAM )) && (( FROM_STEP <= 5 && TO_STEP >= 5 )); then
     rc=$?
     set -e
 
+    # Accuracy of each side against the frozen set's gold transcripts. Purely
+    # informational -- the cross-check verdict is compare_crosscheck.py's alone
+    # (hyp-vs-hyp), so a failure here only drops the table, it does not flip rc.
+    section "5b · accuracy vs. gold  (same normalizer both sides)"
+    set +e
+    python scripts/score_asr.py \
+        --frozen-set "$FROZEN_DIR" \
+        --normalizer "$SCORE_NORMALIZER" \
+        "melteval=${EVAL_LOG}" \
+        "upstream=${UPSTREAM_OUT}"
+    score_rc=$?
+    set -e
+    (( score_rc == 0 )) || warn "score_asr.py exited ${score_rc}; accuracy table skipped (verdict unaffected)"
+
     echo
     if (( rc == 0 )); then
         printf '%s\n' "${B}${G}╔══════════════════════════════════════════════╗${X}"
@@ -247,4 +270,7 @@ ok "frozen set:  ${FROZEN_DIR}"
 ok "lhotse cuts: ${CUTS_DIR}/cuts.jsonl.gz"
 (( WITH_UPSTREAM )) && [[ -f "$UPSTREAM_OUT" ]] && ok "upstream:     ${UPSTREAM_OUT}"
 [[ -n "$EVAL_LOG" ]] && ok "eval log:     ${EVAL_LOG}"
-(( WITH_UPSTREAM )) || warn "upstream skipped: run compare later with scripts/compare_crosscheck.py"
+if (( ! WITH_UPSTREAM )); then
+    warn "upstream skipped: run compare later with scripts/compare_crosscheck.py"
+    [[ -n "$EVAL_LOG" ]] && info "melteval WER/CER vs gold:  python scripts/score_asr.py --frozen-set ${FROZEN_DIR} melteval=${EVAL_LOG}"
+fi

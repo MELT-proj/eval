@@ -395,6 +395,15 @@ def render_smurf_prompt(
             as a prompt with a literal ``{lang}`` in it, which no model was
             trained on and which every sample would still score against.
     """
+    if not isinstance(instruction, str):
+        raise ValueError(
+            f"SMURF instruction must be a string, got {type(instruction).__name__}: {instruction!r}. "
+            "If this came from -T instruction=..., inspect eval parses that value as YAML, and a "
+            "colon followed by a space (as in 'Transcribe this English audio: ') is read as a "
+            "mapping instead of text. Wrap it in literal double quotes so YAML sees a quoted "
+            'string, e.g. -T instruction="\\"Transcribe this English audio: \\""  (see '
+            "docs/replication_notes.md)."
+        )
     values = {
         "task": task,
         "lang_code": lang,

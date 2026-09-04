@@ -12,7 +12,7 @@
 #   OUTPUT_PATH=/abs/runs/crosscheck-smurf/upstream.jsonl \
 #   VENV_PATH=/path/to/venvs/smurf-eval/bin/activate \
 #   sbatch --gpus-per-node=1 --partition=h100 infra/crosscheck_upstream.sbatch \
-#     /abs/../smurf/speechllm/working_config/generate asr_inference \
+#     /abs/../speechllm/working_config/generate asr_inference \
 #     generation.max_new_tokens=128
 #
 # Positional args: <config-path> <config-name> [extra hydra overrides...]
