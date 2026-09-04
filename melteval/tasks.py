@@ -17,7 +17,16 @@ from inspect_ai.solver import Solver
 
 from melteval.dataset import frozen_dataset
 from melteval.registry import default_scorer
-from melteval.solver import speech_prompt
+from melteval.scorers import asr_scorer
+from melteval.solver import smurf_prompt, speech_prompt
+
+
+#: Model family whose prompt format a run uses, and the solver that builds it.
+#: Explicit rather than inferred from ``--model``: a task is constructed before
+#: the model is loaded, and this repo's rule is that the format is chosen in a
+#: place somebody can read, not derived. Mismatches are caught at generation
+#: time by :func:`melteval.solver._require_provider`.
+PROMPT_STYLES = ("melt", "smurf")
 
 
 @task
@@ -28,8 +37,12 @@ def speech(
     lang: str | None = None,
     dataset_id: str | None = None,
     limit: int | None = None,
+    prompt_style: str = "melt",
     format_config: str | None = None,
     tokenizer: str | None = None,
+    instruction: str | None = None,
+    prompt_config: str | None = None,
+    normalizer: str | None = None,
     scorer: Scorer | None = None,
     solver: Solver | None = None,
 ) -> Task:
@@ -42,26 +55,115 @@ def speech(
         lang: Restrict to one output language.
         dataset_id: Restrict to one corpus.
         limit: Take at most this many samples, in manifest order.
-        format_config: Training config to take the prompt format from. Defaults
-            to the checkpoint being evaluated.
-        tokenizer: Where to load the chat template from. Defaults to the
-            checkpoint being evaluated.
+        prompt_style: Which model family's prompt format to build — ``melt``
+            (default) or ``smurf``. Must match the ``--model`` provider.
+        format_config: ``melt`` only. Training config to take the prompt format
+            from. Defaults to the checkpoint being evaluated.
+        tokenizer: ``melt`` only. Where to load the chat template from.
+            Defaults to the checkpoint being evaluated.
+        instruction: ``smurf`` only. Fixed instruction text for samples that do
+            not carry their own.
+        prompt_config: ``smurf`` only. SMURF data/inference config to read the
+            instruction (``tags.context``) from.
+        normalizer: ``task_filter="asr"`` only. Text normalizer for the WER/CER
+            scorer -- ``"basic"`` (default) and ``"english"`` both import
+            ``melt.evaluation``, which is not installed in a SMURF-only
+            environment (see "Environment" in docs/smurf-provider.md); pass
+            ``"none"`` there to score raw strings instead. See
+            :func:`melteval.scorers.get_normalizer`.
         scorer: Scorer to apply. Defaults to the task's registered scorer, or
             ``exact()`` (a plumbing check, not a real metric) when
-            *task_filter* is unset.
-        solver: Override the solver. Defaults to :func:`speech_prompt`.
+            *task_filter* is unset. Mutually exclusive with *normalizer*.
+        solver: Override the solver. Defaults to the one *prompt_style* selects.
 
     Returns:
         The configured task.
+
+    Raises:
+        ValueError: If *normalizer* is given together with an explicit
+            *scorer*, or with a *task_filter* other than ``"asr"``.
     """
+    if normalizer is not None:
+        if scorer is not None:
+            raise ValueError(
+                "normalizer is ignored when scorer is given explicitly; pass it into your own "
+                "asr_scorer(normalizer=...) instead."
+            )
+        if task_filter != "asr":
+            raise ValueError(
+                f"normalizer configures the WER/CER scorer and only applies to task_filter='asr', "
+                f"got task_filter={task_filter!r}."
+            )
+    if scorer is not None:
+        resolved_scorer = scorer
+    elif normalizer is not None:
+        resolved_scorer = asr_scorer(normalizer=normalizer)
+    else:
+        resolved_scorer = default_scorer(task_filter)
+
     return Task(
         dataset=frozen_dataset(
             frozen_set, task=task_filter, lang=lang, dataset_id=dataset_id, limit=limit
         ),
-        solver=solver or speech_prompt(format_config=format_config, tokenizer=tokenizer),
-        scorer=scorer or default_scorer(task_filter),
+        solver=solver
+        or _prompt_solver(
+            prompt_style,
+            format_config=format_config,
+            tokenizer=tokenizer,
+            instruction=instruction,
+            prompt_config=prompt_config,
+        ),
+        scorer=resolved_scorer,
         name=f"speech-{task_filter or 'all'}",
     )
+
+
+def _prompt_solver(
+    prompt_style: str,
+    format_config: str | None,
+    tokenizer: str | None,
+    instruction: str | None,
+    prompt_config: str | None,
+) -> Solver:
+    """Build the prompt solver for *prompt_style*.
+
+    Arguments belonging to the other style are rejected rather than ignored: a
+    ``-T format_config=...`` silently dropped from a SMURF run looks exactly
+    like one that was honoured, and the whole point of naming the config is to
+    know which one shaped the result.
+
+    Raises:
+        ValueError: If *prompt_style* is unknown, or an argument belongs to a
+            different style.
+    """
+    if prompt_style not in PROMPT_STYLES:
+        raise ValueError(f"Unknown prompt_style {prompt_style!r}; expected one of {PROMPT_STYLES}.")
+
+    given = {
+        "format_config": format_config,
+        "tokenizer": tokenizer,
+        "instruction": instruction,
+        "prompt_config": prompt_config,
+    }
+    belongs_to = {
+        "format_config": "melt",
+        "tokenizer": "melt",
+        "instruction": "smurf",
+        "prompt_config": "smurf",
+    }
+    misplaced = [
+        name for name, value in given.items() if value is not None and belongs_to[name] != prompt_style
+    ]
+    if misplaced:
+        raise ValueError(
+            f"{', '.join(sorted(misplaced))} {'belongs' if len(misplaced) == 1 else 'belong'} to "
+            f"prompt_style={belongs_to[misplaced[0]]!r}, but this task is running "
+            f"prompt_style={prompt_style!r}."
+        )
+
+    if prompt_style == "smurf":
+        return smurf_prompt(instruction=instruction, prompt_config=prompt_config)
+    return speech_prompt(format_config=format_config, tokenizer=tokenizer)
 
 
 @task

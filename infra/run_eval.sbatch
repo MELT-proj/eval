@@ -14,20 +14,29 @@
 #
 # Usage (host side, from the repo root):
 #   VENV_PATH=/path/to/venv/bin/activate OUTPUT_DIR=/path/to/eval-logs \
-#     sbatch [slurm flags] infra/run_eval.sbatch <checkpoint_dir> <frozen_set_dir> [inspect eval args...]
+#     sbatch [slurm flags] infra/run_eval.sbatch <checkpoint> <frozen_set_dir> [inspect eval args...]
 #
 # Example:
 #   sbatch infra/run_eval.sbatch \
 #     /mnt/scratch-artemis/giuseppe/melt-data/outputs/MA-v1.2.7 \
 #     /mnt/scratch-artemis/giuseppe/melt-data/eval-sets/asr-test-v1 \
 #     -T task_filter=asr -M batch_size=16
+#
+# MELTEVAL_PROVIDER picks the model family (default `melt`); it also selects
+# the matching prompt format, since the two must agree. A SMURF checkpoint is
+# a single Lightning .ckpt rather than a directory, and its stack (NeMo +
+# fbk_speechllm) does not co-install with MELT's, so it needs its own venv too:
+#
+#   MELTEVAL_PROVIDER=smurf VENV_PATH=/path/to/venvs/smurf-eval/bin/activate \
+#     infra/runners/submit_eval.sh artemis /path/to/model.ckpt /path/to/frozen-set \
+#     -T instruction="Transcribe this English audio: "
 
 set -euo pipefail
 
 echo "[run_eval] host-side setup for run_eval.sbatch"
 
 if [[ -z "${1:-}" || -z "${2:-}" ]]; then
-    echo "Usage: sbatch $0 <checkpoint_dir> <frozen_set_dir> [inspect eval args...]"
+    echo "Usage: sbatch $0 <checkpoint> <frozen_set_dir> [inspect eval args...]"
     echo "Example: sbatch $0 /path/to/outputs/MA-v1.2.7 /path/to/eval-sets/asr-test-v1 -T task_filter=asr"
     exit 2
 fi
@@ -35,6 +44,7 @@ CHECKPOINT="$1"
 FROZEN_SET="$2"
 shift 2
 EXTRA_ARGS=("$@")
+PROVIDER="${MELTEVAL_PROVIDER:-melt}"
 
 VENV_PATH="${VENV_PATH:-}"
 if [[ -z "${VENV_PATH}" ]]; then
@@ -49,8 +59,10 @@ if [[ ! -f "${VENV_PATH}" ]]; then
     exit 2
 fi
 
-if [[ ! -d "${CHECKPOINT}" ]]; then
-    echo "ERROR: checkpoint directory not found: ${CHECKPOINT}"
+# A MELT checkpoint is a directory; a SMURF one is a .ckpt file (or a
+# save_pretrained directory), so accept either and let the provider judge.
+if [[ ! -e "${CHECKPOINT}" ]]; then
+    echo "ERROR: checkpoint not found: ${CHECKPOINT}"
     exit 2
 fi
 if [[ ! -d "${FROZEN_SET}" ]]; then
@@ -62,7 +74,14 @@ fi
 OUTPUT_DIR="${OUTPUT_DIR:-./eval-logs}"
 mkdir -p "${OUTPUT_DIR}" logs
 
+# The prompt format has to match the checkpoint family, so it follows the
+# provider unless the caller said otherwise (e.g. to run a deliberate mismatch).
+if [[ ! " ${EXTRA_ARGS[*]:-} " == *"prompt_style="* ]]; then
+    EXTRA_ARGS+=(-T "prompt_style=${PROVIDER}")
+fi
+
 echo "[run_eval] venv:       ${VENV_PATH}"
+echo "[run_eval] provider:   ${PROVIDER}"
 echo "[run_eval] checkpoint: ${CHECKPOINT}"
 echo "[run_eval] frozen set: ${FROZEN_SET}"
 echo "[run_eval] output dir: ${OUTPUT_DIR}"
@@ -78,7 +97,7 @@ if [[ ! -f melteval/tasks.py ]]; then
 fi
 
 exec inspect eval melteval/tasks.py@speech \
-    --model "melt/${CHECKPOINT}" \
+    --model "${PROVIDER}/${CHECKPOINT}" \
     --log-dir "${OUTPUT_DIR}" \
     -T "frozen_set=${FROZEN_SET}" \
     "${EXTRA_ARGS[@]}"

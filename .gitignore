@@ -17,3 +17,6 @@ frozen/
 
 # Project notebook, as in the training repo.
 history/
+data/checkpoints
+_my_docs
+checkpoints
