@@ -1,3 +1,4 @@
 scipy>=1.11
 peft
 fiddle
+nemo_toolkit<3.0.0
