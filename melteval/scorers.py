@@ -41,6 +41,8 @@ BLEU/chrF, with a per-language breakdown, with no extra flags.
 
 from __future__ import annotations
 
+import re
+
 from inspect_ai.scorer import (
     Metric,
     SampleScore,
@@ -48,9 +50,11 @@ from inspect_ai.scorer import (
     Scorer,
     Target,
     Value,
+    accuracy,
     grouped,
     metric,
     scorer,
+    stderr,
 )
 from inspect_ai.solver import TaskState
 
@@ -302,5 +306,467 @@ def st_scorer() -> Scorer:
             answer=hypothesis,
             metadata={"reference": reference, "hypothesis": hypothesis},
         )
+
+    return score
+
+
+# =============================================================================
+# Chunked ASR / ST: many short generations scored against one long reference
+# =============================================================================
+
+
+def _grouped_pairs(scores: list[SampleScore]) -> list[tuple[str, str]]:
+    """Reassemble chunk-level completions into one (hypothesis, reference) pair per group.
+
+    Some corpora already give one sample one reference. Others -- MCIF's
+    ``short`` track, for one -- cut a long recording into several samples that
+    the model transcribes independently, and define the reference over the
+    whole thing; scoring it means joining those completions back together, in
+    order, before comparing to that one reference. A sample without grouping
+    metadata is its own group of one, so this degrades to plain per-sample
+    pairing when nothing upstream needs grouping at all.
+
+    The group key is ``(dataset_id, group_id)``, not ``group_id`` alone,
+    because two corpora scored in the same run could otherwise collide on the
+    same group label by coincidence.
+
+    Raises:
+        ValueError: If a group's members disagree on the reference text --
+            that would mean two chunks were placed in the same group by
+            mistake, since every member of a real group is scored against the
+            same whole-reference string.
+    """
+    groups: dict[tuple[str, str], list[tuple[float, str, str]]] = {}
+    for s in scores:
+        meta = s.sample_metadata or {}
+        group_id = meta.get("group_id", s.sample_id)
+        key = (str(meta.get("dataset_id", "")), str(group_id))
+        order = meta.get("group_order", 0)
+        groups.setdefault(key, []).append(
+            (order, s.score.metadata["hypothesis"], s.score.metadata["reference"])
+        )
+
+    pairs = []
+    for key, members in groups.items():
+        members.sort(key=lambda m: m[0])
+        references = {ref for _, _, ref in members}
+        if len(references) > 1:
+            raise ValueError(
+                f"Group {key!r} has {len(references)} distinct references: "
+                f"{sorted(references)}. Every chunk in a group must be scored against the "
+                "same reference."
+            )
+        hypothesis = " ".join(hyp for _, hyp, _ in members)
+        pairs.append((hypothesis, next(iter(references))))
+    return pairs
+
+
+@metric
+def chunked_wer() -> Metric:
+    """Corpus WER over grouped (not raw) hypothesis/reference pairs."""
+
+    def calculate(scores: list[SampleScore]) -> Value:
+        import jiwer
+
+        normalize = get_normalizer("english")
+        total_errors = total_words = 0
+        for hypothesis, reference in _grouped_pairs(scores):
+            ref_n, hyp_n = normalize(reference), normalize(hypothesis)
+            if not ref_n.strip():
+                continue
+            words = jiwer.process_words([ref_n], [hyp_n])
+            total_errors += words.substitutions + words.deletions + words.insertions
+            total_words += words.substitutions + words.deletions + words.hits
+        return total_errors / total_words if total_words > 0 else 0.0
+
+    return calculate
+
+
+@metric
+def chunked_cer() -> Metric:
+    """Corpus CER over grouped (not raw) hypothesis/reference pairs."""
+
+    def calculate(scores: list[SampleScore]) -> Value:
+        import jiwer
+
+        normalize = get_normalizer("english")
+        total_errors = total_chars = 0
+        for hypothesis, reference in _grouped_pairs(scores):
+            ref_n, hyp_n = normalize(reference), normalize(hypothesis)
+            if not ref_n.strip():
+                continue
+            chars = jiwer.process_characters([ref_n], [hyp_n])
+            total_errors += chars.substitutions + chars.deletions + chars.insertions
+            total_chars += chars.substitutions + chars.deletions + chars.hits
+        return total_errors / total_chars if total_chars > 0 else 0.0
+
+    return calculate
+
+
+@scorer(
+    metrics=[
+        chunked_wer(),
+        chunked_cer(),
+        grouped(chunked_wer(), "dataset_id", all=False, name_template="wer_{group_name}"),
+        grouped(chunked_cer(), "dataset_id", all=False, name_template="cer_{group_name}"),
+    ]
+)
+def chunked_asr_scorer() -> Scorer:
+    """ASR scorer for corpora where a reference can span several samples.
+
+    Each sample is scored for its own record only in the sense of carrying its
+    completion forward -- the actual WER/CER is computed once per group by
+    :func:`chunked_wer` / :func:`chunked_cer`, which reassemble each group's
+    completions in order before comparing to its reference. Normalization is
+    fixed to ``"english"``: this scorer exists for MCIF, whose grouped ASR
+    reference is only ever produced for an English target.
+
+    Returns:
+        A scorer whose ``Score.metadata`` carries ``{reference, hypothesis}``,
+        matching :func:`st_scorer`'s shape for the same reason: corpus WER is
+        not the mean of per-sample rates, so nothing meaningful is computed
+        per sample here.
+    """
+
+    async def score(state: TaskState, target: Target) -> Score:
+        hypothesis = state.output.completion
+        reference = target.text
+        return Score(
+            value={"hyp_tokens": len(hypothesis.split()), "ref_tokens": len(reference.split())},
+            answer=hypothesis,
+            metadata={"reference": reference, "hypothesis": hypothesis},
+        )
+
+    return score
+
+
+@metric
+def chunked_bleu() -> Metric:
+    """Corpus BLEU over grouped (not raw) hypothesis/reference pairs."""
+
+    def calculate(scores: list[SampleScore]) -> Value:
+        import sacrebleu
+
+        pairs = _grouped_pairs(scores)
+        if not pairs:
+            return 0.0
+        tokenizer = BLEU_TOKENIZER_BY_LANG.get(_target_lang(scores).lower(), "13a")
+        bleu = sacrebleu.BLEU(tokenize=tokenizer)
+        result = bleu.corpus_score([h for h, _ in pairs], [[r for _, r in pairs]])
+        return result.score
+
+    return calculate
+
+
+@metric
+def chunked_chrf() -> Metric:
+    """Corpus chrF++ over grouped (not raw) hypothesis/reference pairs."""
+
+    def calculate(scores: list[SampleScore]) -> Value:
+        import sacrebleu
+
+        pairs = _grouped_pairs(scores)
+        if not pairs:
+            return 0.0
+        chrf = sacrebleu.CHRF(word_order=2)
+        result = chrf.corpus_score([h for h, _ in pairs], [[r for _, r in pairs]])
+        return result.score
+
+    return calculate
+
+
+@scorer(
+    metrics=[
+        chunked_bleu(),
+        chunked_chrf(),
+        grouped(chunked_bleu(), "dataset_id", all=False, name_template="bleu_{group_name}"),
+        grouped(chunked_chrf(), "dataset_id", all=False, name_template="chrf_{group_name}"),
+    ]
+)
+def chunked_st_scorer() -> Scorer:
+    """ST scorer for corpora where a reference can span several samples.
+
+    See :func:`chunked_asr_scorer` -- same shape, BLEU/chrF instead of WER/CER.
+    This reports the same corpus BLEU/chrF :func:`st_scorer` does, over
+    reassembled groups rather than raw samples; it is not the paper metric for
+    a benchmark like MCIF, which scores translation with COMET after a
+    sentence-resegmentation step this harness does not perform (see
+    ``melteval/rescore.py`` -- neural MT metrics live in their own venv, and
+    the same applies here).
+
+    Returns:
+        A scorer whose ``Score.metadata`` carries ``{reference, hypothesis}``.
+    """
+
+    async def score(state: TaskState, target: Target) -> Score:
+        hypothesis = state.output.completion
+        reference = target.text
+        return Score(
+            value={"hyp_tokens": len(hypothesis.split()), "ref_tokens": len(reference.split())},
+            answer=hypothesis,
+            metadata={"reference": reference, "hypothesis": hypothesis},
+        )
+
+    return score
+
+
+# =============================================================================
+# Multiple choice: accuracy, and how often an answer could be read at all
+# =============================================================================
+
+#: Leading "B", "B.", "(b)", "b:" and friends. Anchored, because a letter
+#: found anywhere in a sentence is usually a word ("a bird"), not an answer.
+_LEADING_LABEL = re.compile(r"^\W*([a-z])\s*(?:[.):\-]|$)", re.IGNORECASE)
+
+#: A label the completion *ends* on -- "The answer is B." Case-sensitive on
+#: purpose, and that is the whole guard: an isolated lowercase letter at the
+#: end of a sentence is usually the article "a", while a model announcing its
+#: choice writes it capitalised. Without this, a model that answers in the
+#: most natural way there is scores zero and looks like it cannot follow the
+#: prompt.
+_TRAILING_LABEL = re.compile(r"(?:^|\W)\(?([A-Z])\)?\.?\s*$")
+
+_PUNCTUATION = re.compile(r"[^\w\s]", re.UNICODE)
+_WHITESPACE = re.compile(r"\s+")
+
+
+def _normalize_choice_text(text: str) -> str:
+    """Casefold, drop punctuation and collapse whitespace, for comparison only."""
+    return _WHITESPACE.sub(" ", _PUNCTUATION.sub(" ", text.casefold())).strip()
+
+
+def _mentions(haystack: str, needle: str) -> bool:
+    """Whether *needle* appears in *haystack* as a whole word.
+
+    A plain substring test is wrong here in a way that is easy to miss and
+    hard to see in a score: "Male" is a substring of "female", so an answer of
+    "female" matched both options of a gender question, resolved to neither,
+    and was counted as an unreadable completion.
+    """
+    return re.search(rf"(?<!\w){re.escape(needle)}(?!\w)", haystack) is not None
+
+
+def resolve_choice(completion: str, choices: list[str]) -> str | None:
+    """Read which option *completion* picked, or ``None`` if it picked none.
+
+    Tried in order, most explicit first:
+
+    1. a leading option label (``"B"``, ``"B."``, ``"(b)"``);
+    2. a capitalised label the completion ends on ("The answer is B.");
+    3. the whole completion equal to one option's text;
+    4. exactly one option's text appearing somewhere in the completion.
+
+    Step 4 requires the match to be *unique*: a model that echoes the full
+    option list has not answered, and crediting it with the first option it
+    happens to mention would turn a non-answer into a coin flip weighted by
+    option order.
+
+    Args:
+        completion: What the model generated.
+        choices: The sample's options, in the order they were presented.
+
+    Returns:
+        The chosen option's text, or ``None`` if no single option was picked.
+    """
+    if not choices:
+        return None
+
+    stripped = completion.strip()
+
+    for pattern, search in ((_LEADING_LABEL, False), (_TRAILING_LABEL, True)):
+        label = pattern.search(stripped) if search else pattern.match(stripped)
+        if label:
+            position = ord(label.group(1).upper()) - ord("A")
+            if 0 <= position < len(choices):
+                return choices[position]
+
+    normalized = _normalize_choice_text(stripped)
+    if not normalized:
+        return None
+
+    normalized_choices = [_normalize_choice_text(choice) for choice in choices]
+
+    for choice, normalized_choice in zip(choices, normalized_choices):
+        if normalized_choice and normalized == normalized_choice:
+            return choice
+
+    contained = [
+        choice
+        for choice, normalized_choice in zip(choices, normalized_choices)
+        if normalized_choice and _mentions(normalized, normalized_choice)
+    ]
+    if len(contained) == 1:
+        return contained[0]
+
+    return None
+
+
+@metric
+def choice_accuracy() -> Metric:
+    """Share of samples whose chosen option matches the reference."""
+
+    def calculate(scores: list[SampleScore]) -> Value:
+        if not scores:
+            return 0.0
+        return sum(s.score.value["correct"] for s in scores) / len(scores)
+
+    return calculate
+
+
+@metric
+def unresolved_rate() -> Metric:
+    """Share of completions no single option could be read out of.
+
+    Reported alongside accuracy rather than folded into it, because the two
+    failures are not the same thing and the fix is not the same either. A model
+    that answers "D" and is wrong scores 0 here and so does one that recites a
+    paragraph, but only the second is telling you the prompt never asked for a
+    letter in a form it understood.
+    """
+
+    def calculate(scores: list[SampleScore]) -> Value:
+        if not scores:
+            return 0.0
+        return sum(1 - s.score.value["resolved"] for s in scores) / len(scores)
+
+    return calculate
+
+
+@scorer(
+    metrics=[
+        choice_accuracy(),
+        unresolved_rate(),
+        grouped(choice_accuracy(), "dataset_id", all=False, name_template="accuracy_{group_name}"),
+    ]
+)
+def mcq_scorer() -> Scorer:
+    """Score a multiple-choice answer by which option the model picked.
+
+    The reference is the option's **text**, not its label: benchmarks that ship
+    their options as columns (AIR-Bench's ``choice_a``…``choice_d``) give the
+    right answer the same way, and the letter a given option gets is an
+    artefact of the order this harness rendered them in.
+
+    Returns:
+        A scorer whose ``Score.value`` carries ``{correct, resolved}`` as 0/1
+        counters — the two things :func:`choice_accuracy` and
+        :func:`unresolved_rate` reduce over. The completion and the option it
+        resolved to go in ``Score.metadata``, which is not put through
+        inspect's numeric epoch reduction (see the module docstring).
+    """
+
+    async def score(state: TaskState, target: Target) -> Score:
+        completion = state.output.completion
+        choices = [choice.value for choice in state.choices] if state.choices else []
+        chosen = resolve_choice(completion, choices)
+
+        correct = chosen is not None and _normalize_choice_text(chosen) == _normalize_choice_text(
+            target.text
+        )
+        return Score(
+            value={"correct": int(correct), "resolved": int(chosen is not None)},
+            answer=completion,
+            explanation=(
+                None
+                if chosen is not None
+                else "No option could be read out of the completion; counted as incorrect."
+            ),
+            metadata={"chosen": chosen, "reference": target.text, "completion": completion},
+        )
+
+    return score
+
+
+# =============================================================================
+# Open-ended audio chat: graded by a judge model
+# =============================================================================
+
+#: Sent to the judge. Deliberately hands over the reference answer: the judge
+#: cannot hear the audio, so without it there is nothing to grade against and
+#: the "score" would be a fluency rating.
+CHAT_GRADER_TEMPLATE = """You are grading a model's answer to a question about an audio clip.
+You cannot hear the audio. Grade only against the reference answer, which was
+written by someone who could.
+
+Question put to the model:
+{question}
+
+Reference answer:
+{criterion}
+
+The model's answer:
+{answer}
+
+{instructions}"""
+
+CHAT_GRADER_INSTRUCTIONS = """Decide how well the model's answer agrees with the reference.
+Differences in wording, length or style do not matter; differences in what is
+claimed about the audio do. An answer that is merely fluent, or that answers a
+different question, is incorrect.
+
+First explain your reasoning in one or two sentences. Then, on the last line,
+write exactly one of:
+
+GRADE: C   (agrees with the reference)
+GRADE: P   (partially agrees -- right about some of it, wrong or silent about the rest)
+GRADE: I   (disagrees with the reference, or does not answer)"""
+
+
+NO_JUDGE_MESSAGE = (
+    "Task `audio_chat` needs a judge model: pass -T grader_model=<provider/model> "
+    "(e.g. -T grader_model=openai/gpt-4o). Open-ended answers about audio have no "
+    "lexical metric that measures the task, and grading them with the model under test "
+    "would be marking its own homework. To generate now and grade later, run "
+    "`inspect eval --no-score` and score the log afterwards with `inspect score`."
+)
+
+
+@scorer(
+    metrics=[
+        accuracy(),
+        stderr(),
+        grouped(accuracy(), "dataset_id", all=False, name_template="accuracy_{group_name}"),
+    ]
+)
+def chat_scorer(grader_model: str | None = None) -> Scorer:
+    """Grade a free-form answer about audio against the reference, via a judge.
+
+    There is no lexical metric worth reporting here. The references are one or
+    two sentences of free text and a correct answer routinely shares almost no
+    words with them, so BLEU or an exact match would rank a fluent wrong answer
+    above a terse right one — a number that looks like a score and ranks models
+    backwards. So a missing judge is an error rather than a fallback.
+
+    The judge is resolved on the first sample scored, not here. Raising at
+    construction time would also fire under ``inspect eval --no-score``, which
+    is the one way to run this task on a cluster that cannot reach a judge:
+    generate now, ``inspect score`` the log later from somewhere that can.
+
+    Args:
+        grader_model: The judge, as an inspect model string (for example
+            ``openai/gpt-4o``).
+
+    Returns:
+        A scorer delegating to inspect's
+        :func:`~inspect_ai.scorer.model_graded_qa` with the rubric above and
+        partial credit.
+    """
+    delegate: list[Scorer] = []
+
+    async def score(state: TaskState, target: Target) -> Score:
+        if not delegate:
+            from inspect_ai.scorer import model_graded_qa
+
+            if not grader_model:
+                raise ValueError(NO_JUDGE_MESSAGE)
+            delegate.append(
+                model_graded_qa(
+                    template=CHAT_GRADER_TEMPLATE,
+                    instructions=CHAT_GRADER_INSTRUCTIONS,
+                    partial_credit=True,
+                    model=grader_model,
+                )
+            )
+        return await delegate[0](state, target)
 
     return score

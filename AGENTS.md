@@ -17,12 +17,24 @@ forces it.
 
 - `melteval/manifest.py` — the frozen-set record schema. The boundary between
   reading corpora and running evals.
-- `melteval/freeze.py` — builds frozen sets from a source spec.
+- `melteval/freeze.py` — builds frozen sets from a source spec. `read_sources`
+  is the half that a live (unfrozen) run shares, so `spec_dataset` and a
+  frozen set produce identical records and identical sample keys.
+- `melteval/dataset.py` — the two ways into an eval: a frozen manifest, or a
+  spec read at eval time (HuggingFace benchmarks, which are already immutable
+  and have nothing left for a freeze pass to pin down).
 - `melteval/readers/` — one module per source type. The only code that knows
   about corpus formats.
 - `melteval/providers/` — one module per model family. The seam that lets a
   NeMo/Smurf model be evaluated without touching anything else.
-- `configs/` — frozen-set specs.
+- `melteval/rescore.py`, `melteval/mcif_scoring.py` — post-hoc scorers for
+  metrics that need a neural model (COMET/MetricX, or MCIF's own
+  WER/COMET/BERTScore via the official `mcif` package) run from a separate
+  venv via `inspect score`, never inline during generation. Not reachable
+  through `melteval.registry` on purpose.
+- `configs/` — source specs. `configs/shar/` for local Shar mixtures (frozen before
+  use), `configs/hf/` for HuggingFace benchmarks (read live, or frozen -- see
+  "Evaluating a HuggingFace benchmark" in README.md).
 - `docs/` — design notes worth reading before changing behaviour.
 
 ## Coding conventions
@@ -55,6 +67,34 @@ forces it.
 - **Shar layouts.** Both plain (`cuts.*.jsonl.gz`) and indexed
   (`cuts.*.jsonl` + `.idx`) exist. Globbing only the gzipped form reports a
   fully populated source as empty — use `shar_manifest_files`.
+- **Relative paths in `-T` arguments do not mean what they look like.**
+  `inspect eval` chdir's into the task file's directory (`melteval/`) while it
+  builds the task, so `-T spec=configs/hf/air-bench.yaml` is looked for under
+  `melteval/configs/`, and fails from a job whose working directory obviously
+  contains it. `infra/run_eval.sbatch` resolves the evaluation set with
+  `realpath` before passing it on; anything else path-shaped needs the same
+  treatment.
+- **A per-sample `instruction` is a template, not a string.** It goes through
+  `str.format` so a benchmark can place `{audio_token}` itself. Corpus text
+  spliced into one must go through `prompt.escape_literal` first: braces do
+  occur in real questions, and an unescaped one is either a `KeyError`
+  mid-generation or, worse, a silently rewritten question.
+- **Matching an answer to a multiple-choice option needs word boundaries.**
+  "Male" is a substring of "female", so a plain `in` test matches both options
+  of a gender question, resolves to neither, and books the sample as an
+  unreadable completion rather than a correct one. `mcq_scorer` reports
+  `unresolved_rate` alongside accuracy precisely so this class of thing is
+  visible instead of just depressing the score.
+- **A reference can span more than one sample.** MCIF's `short` track cuts a
+  whole talk's transcript across dozens of short segments, each transcribed
+  on its own, and scores the whole group at once against one reference —
+  `EvalRecord.extra` (`group_id`/`group_order`/`group_size`) carries that
+  through to the scorer, which reassembles a group's completions in order
+  before comparing to it (`chunked_asr_scorer`/`chunked_st_scorer`). Scoring
+  each chunk against the whole-group reference independently produces a
+  number, just not a meaningful one. `extra` itself is the general escape
+  hatch: a reader whose corpus needs metadata no other reader does should add
+  to it rather than growing `EvalRecord`'s named fields.
 - **`Score.value` is not a free-form payload slot.** It goes through inspect's
   epoch-reduction machinery even for a single-epoch task, and a dict there is
   treated as named *numeric* sub-scores — `value_to_float()` runs on every
@@ -95,6 +135,10 @@ load an actual checkpoint go through `infra/runners/submit_eval.sh` instead
   bind-mounted and `cd`-ed into, or Python imports the container's baked-in
   copy of `melt`.
 - Corpora: `/mnt/scratch-nyx/giuseppe/melt/melt-data/shar` (indexed tree).
+- HuggingFace cache: `/mnt/scratch-artemis/giuseppe/melt-data/hf_cache`.
+  Compute nodes run with `HF_HUB_OFFLINE=1`, so a split has to be pulled from
+  the login shell before any job that reads it — see README.md, "Evaluating a
+  HuggingFace benchmark".
 - **Never run anything on an artemis GPU directly — always go through a SLURM
   job (`sbatch`), never a bare `CUDA_VISIBLE_DEVICES=...` invocation on the
   workstation, even for a quick smoke test.** artemis is shared, and GPUs sit

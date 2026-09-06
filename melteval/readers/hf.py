@@ -18,6 +18,15 @@ Because the audio format is opaque at freeze time, per-sample duration is
 only recorded when the dataset itself provides a duration column — computing
 it would mean decoding, which is exactly the cost this pass exists to avoid.
 
+Benchmarks reached this way often ship their own prompt per sample rather
+than drawing one from the training template pool -- AIR-Bench asks a different
+question of every clip, and half of them are multiple choice. So a source can
+name an ``instruction_column`` (and, for multiple choice, ``choices_columns``),
+and the reader composes them into the record's ``instruction`` through an
+``instruction_template``. Corpus text is brace-escaped on the way in, because
+the instruction is itself a template downstream -- see
+``prompt.escape_literal``.
+
 Unlike shar corpora, which are already 16 kHz mono, an arbitrary HF dataset
 is not, and the MELT provider batches by borrowing one sample rate for the
 whole batch (see ``providers/melt.py``). So audio here is resampled to 16 kHz
@@ -28,12 +37,30 @@ would corrupt every sample in it but for the one whose rate was actually used.
 from __future__ import annotations
 
 import io
+import threading
 
 from melteval.manifest import AudioLocator, EvalRecord
+from melteval.prompt import escape_literal
 from melteval.readers.base import SourceResult, register_reader
 
 
 TARGET_SAMPLE_RATE = 16000
+
+#: Labels offered for multiple-choice options, in ``choices_columns`` order.
+CHOICE_LABELS = "ABCDEFGHIJKLMNOPQRSTUVWXYZ"
+
+#: Composed when a source names an ``instruction_column`` but no template. The
+#: audio token has to be in there: the processor expands it into encoder
+#: frames, and a prompt without one is a text-only prompt about nothing.
+DEFAULT_INSTRUCTION_TEMPLATE = "{audio_token}\n{question}"
+
+#: Used instead when the source also names ``choices_columns``. The closing
+#: line is what makes the answer parseable at all -- without it a model
+#: paraphrases, and :func:`melteval.scorers.mcq_scorer` has to fall back to
+#: matching option text.
+DEFAULT_CHOICE_INSTRUCTION_TEMPLATE = (
+    "{audio_token}\n{question}\n{choices}\nAnswer with the letter of the correct option."
+)
 
 
 def _get(cfg, key: str, default=None):
@@ -41,6 +68,59 @@ def _get(cfg, key: str, default=None):
     if hasattr(cfg, "get"):
         return cfg.get(key, default)
     return getattr(cfg, key, default)
+
+
+def _render_instruction(template: str, question: str, choices: list[str]) -> str:
+    """Compose one sample's prompt from *template*, *question* and *choices*.
+
+    Placeholders are substituted by literal replacement rather than
+    ``str.format``, and only ``{question}`` and ``{choices}`` are touched.
+    Anything else the spec author wrote -- ``{audio_token}`` above all -- has
+    to reach :func:`melteval.prompt.render_user_prompt` still spelled as a
+    placeholder, which a ``format`` call here would have already consumed.
+
+    Args:
+        template: The source's ``instruction_template``.
+        question: The row's question text, verbatim from the corpus.
+        choices: Non-blank options, in ``choices_columns`` order. Empty for a
+            free-form benchmark.
+
+    Returns:
+        The rendered instruction, with corpus text brace-escaped.
+
+    Raises:
+        ValueError: If the template drops the question, drops options that
+            exist, or the source offers more options than there are labels.
+            All three produce a prompt that reads fine and measures the wrong
+            thing: a model asked to choose between options it was never shown
+            scores at chance, and nothing in the log says why.
+    """
+    if "{question}" not in template:
+        raise ValueError(
+            f"instruction_template has no {{question}} placeholder: {template!r}. Every "
+            "sample would then get the same prompt, and the benchmark's own questions "
+            "would never reach the model."
+        )
+    if choices and "{choices}" not in template:
+        raise ValueError(
+            f"instruction_template has no {{choices}} placeholder: {template!r}, but this "
+            "source sets choices_columns. The options would be scored against but never "
+            "shown, which is not the benchmark."
+        )
+    if len(choices) > len(CHOICE_LABELS):
+        raise ValueError(
+            f"{len(choices)} options, but only {len(CHOICE_LABELS)} labels to show them "
+            "under. Score this source with something other than option labels."
+        )
+
+    rendered_choices = "\n".join(
+        f"{CHOICE_LABELS[position]}. {choice}" for position, choice in enumerate(choices)
+    )
+    return (
+        template.replace("{question}", escape_literal(question))
+        .replace("{choices}", escape_literal(rendered_choices))
+        .strip()
+    )
 
 
 class HFReader:
@@ -56,8 +136,10 @@ class HFReader:
             source_cfg: Source entry with ``repo``, ``revision``, ``split``,
                 optional ``name`` (the dataset's own "config" argument),
                 ``audio_column``, ``text_column``, ``id_column``,
-                ``source_text_column``, ``min_duration``, ``max_duration``,
-                ``max_samples``, ``seed``, and ``tags``.
+                ``source_text_column``, ``instruction_column``,
+                ``choices_columns``, ``instruction_template``,
+                ``min_duration``, ``max_duration``, ``max_samples``, ``seed``,
+                and ``tags``.
             source_index: Position in the spec, used for sample keys.
 
         Raises:
@@ -84,6 +166,12 @@ class HFReader:
         text_column = str(_get(source_cfg, "text_column", "text"))
         id_column = _get(source_cfg, "id_column")
         source_text_column = _get(source_cfg, "source_text_column")
+        instruction_column = _get(source_cfg, "instruction_column")
+        choices_columns = [str(c) for c in (_get(source_cfg, "choices_columns") or [])]
+        instruction_template = str(
+            _get(source_cfg, "instruction_template")
+            or (DEFAULT_CHOICE_INSTRUCTION_TEMPLATE if choices_columns else DEFAULT_INSTRUCTION_TEMPLATE)
+        )
         duration_column = str(_get(source_cfg, "duration_column", "duration"))
         min_duration = _get(source_cfg, "min_duration")
         max_duration = _get(source_cfg, "max_duration")
@@ -99,6 +187,7 @@ class HFReader:
         n_read = 0
         n_dropped_no_reference = 0
         n_dropped_duration = 0
+        n_dropped_no_instruction = 0
 
         for index, row in enumerate(dataset):
             n_read += 1
@@ -117,6 +206,25 @@ class HFReader:
                 if max_duration is not None and duration > float(max_duration):
                     n_dropped_duration += 1
                     continue
+
+            instruction: str | None = None
+            choices: list[str] | None = None
+            if instruction_column:
+                question = row.get(instruction_column)
+                if not question or not str(question).strip():
+                    # The record would fall back to the training template pool
+                    # for a task that has none, and blow up mid-generation
+                    # rather than here. Drop it and say so, like a missing
+                    # reference.
+                    n_dropped_no_instruction += 1
+                    continue
+                choices = [
+                    str(row[column]).strip()
+                    for column in choices_columns
+                    if str(row.get(column) or "").strip()
+                ]
+                instruction = _render_instruction(instruction_template, str(question).strip(), choices)
+                choices = choices or None
 
             row_id = str(row[id_column]) if id_column else str(index)
             source_text = row.get(source_text_column) if source_text_column else None
@@ -143,6 +251,8 @@ class HFReader:
                     dataset_id=str(tags.get("dataset_id", "") or repo),
                     source=source_label,
                     source_text=str(source_text).strip() if source_text else None,
+                    instruction=instruction,
+                    choices=choices,
                     cut_id=row_id,
                     duration=duration,
                 )
@@ -165,6 +275,7 @@ class HFReader:
                 "kept": len(candidates),
                 "dropped_duration": n_dropped_duration,
                 "dropped_no_reference": n_dropped_no_reference,
+                "dropped_no_instruction": n_dropped_no_instruction,
                 "hours": round(sum(r.duration or 0.0 for r in candidates) / 3600.0, 4),
             },
         )
@@ -218,6 +329,14 @@ class HFReader:
 
 
 _DATASET_CACHE: dict[tuple, object] = {}
+#: Guards the cache against the provider resolving several samples' audio at
+#: once. ``load_audio`` runs on a worker thread per in-flight sample (see
+#: ``providers/melt.py``), so an unguarded check-then-insert has every thread
+#: in the first batch load and build the same split independently -- the same
+#: shape of bug the shar reader hit for real (MELT-proj/eval#2), minus the
+#: corruption, since two Datasets over the same arrow files do not share a
+#: file handle.
+_CACHE_LOCK = threading.Lock()
 
 
 def _cached_dataset(repo: str, name: str | None, split: str, revision: str, audio_column: str):
@@ -229,10 +348,13 @@ def _cached_dataset(repo: str, name: str | None, split: str, revision: str, audi
 
     from datasets import Audio, load_dataset
 
-    dataset = load_dataset(repo, name=name, split=split, revision=revision)
-    dataset = dataset.cast_column(audio_column, Audio(decode=False))
-    _DATASET_CACHE[key] = dataset
-    return dataset
+    with _CACHE_LOCK:
+        if key in _DATASET_CACHE:  # another thread loaded it while this one waited
+            return _DATASET_CACHE[key]
+        dataset = load_dataset(repo, name=name, split=split, revision=revision)
+        dataset = dataset.cast_column(audio_column, Audio(decode=False))
+        _DATASET_CACHE[key] = dataset
+        return dataset
 
 
 register_reader(HFReader())
