@@ -1,0 +1,80 @@
+# ST test sets for the checkpoint-comparison eval campaign: BLEU/chrF (and,
+# after rescoring, COMET) for CoVoST2 in six directions. Full `test` splits,
+# no max_samples.
+#
+# Reference is the translation (default text field, i.e. supervisions[0].text
+# -- no override needed); custom.sentence is the source-language transcript,
+# kept via source_text_field so `melteval rescore` can build (src, mt, ref)
+# triples for COMET afterwards (Unbabel/wmt22-comet-da; see README's
+# "Rescoring ST output with COMET/MetricX" and melteval/rescore.py).
+#
+# Each direction gets its own dataset_id (covost2-<src>_<tgt>), not a shared
+# "covost2": five of six directions share target language "en", and BLEU's
+# tokenizer is chosen per target language -- corpus_bleu/corpus_chrf raise
+# rather than silently pick one for a run that mixes languages (see
+# melteval/scorers.py, `_target_lang`). Run ONE `inspect eval` per direction:
+#
+#   inspect eval melteval/tasks.py@st --model melt/<checkpoint> \
+#     -T frozen_set=<this-frozen-set> -T dataset_id=covost2-de_en
+#
+# `-T dataset_id=...` alone isolates one direction -- no `-T lang=` needed on
+# top of it, since dataset_id is already unique per direction.
+name: st-eval-campaign-v1
+seed: 0
+
+input_cfg:
+  # --- X -> en ---------------------------------------------------------
+  - type: lhotse_shar
+    shar_path: ${LOCAL_DATASETS_DIR}/covost2/de_en/test
+    source_text_field: custom.sentence
+    tags:
+      task: st
+      src_lang: de
+      tgt_lang: en
+      dataset_id: covost2-de_en
+
+  - type: lhotse_shar
+    shar_path: ${LOCAL_DATASETS_DIR}/covost2/fr_en/test
+    source_text_field: custom.sentence
+    tags:
+      task: st
+      src_lang: fr
+      tgt_lang: en
+      dataset_id: covost2-fr_en
+
+  - type: lhotse_shar
+    shar_path: ${LOCAL_DATASETS_DIR}/covost2/it_en/test
+    source_text_field: custom.sentence
+    tags:
+      task: st
+      src_lang: it
+      tgt_lang: en
+      dataset_id: covost2-it_en
+
+  - type: lhotse_shar
+    shar_path: ${LOCAL_DATASETS_DIR}/covost2/es_en/test
+    source_text_field: custom.sentence
+    tags:
+      task: st
+      src_lang: es
+      tgt_lang: en
+      dataset_id: covost2-es_en
+
+  - type: lhotse_shar
+    shar_path: ${LOCAL_DATASETS_DIR}/covost2/pt_en/test
+    source_text_field: custom.sentence
+    tags:
+      task: st
+      src_lang: pt
+      tgt_lang: en
+      dataset_id: covost2-pt_en
+
+  # --- en -> X -----------------------------------------------------------
+  - type: lhotse_shar
+    shar_path: ${LOCAL_DATASETS_DIR}/covost2/en_de/test
+    source_text_field: custom.sentence
+    tags:
+      task: st
+      src_lang: en
+      tgt_lang: de
+      dataset_id: covost2-en_de
