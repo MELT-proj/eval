@@ -104,9 +104,15 @@ From: nvidia/cuda:12.6.1-devel-ubuntu22.04
     # from the comet/metricx venv rather than this one, so a GPU metric stack
     # never has to install next to the model under evaluation" -- just baked
     # into the image instead of built by hand on every machine.
+    # setuptools<81: not seeded by `uv venv` (unlike stdlib venv/virtualenv),
+    # but torchmetrics==0.10.3 -- pulled in transitively by unbabel-comet,
+    # itself pinning an old torchmetrics -- still imports pkg_resources at
+    # module load. setuptools removed pkg_resources in 81.0.0, so a bare
+    # `setuptools` (84.x as of this writing) installs but leaves the import
+    # broken; pin below that.
     /usr/local/bin/uv venv /workspace/venv-comet --python 3.12.9
     /usr/local/bin/uv pip install --python /workspace/venv-comet/bin/python \
-        --link-mode copy --cache-dir /usr/local/share/uv/cache unbabel-comet
+        --link-mode copy --cache-dir /usr/local/share/uv/cache unbabel-comet "setuptools<81"
 
     # smoke-test the install (import only -- model weights download on first
     # use via `comet.download_model()`, not baked into the image)
