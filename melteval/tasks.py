@@ -54,13 +54,20 @@ def speech(
     Returns:
         The configured task.
     """
+    name = f"speech-{task_filter or 'all'}"
+    # dataset_id folds into the task name (not just left in the task args)
+    # because it is the only thing that tells two runs of the same task_filter
+    # apart in inspect view's log list -- e.g. six covost2 directions all
+    # filtered to task_filter=st would otherwise all show up as "speech-st".
+    if dataset_id:
+        name = f"{name}-{dataset_id}"
     return Task(
         dataset=frozen_dataset(
             frozen_set, task=task_filter, lang=lang, dataset_id=dataset_id, limit=limit
         ),
         solver=solver or speech_prompt(format_config=format_config, tokenizer=tokenizer),
         scorer=scorer or default_scorer(task_filter),
-        name=f"speech-{task_filter or 'all'}",
+        name=name,
     )
 
 
