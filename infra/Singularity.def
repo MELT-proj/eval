@@ -1,0 +1,113 @@
+Bootstrap: docker
+# Same base as training/infra/Singularity.def, for the same reason: this
+# image installs melt-proj (see [tool.uv.sources] in pyproject.toml) as a
+# real dependency, not just a type stub, so it inherits melt-proj's own
+# dependencies -- torch, transformers, deepspeed. A -devel base (not
+# -runtime) ships the CUDA toolkit so any JIT-compiled op (e.g. DeepSpeed
+# fused kernels) builds inside the image instead of needing the host
+# toolkit bind-mounted in.
+From: nvidia/cuda:12.6.1-devel-ubuntu22.04
+
+%setup
+    # Build with apptainer, not singularity: only apptainer sets
+    # APPTAINER_ROOTFS. Abort loudly if it is missing -- otherwise the paths
+    # below resolve to /workspace/... on the HOST and the image would ship
+    # empty project directories. (infra/setup/build_singularity.sh loads the
+    # module.)
+    set -eu
+    : "${APPTAINER_ROOTFS:?not set -- build with apptainer (module load apptainer)}"
+    mkdir -p ${APPTAINER_ROOTFS}/usr/local/share/uv/cache
+    mkdir -p ${APPTAINER_ROOTFS}/workspace/eval
+    mkdir -p ${APPTAINER_ROOTFS}/workspace/training
+
+    # pyproject.toml resolves melt-proj via a relative path
+    # (`[tool.uv.sources] melt-proj = { path = "../training" }`), the same
+    # way local development does (see README.md "Install"). Ship the two
+    # repos as siblings under /workspace so that path resolves inside the
+    # image too -- run this build from the melt-eval repo root with the
+    # training repo checked out alongside it.
+    [ -d ../training ] || {
+        echo "ERROR: ../training not found relative to the build directory." >&2
+        echo "       Run this from the melt-eval repo root with the training repo checked out as a sibling (see README.md 'Install')." >&2
+        exit 1
+    }
+
+    # NOT -L: dereferencing symlinks pulls whole external trees into the
+    # image (a scratch symlink in a repo root once dragged in 100GB+ of
+    # datasets in the training image). --safe-links drops any symlink
+    # escaping the repo instead of following it.
+    rsync -a --safe-links --exclude-from=.singularityignore . ${APPTAINER_ROOTFS}/workspace/eval/
+    rsync -a --safe-links --exclude-from=../training/.singularityignore ../training/ ${APPTAINER_ROOTFS}/workspace/training/
+
+%environment
+    export PATH=$PATH:/usr/local/bin
+    export UV_PYTHON_INSTALL_DIR=/usr/local/share/uv/python
+    export VENV_PATH=/workspace/venv/bin/activate
+    # Separate from VENV_PATH on purpose -- see the %post COMET section below.
+    export COMET_VENV_PATH=/workspace/venv-comet/bin/activate
+    # So JIT builds (e.g. DeepSpeed fused ops) find the toolkit shipped in the -devel base.
+    export CUDA_HOME=/usr/local/cuda
+
+%post
+    #!/bin/bash
+    set -eux
+
+    export UV_PYTHON_INSTALL_DIR=/usr/local/share/uv/python
+    export UV_INSTALL_DIR=/usr/local/bin
+    export PATH=$PATH:/usr/local/bin
+
+    apt-get update
+    DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
+        git build-essential curl ca-certificates \
+        && rm -rf /var/lib/apt/lists/*
+
+    curl -LsSf https://astral.sh/uv/install.sh | sh
+    /usr/local/bin/uv --version
+
+    /usr/local/bin/uv python install 3.12.9
+    # Verify installation
+    /usr/local/bin/uv python list
+
+    cd /workspace/eval
+
+    # Create the venv outside the project directory so it won't be hidden
+    # when /workspace/eval is bind-mounted from the host.
+    /usr/local/bin/uv venv /workspace/venv --python 3.12.9
+    export UV_PROJECT_ENVIRONMENT=/workspace/venv
+
+    # --extra shar: local lhotse Shar corpora, and melt-proj itself (the
+    #   provider that loads a MELT checkpoint) -- pulls in torch/transformers.
+    # --extra hf: remote HuggingFace test splits.
+    # --extra metrics: jiwer/sacrebleu for lexical scoring.
+    # No --extra dev: this image runs eval, it doesn't develop melt-eval.
+    # --prerelease=allow: melt-proj pins a pre-release lhotse (2.0.0a3).
+    # --no-editable: matches training's own image -- melt-proj is installed
+    #   as a built package, not linked back to /workspace/training, so the
+    #   venv keeps working if that directory is ever bind-mounted over.
+    # No --locked: melt-eval has no committed uv.lock (unlike training) to
+    #   pin against yet.
+    /usr/local/bin/uv sync --python 3.12 --link-mode copy --cache-dir /usr/local/share/uv/cache --no-editable --index-strategy unsafe-best-match --prerelease=allow --extra shar --extra hf --extra metrics
+
+    # smoke-test the install
+    /usr/local/bin/uv run python -c "import torch; print('torch', torch.__version__)"
+    /usr/local/bin/uv run python -c "from importlib.metadata import version; print('inspect_ai', version('inspect_ai'))"
+    /usr/local/bin/uv run python -c "from melt.modeling import MELTForCausalLM; print('melt-proj import OK')"
+    /usr/local/bin/uv run melteval --help
+
+    # --- COMET (Unbabel), e.g. Unbabel/wmt22-comet-da ----------------------
+    # A second, fully separate venv -- NOT added as another extra of the venv
+    # above. unbabel-comet pins transformers>=4.17,<5.0 (true through the
+    # latest release, 2.2.7), which is unsatisfiable together with melt-proj's
+    # transformers>=5.16,<6 in a single environment (verified with
+    # `uv pip compile`: the two ranges simply don't overlap). This is the same
+    # separation melt-eval's README already prescribes for rescoring -- "run
+    # from the comet/metricx venv rather than this one, so a GPU metric stack
+    # never has to install next to the model under evaluation" -- just baked
+    # into the image instead of built by hand on every machine.
+    /usr/local/bin/uv venv /workspace/venv-comet --python 3.12.9
+    /usr/local/bin/uv pip install --python /workspace/venv-comet/bin/python \
+        --link-mode copy --cache-dir /usr/local/share/uv/cache unbabel-comet
+
+    # smoke-test the install (import only -- model weights download on first
+    # use via `comet.download_model()`, not baked into the image)
+    /workspace/venv-comet/bin/python -c "import comet; print('unbabel-comet OK')"

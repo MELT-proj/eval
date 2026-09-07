@@ -117,7 +117,10 @@ infra/job_recap.sh artemis 20   # or: infra/job_recap.sh mn5 20
 
 `inspect eval` reports BLEU/chrF; a neural MT metric is a separate step, run
 from the `comet`/`metricx` venv rather than this one, so a GPU metric stack
-never has to install next to the model under evaluation:
+never has to install next to the model under evaluation. `infra/Singularity.def`
+bakes this in as a second venv (`unbabel-comet` pins `transformers<5`, which
+cannot share an environment with melt-proj's `transformers>=5.16`) — activate
+it with `source $COMET_VENV_PATH` inside the container.
 
 ```bash
 # in the melteval venv: extract (src, mt, ref) triples from a finished ST run
@@ -125,7 +128,7 @@ melteval rescore path/to/log.eval -o triples.jsonl
 ```
 
 ```python
-# then, from the comet venv:
+# then, from the comet venv ($COMET_VENV_PATH in the container image):
 import json
 from comet import download_model, load_from_checkpoint
 
