@@ -64,6 +64,22 @@ fi
 OUTPUT_DIR="${OUTPUT_DIR:-./eval-logs}"
 mkdir -p "${OUTPUT_DIR}" logs
 
+# Some sites ship apptainer as an environment module, and not necessarily on
+# every node in a partition (on artemis, only the `artemis` node itself has
+# it -- see infra/setup/build_singularity.sh for the same check at build
+# time; --nodelist=artemis when submitting a container job there).
+if ! command -v apptainer >/dev/null 2>&1; then
+    if [[ -f /etc/profile.d/02-lmod.sh ]]; then
+        # shellcheck disable=SC1091
+        source /etc/profile.d/02-lmod.sh
+    fi
+    if command -v module >/dev/null 2>&1; then
+        module load apptainer 2>/dev/null || true
+    fi
+fi
+command -v apptainer >/dev/null 2>&1 \
+    || { echo "ERROR: 'apptainer' not found on this node (try --nodelist=artemis)."; exit 2; }
+
 echo "[run_eval_container] image:      ${MELT_SIF}"
 echo "[run_eval_container] checkpoint: ${CHECKPOINT}"
 echo "[run_eval_container] frozen set: ${FROZEN_SET}"
