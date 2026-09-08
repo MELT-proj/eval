@@ -1,0 +1,26 @@
+# Excluded when infra/Singularity.def rsyncs the repo into the image (see
+# infra/setup/build_singularity.sh). Mirrors .gitignore, plus VCS/venv/cache
+# directories that have no business inside a shipped image.
+logs/
+runs/
+frozen/
+*.eval
+history/
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+build/
+dist/
+*.egg-info/
+.eggs/
+.git/
+.venv/
+venv/
+env/
+.env
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+.ipynb_checkpoints
+.claude/
