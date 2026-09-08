@@ -124,6 +124,30 @@ def load_format_spec(path: str | Path) -> FormatSpec:
     )
 
 
+def escape_literal(text: str) -> str:
+    """Escape *text* so it survives :func:`render_user_prompt` verbatim.
+
+    A per-sample ``instruction`` is a **template**, not a finished string: it
+    goes through ``str.format`` so a benchmark can put ``{audio_token}`` (and,
+    if it wants them, ``{lang}``/``{src_lang}``/``{tgt_lang}``) exactly where
+    it needs them. Text lifted out of a corpus is not a template, and braces do
+    turn up in real questions -- "what does {x} evaluate to?" raises
+    ``KeyError`` mid-run, and a brace pair that happens to spell a real
+    placeholder is worse, because it silently rewrites the question rather than
+    failing.
+
+    Readers pass corpus text through this before splicing it into an
+    instruction, so only the placeholders the *spec author* wrote survive.
+
+    Args:
+        text: Literal text from a corpus.
+
+    Returns:
+        The same text with every brace doubled.
+    """
+    return text.replace("{", "{{").replace("}", "}}")
+
+
 def select_template(task: str, sample_key: str, spec: FormatSpec) -> str:
     """Pick the prompt template for one sample.
 
@@ -188,6 +212,8 @@ def render_user_prompt(
         src_lang: Source language, where the task has one.
         tgt_lang: Target language, where the task has one.
         instruction: A per-sample prompt that overrides the template pool.
+            Treated as a template like any other, so literal corpus text
+            inside it must already have been through :func:`escape_literal`.
 
     Returns:
         The formatted prompt, containing the audio token.

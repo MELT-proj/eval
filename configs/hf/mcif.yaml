@@ -1,0 +1,218 @@
+# MCIF (https://huggingface.co/datasets/FBK-MT/MCIF, paper: arXiv:2507.19634),
+# both tracks, both prompt styles, all four target languages.
+#
+# Read live, like air-bench.yaml -- see that file's header for why, and
+# `docs/frozen-sets.md`, "When not to freeze at all". The revision below
+# already pins the corpus.
+#
+#   inspect eval melteval/tasks.py@chunked_asr --model melt/<checkpoint> \
+#     -T spec=configs/hf/mcif.yaml -T dataset_id=mcif-short-fixed-en
+#
+# Always pass `-T dataset_id=...`. Each source below is a separate benchmark
+# slice reported separately upstream (one (track, prompt style, target
+# language) combination), and it is the only filter cheap enough to matter
+# here: unlike AIR-Bench, MCIF's reference is not in the audio parquet at all
+# (see melteval/readers/mcif.py), so `-T task_filter=...` alone cannot exclude
+# a source before it is read -- every source contains a mix of task kinds, and
+# reading one means one small parquet plus one small reference file, not
+# gigabytes of audio.
+#
+# MCIF is not one task shape, it is three, and which one a sample gets is
+# decided by the *reference file*, not this spec:
+#
+#   ASR   -> `chunked_asr`. Target language `en` only. In the `short` track a
+#     reference is a whole talk's transcript and spans dozens of consecutive
+#     samples, each one a separately-transcribed short segment of that talk --
+#     the model never sees more than one segment at a time, but WER is
+#     computed once per talk, over the segments' completions joined back in
+#     order (melteval.scorers.chunked_asr_scorer). In the `long` track every
+#     group has exactly one member: each sample already *is* a whole talk, so
+#     this becomes a genuine single-shot long-form transcription test -- a
+#     real conference talk, not a short clip, fed to the model in one turn.
+#   TRANS -> `chunked_st`, same grouping, for the other three target
+#     languages. Local BLEU/chrF only; the paper's own metric is COMET after a
+#     sentence-resegmentation step this harness does not perform -- see
+#     `melteval/rescore.py` and `chunked_st_scorer`'s docstring.
+#   QA and SUM -> `audio_chat`. Free-text answers, gradeable only by a judge:
+#     add `-T grader_model=<provider/model>`, or `--no-score` to generate now
+#     and grade the log later. QA exists for every (track, language); SUM only
+#     in `long`. `qa_type`/`qa_origin` ride along in each sample's metadata
+#     (not broken out by melteval's own metrics) for anyone slicing the log
+#     by hand afterwards.
+#
+# `short` has 241 (en) / ~230 (other languages) samples per prompt style;
+# `long` about 100 more (its extra SUM slice) and genuinely long audio -- size
+# batches and wall time for `long` the way `air-bench.yaml`'s comment describes
+# for AIR-Bench's own longest split.
+#
+# On artemis the compute nodes run with HF_HUB_OFFLINE=1, so every (track,
+# language) combination -- both the parquet split and its MCIF.<track>.<lang>
+# .ref.xml.gz -- has to be in HF_HOME before a job starts. See README.md,
+# "Evaluating a HuggingFace benchmark".
+name: mcif
+seed: 0
+
+input_cfg:
+  # --- short track, fixed prompts --------------------------------------------
+  - type: mcif
+    repo: FBK-MT/MCIF
+    revision: e24065b919758263cfe5d157057278affe76ea7b
+    track: short
+    prompt_type: fixed
+    lang: en
+    tags:
+      lang: en
+      dataset_id: mcif-short-fixed-en
+
+  - type: mcif
+    repo: FBK-MT/MCIF
+    revision: e24065b919758263cfe5d157057278affe76ea7b
+    track: short
+    prompt_type: fixed
+    lang: de
+    tags:
+      lang: de
+      dataset_id: mcif-short-fixed-de
+
+  - type: mcif
+    repo: FBK-MT/MCIF
+    revision: e24065b919758263cfe5d157057278affe76ea7b
+    track: short
+    prompt_type: fixed
+    lang: it
+    tags:
+      lang: it
+      dataset_id: mcif-short-fixed-it
+
+  - type: mcif
+    repo: FBK-MT/MCIF
+    revision: e24065b919758263cfe5d157057278affe76ea7b
+    track: short
+    prompt_type: fixed
+    lang: zh
+    tags:
+      lang: zh
+      dataset_id: mcif-short-fixed-zh
+
+  # --- short track, mixed prompts ---------------------------------------------
+  - type: mcif
+    repo: FBK-MT/MCIF
+    revision: e24065b919758263cfe5d157057278affe76ea7b
+    track: short
+    prompt_type: mixed
+    lang: en
+    tags:
+      lang: en
+      dataset_id: mcif-short-mixed-en
+
+  - type: mcif
+    repo: FBK-MT/MCIF
+    revision: e24065b919758263cfe5d157057278affe76ea7b
+    track: short
+    prompt_type: mixed
+    lang: de
+    tags:
+      lang: de
+      dataset_id: mcif-short-mixed-de
+
+  - type: mcif
+    repo: FBK-MT/MCIF
+    revision: e24065b919758263cfe5d157057278affe76ea7b
+    track: short
+    prompt_type: mixed
+    lang: it
+    tags:
+      lang: it
+      dataset_id: mcif-short-mixed-it
+
+  - type: mcif
+    repo: FBK-MT/MCIF
+    revision: e24065b919758263cfe5d157057278affe76ea7b
+    track: short
+    prompt_type: mixed
+    lang: zh
+    tags:
+      lang: zh
+      dataset_id: mcif-short-mixed-zh
+
+  # --- long track, fixed prompts ------------------------------------------
+  - type: mcif
+    repo: FBK-MT/MCIF
+    revision: e24065b919758263cfe5d157057278affe76ea7b
+    track: long
+    prompt_type: fixed
+    lang: en
+    tags:
+      lang: en
+      dataset_id: mcif-long-fixed-en
+
+  - type: mcif
+    repo: FBK-MT/MCIF
+    revision: e24065b919758263cfe5d157057278affe76ea7b
+    track: long
+    prompt_type: fixed
+    lang: de
+    tags:
+      lang: de
+      dataset_id: mcif-long-fixed-de
+
+  - type: mcif
+    repo: FBK-MT/MCIF
+    revision: e24065b919758263cfe5d157057278affe76ea7b
+    track: long
+    prompt_type: fixed
+    lang: it
+    tags:
+      lang: it
+      dataset_id: mcif-long-fixed-it
+
+  - type: mcif
+    repo: FBK-MT/MCIF
+    revision: e24065b919758263cfe5d157057278affe76ea7b
+    track: long
+    prompt_type: fixed
+    lang: zh
+    tags:
+      lang: zh
+      dataset_id: mcif-long-fixed-zh
+
+  # --- long track, mixed prompts ------------------------------------------
+  - type: mcif
+    repo: FBK-MT/MCIF
+    revision: e24065b919758263cfe5d157057278affe76ea7b
+    track: long
+    prompt_type: mixed
+    lang: en
+    tags:
+      lang: en
+      dataset_id: mcif-long-mixed-en
+
+  - type: mcif
+    repo: FBK-MT/MCIF
+    revision: e24065b919758263cfe5d157057278affe76ea7b
+    track: long
+    prompt_type: mixed
+    lang: de
+    tags:
+      lang: de
+      dataset_id: mcif-long-mixed-de
+
+  - type: mcif
+    repo: FBK-MT/MCIF
+    revision: e24065b919758263cfe5d157057278affe76ea7b
+    track: long
+    prompt_type: mixed
+    lang: it
+    tags:
+      lang: it
+      dataset_id: mcif-long-mixed-it
+
+  - type: mcif
+    repo: FBK-MT/MCIF
+    revision: e24065b919758263cfe5d157057278affe76ea7b
+    track: long
+    prompt_type: mixed
+    lang: zh
+    tags:
+      lang: zh
+      dataset_id: mcif-long-mixed-zh

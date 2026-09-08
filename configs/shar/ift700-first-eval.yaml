@@ -1,0 +1,101 @@
+# First real-checkpoint eval: ASR (librispeech clean, voxpopuli en/es/de) and
+# ST (covost2 es->en, de->en, it->en, fr->en, en->de), all `test` splits, no
+# sample cap -- the full split is frozen. Use `-T limit=N` at `inspect eval`
+# time to run a short debug slice against this same frozen set rather than
+# shrinking it here. New sources are appended at the end rather than
+# interleaved, so existing sources keep their source index / sample_key.
+#
+#   asr: librispeech/clean    -- custom.pnc_text (punctuated/cased)
+#        voxpopuli/en, es, de -- supervisions[0].text (default, no override
+#        -- despite es/de cuts also carrying custom.pnc_text, matching the
+#        convention already established for voxpopuli/en)
+#   st:  covost2 es_en, de_en, it_en, fr_en, en_de -- supervisions[0].text is
+#        the translation (default); custom.sentence is the source transcript,
+#        kept via source_text_field so the run can be COMET-rescored later.
+#        Each direction needs its own `inspect eval` run (README's "ST
+#        specifically" note -- one run per *target* language). es_en, de_en,
+#        it_en and fr_en all share target language en, so `-T lang=en` alone
+#        would merge them into one corpus_bleu call; each direction therefore
+#        gets its own dataset_id (covost2-<src>_<tgt>, not the bare "covost2"
+#        the smoke configs use, since those never had two directions sharing
+#        a target) so `-T dataset_id=covost2-es_en` etc. can select just one.
+#   VoxPopuli directions share dataset_id "voxpopuli" (like en) since -T lang=
+#   already disambiguates es/de/en for ASR -- unlike ST, "lang" isn't
+#   collapsed to a single target language here.
+name: ift700-first-eval
+seed: 0
+
+input_cfg:
+  - type: lhotse_shar
+    shar_path: ${LOCAL_DATASETS_DIR}/librispeech/clean/test
+    text_field: custom.pnc_text
+    tags:
+      task: asr
+      lang: en
+      dataset_id: librispeech
+
+  - type: lhotse_shar
+    shar_path: ${LOCAL_DATASETS_DIR}/voxpopuli/en/test
+    tags:
+      task: asr
+      lang: en
+      dataset_id: voxpopuli
+
+  - type: lhotse_shar
+    shar_path: ${LOCAL_DATASETS_DIR}/covost2/es_en/test
+    source_text_field: custom.sentence
+    tags:
+      task: st
+      src_lang: es
+      tgt_lang: en
+      dataset_id: covost2-es_en
+
+  - type: lhotse_shar
+    shar_path: ${LOCAL_DATASETS_DIR}/covost2/de_en/test
+    source_text_field: custom.sentence
+    tags:
+      task: st
+      src_lang: de
+      tgt_lang: en
+      dataset_id: covost2-de_en
+
+  - type: lhotse_shar
+    shar_path: ${LOCAL_DATASETS_DIR}/covost2/en_de/test
+    source_text_field: custom.sentence
+    tags:
+      task: st
+      src_lang: en
+      tgt_lang: de
+      dataset_id: covost2-en_de
+
+  - type: lhotse_shar
+    shar_path: ${LOCAL_DATASETS_DIR}/voxpopuli/es/test
+    tags:
+      task: asr
+      lang: es
+      dataset_id: voxpopuli
+
+  - type: lhotse_shar
+    shar_path: ${LOCAL_DATASETS_DIR}/voxpopuli/de/test
+    tags:
+      task: asr
+      lang: de
+      dataset_id: voxpopuli
+
+  - type: lhotse_shar
+    shar_path: ${LOCAL_DATASETS_DIR}/covost2/it_en/test
+    source_text_field: custom.sentence
+    tags:
+      task: st
+      src_lang: it
+      tgt_lang: en
+      dataset_id: covost2-it_en
+
+  - type: lhotse_shar
+    shar_path: ${LOCAL_DATASETS_DIR}/covost2/fr_en/test
+    source_text_field: custom.sentence
+    tags:
+      task: st
+      src_lang: fr
+      tgt_lang: en
+      dataset_id: covost2-fr_en

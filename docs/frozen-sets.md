@@ -56,6 +56,26 @@ silently.
 Frozen sets are also not portable across machines, because locators hold
 absolute paths.
 
+## When not to freeze at all
+
+A frozen set answers "which samples is this number computed over?". For a
+published benchmark pinned to a revision, that question is already answered
+upstream: AIR-Bench's `Foundation/speech` split *is* the sample set, and the
+revision hash pins it harder than a manifest of row indices would. Freezing it
+copies information that already exists and adds a file that can go stale.
+
+So `melteval.dataset.spec_dataset` reads such a spec at eval time and skips
+the manifest — `inspect eval ... -T spec=configs/hf/air-bench.yaml`. It runs the
+same readers through the same `melteval.freeze.read_sources`, so the records
+and the sample keys are identical to freezing the spec first; a run made live
+stays comparable to one made from a frozen set of the same spec.
+
+The trade-off is that nothing is written down. There is no `frozen_set.json`
+recording drop counts or reader versions, and no local record of what was
+read — the guarantee rests entirely on the revision pin. That is enough for a
+published corpus and nowhere near enough for a mixture assembled out of local
+Shar trees, which is why those still get frozen.
+
 ## When to materialise instead
 
 `--materialize-audio` (planned) writes 16 kHz mono wav and rewrites locators to
