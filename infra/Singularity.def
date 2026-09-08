@@ -79,6 +79,12 @@ From: nvidia/cuda:12.6.1-devel-ubuntu22.04
     #   provider that loads a MELT checkpoint) -- pulls in torch/transformers.
     # --extra hf: remote HuggingFace test splits.
     # --extra metrics: jiwer/sacrebleu for lexical scoring.
+    # --extra flash-attn: deterministic, faster batched decode (MELT-proj/eval#7,
+    #   MELT-proj/training#118). The provider now defaults
+    #   attn_implementation=flash_attention_2, and there is no sdpa fallback
+    #   without a `-M attn_implementation=...` override, so this is required
+    #   the same way training's own image requires it -- pinned to a prebuilt
+    #   wheel via [tool.uv.sources], so this is a download, not a source build.
     # No --extra dev: this image runs eval, it doesn't develop melt-eval.
     # --prerelease=allow: melt-proj pins a pre-release lhotse (2.0.0a3).
     # --no-editable: matches training's own image -- melt-proj is installed
@@ -86,12 +92,13 @@ From: nvidia/cuda:12.6.1-devel-ubuntu22.04
     #   venv keeps working if that directory is ever bind-mounted over.
     # No --locked: melt-eval has no committed uv.lock (unlike training) to
     #   pin against yet.
-    /usr/local/bin/uv sync --python 3.12 --link-mode copy --cache-dir /usr/local/share/uv/cache --no-editable --index-strategy unsafe-best-match --prerelease=allow --extra shar --extra hf --extra metrics
+    /usr/local/bin/uv sync --python 3.12 --link-mode copy --cache-dir /usr/local/share/uv/cache --no-editable --index-strategy unsafe-best-match --prerelease=allow --extra shar --extra hf --extra metrics --extra flash-attn
 
     # smoke-test the install
     /usr/local/bin/uv run python -c "import torch; print('torch', torch.__version__)"
     /usr/local/bin/uv run python -c "from importlib.metadata import version; print('inspect_ai', version('inspect_ai'))"
     /usr/local/bin/uv run python -c "from melt.modeling import MELTForCausalLM; print('melt-proj import OK')"
+    /usr/local/bin/uv run python -c "import flash_attn; print('flash_attn', flash_attn.__version__)"
     /usr/local/bin/uv run melteval --help
 
     # --- COMET (Unbabel), e.g. Unbabel/wmt22-comet-da ----------------------
