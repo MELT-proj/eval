@@ -45,6 +45,13 @@ dev = [
     "pytest",
     "ruff",
 ]
+# Deterministic, faster batched decode (MELT-proj/eval#7, MELT-proj/training#118).
+# Pinned to the same prebuilt wheel as the training repo, matching the `shar`
+# extra's torch/cuda/python build -- a source build needs nvcc, which a login
+# node does not have.
+flash-attn = [
+    "flash-attn",
+]
 
 [project.scripts]
 melteval = "melteval.cli:main"
@@ -59,6 +66,7 @@ melteval = "melteval"
 # `uv pip install -e ".[shar]"` resolves it from source.
 [tool.uv.sources]
 melt-proj = { path = "../training", editable = true }
+flash-attn = { url = "https://github.com/Dao-AILab/flash-attention/releases/download/v2.8.3/flash_attn-2.8.3+cu12torch2.9cxx11abiTRUE-cp312-cp312-linux_x86_64.whl" }
 
 [tool.setuptools.packages.find]
 where = ["."]
