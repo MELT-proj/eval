@@ -17,10 +17,16 @@
 #   MELT_SIF=/path/to/melt_eval_cuda126.sif OUTPUT_DIR=/path/to/eval-logs \
 #     sbatch [slurm flags] infra/run_eval_container.sbatch <checkpoint_dir> <frozen_set_dir> [inspect eval args...]
 #
-# Example (gpu-debug QoS, a6000 partition, a few samples):
+# Example (gpu-debug QoS, h200 partition, a few samples). h200 is the
+# recommended partition on artemis: its node (hades) has apptainer directly
+# on PATH, no module needed. a6000 is usually the most contended partition
+# on this site; if you use it anyway, note that its `artemis` node has a
+# broken apptainer module install (setuid bit not set on starter-suid --
+# not fixable from a job script) and its `poseidon` node has no apptainer
+# at all, so a6000 does not currently work for container jobs here.
 #   MELT_SIF=/mnt/scratch-artemis/giuseppe/melt-data/melt_eval_cuda126.sif \
 #   OUTPUT_DIR=/mnt/scratch-artemis/giuseppe/melt-data/eval-logs \
-#     sbatch --partition=a6000 --qos=gpu-debug --gpus-per-node=1 --time=00:15:00 \
+#     sbatch --partition=h200 --qos=gpu-debug --gpus-per-node=1 --time=00:15:00 \
 #     infra/run_eval_container.sbatch \
 #     /mnt/scratch-artemis/giuseppe/melt-data/outputs/MA-v1.2.7 \
 #     /mnt/scratch-artemis/giuseppe/melt-data/eval-sets/librispeech \
@@ -64,10 +70,12 @@ fi
 OUTPUT_DIR="${OUTPUT_DIR:-./eval-logs}"
 mkdir -p "${OUTPUT_DIR}" logs
 
-# Some sites ship apptainer as an environment module, and not necessarily on
-# every node in a partition (on artemis, only the `artemis` node itself has
-# it -- see infra/setup/build_singularity.sh for the same check at build
-# time; --nodelist=artemis when submitting a container job there).
+# Some sites ship apptainer as an environment module rather than a plain
+# PATH binary (infra/setup/build_singularity.sh handles the same case on
+# the build side) -- fall back to `module load` when it's not already
+# found. Verified against this actual site (see the partition note in the
+# header above): availability differs per *node*, not just per site, so
+# this alone does not guarantee success on every node in a partition.
 if ! command -v apptainer >/dev/null 2>&1; then
     if [[ -f /etc/profile.d/02-lmod.sh ]]; then
         # shellcheck disable=SC1091
@@ -78,7 +86,7 @@ if ! command -v apptainer >/dev/null 2>&1; then
     fi
 fi
 command -v apptainer >/dev/null 2>&1 \
-    || { echo "ERROR: 'apptainer' not found on this node (try --nodelist=artemis)."; exit 2; }
+    || { echo "ERROR: 'apptainer' not found on this node."; exit 2; }
 
 echo "[run_eval_container] image:      ${MELT_SIF}"
 echo "[run_eval_container] checkpoint: ${CHECKPOINT}"
