@@ -45,6 +45,16 @@ dev = [
     "pytest",
     "ruff",
 ]
+# Reading finished eval logs into tables and charts (`projects/melt`). Reading
+# a log needs nothing from the model side, so this stays clear of torch and the
+# training package and installs fine on a login node.
+analysis = [
+    "marimo>=0.24",
+    "pandas>=2.0",
+    "pyarrow>=15",
+    "matplotlib>=3.8",
+    "seaborn>=0.13",
+]
 # Deterministic, faster batched decode (MELT-proj/eval#7, MELT-proj/training#118).
 # Pinned to the same prebuilt wheel as the training repo, matching the `shar`
 # extra's torch/cuda/python build -- a source build needs nvcc, which a login
@@ -75,7 +85,7 @@ include = ["melteval*"]
 [tool.ruff]
 target-version = "py310"
 line-length = 119
-include = ["melteval/**/*.py", "tests/**/*.py"]
+include = ["melteval/**/*.py", "tests/**/*.py", "projects/**/*.py"]
 
 [tool.ruff.lint]
 select = ["C", "E", "F", "I", "W", "RUF013", "PERF102", "SIM", "UP", "FURB"]
@@ -83,6 +93,13 @@ ignore = ["C901", "E501", "E741"]
 
 [tool.ruff.lint.isort]
 lines-after-imports = 2
+
+[tool.ruff.lint.per-file-ignores]
+# marimo owns the layout of its notebooks and rewrites the preamble whenever
+# one is saved from the editor, with a single blank line after `import marimo`
+# rather than the two this repo's isort setting wants. Not worth a fight ruff
+# would lose on every save.
+"projects/melt/report.py" = ["I001"]
 
 [tool.ruff.format]
 quote-style = "double"

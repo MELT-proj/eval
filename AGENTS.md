@@ -24,6 +24,9 @@ forces it.
   NeMo/Smurf model be evaluated without touching anything else.
 - `configs/` — frozen-set specs.
 - `docs/` — design notes worth reading before changing behaviour.
+- `projects/` — analysis of finished campaigns, one folder per project. Reads
+  eval logs; never part of the eval path itself, and never a dependency of
+  `melteval`.
 
 ## Coding conventions
 
