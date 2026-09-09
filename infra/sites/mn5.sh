@@ -14,6 +14,13 @@
 # --- python environment ------------------------------------------------------
 export VENV_PATH="${VENV_PATH:-/gpfs/scratch/epor48/venvs/melteval/bin/activate}"
 
+# --- container mode (infra/run_eval_container_mn5.sbatch) --------------------
+# The venv above still doesn't exist (see the note at the top of this file);
+# the container path works today -- build infra/Singularity.def elsewhere
+# (it needs internet) and copy the .sif here. Overridable per-run:
+#   MELT_SIF=/path/to/other.sif sbatch infra/run_eval_container_mn5.sbatch …
+export MELT_SIF="${MELT_SIF:-/gpfs/scratch/epor48/melt_eval_cuda126.sif}"
+
 # --- storage (host paths) -----------------------------------------------------
 # The project is shared by several accounts; a directory here belongs to
 # whoever created it. Set your own OUTPUT_DIR if you don't have write access to

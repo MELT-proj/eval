@@ -13,7 +13,8 @@ Two things make this more than a thin wrapper around ``generate()``:
   Running a speech model one utterance at a time wastes most of a GPU, so
   requests are collected into batches by a worker thread — the same shape as
   inspect's own ``hf`` provider, scoped to the instance rather than to a module
-  global.
+  global. Several batches' worth are pooled and sorted by audio length before
+  slicing, so padding is bounded by similar-length rows (MELT-proj/eval#7).
 
 Nothing heavy is imported at module scope: registering the provider must not
 cost a torch import.
@@ -45,6 +46,11 @@ from melteval.dataset import AUDIO_DATA_KEY
 logger = logging.getLogger(__name__)
 
 DEFAULT_BATCH_SIZE = 8
+#: How many batches' worth of requests to pool before sorting by audio length.
+#: Sorting a single batch cannot help -- it does not change that batch's
+#: longest row -- so this has to look past one batch_size at a time
+#: (MELT-proj/eval#7).
+DEFAULT_BATCH_WINDOW = 4
 #: How long the batch thread waits for more work before running a short batch.
 BATCH_WAIT_SECONDS = 0.25
 
@@ -57,6 +63,10 @@ class _Request:
     audio: Any | None
     sample_rate: int
     config: GenerateConfig
+    #: Audio length in seconds, the sort key for length-bucketed batching.
+    #: Computed from the already-decoded audio, so it costs nothing extra --
+    #: by the time a request exists, `generate()` has already loaded it.
+    duration: float = 0.0
     future: Future = field(default_factory=Future)
 
 
@@ -74,6 +84,7 @@ class MELTAPI(ModelAPI):
         device: str | None = None,
         dtype: str = "bfloat16",
         batch_size: int = DEFAULT_BATCH_SIZE,
+        batch_window: int = DEFAULT_BATCH_WINDOW,
         **model_args: Any,
     ) -> None:
         """Load a checkpoint.
@@ -87,10 +98,22 @@ class MELTAPI(ModelAPI):
                 model (as it is not when the run directory holds it instead).
             device: Torch device. Defaults to CUDA when available.
             dtype: Compute dtype for the model weights.
-            batch_size: Samples per forward pass. Also the concurrency inspect
-                is allowed, since more in flight than fit in a batch only adds
-                queueing.
-            **model_args: Forwarded to ``from_pretrained``.
+            batch_size: Samples per forward pass.
+            batch_window: How many batches' worth of requests to pool and
+                sort by audio length before slicing into batches, so a batch's
+                padding is bounded by rows of similar length rather than
+                whatever arrived in that order (MELT-proj/eval#7). Also sets
+                the concurrency inspect is allowed -- the pool can only be
+                bigger than one batch if more than one batch's worth of
+                requests is in flight at once.
+            **model_args: Forwarded to ``from_pretrained``. Notably
+                ``attn_implementation``, which defaults to
+                ``flash_attention_2`` here rather than the transformers
+                default: an audio-injected batch has a non-trivial merged
+                attention mask, which pushes plain ``sdpa`` onto a
+                non-deterministic cuDNN kernel (MELT-proj/training#118).
+                Override it (e.g. ``-M attn_implementation=eager``) on a box
+                without flash attention.
         """
         super().__init__(model_name, base_url, api_key, [], config)
 
@@ -98,12 +121,17 @@ class MELTAPI(ModelAPI):
         from melt.modeling import MELTForCausalLM, MELTProcessor
 
         self.batch_size = int(batch_size)
+        self.batch_window = int(batch_window)
         self.device = device or ("cuda" if torch.cuda.is_available() else "cpu")
         torch_dtype = getattr(torch, dtype) if isinstance(dtype, str) else dtype
 
+        attn_implementation = model_args.pop("attn_implementation", "flash_attention_2")
         logger.info("Loading MELT checkpoint from %s onto %s", model_name, self.device)
         self.model = MELTForCausalLM.from_pretrained(
-            model_name, dtype=torch_dtype, **model_args
+            model_name,
+            dtype=torch_dtype,
+            attn_implementation=attn_implementation,
+            **model_args,
         )
         self.model = self.model.to(self.device)
         self.model.eval()
@@ -114,8 +142,14 @@ class MELTAPI(ModelAPI):
         self._thread_lock = Lock()
 
     def max_connections(self) -> int:
-        """Cap in-flight requests at the batch size."""
-        return self.batch_size
+        """Cap in-flight requests at the pooling window, not one batch.
+
+        Length-sorted batching (MELT-proj/eval#7) needs more than one batch's
+        worth of requests queued to have anything to sort -- sorting a single
+        batch does not change its longest row. So the concurrency limit has
+        to admit the whole pool, not just ``batch_size``.
+        """
+        return self.batch_size * self.batch_window
 
     def close(self) -> None:
         """Drop the model so the GPU memory is released."""
@@ -154,8 +188,11 @@ class MELTAPI(ModelAPI):
         audio, sample_rate = None, 16000
         if locator is not None:
             audio, sample_rate = await anyio.to_thread.run_sync(_load_audio, locator)
+        duration = len(audio) / sample_rate if audio is not None else 0.0
 
-        request = _Request(text=text, audio=audio, sample_rate=sample_rate, config=config)
+        request = _Request(
+            text=text, audio=audio, sample_rate=sample_rate, config=config, duration=duration
+        )
         self._ensure_worker()
         self._queue.put(request)
 
@@ -172,39 +209,48 @@ class MELTAPI(ModelAPI):
                 self._thread.start()
 
     def _process_batches(self) -> None:
-        """Collect queued requests into batches and run them.
+        """Pool queued requests, sort by audio length, and run them in batches.
 
-        Waits briefly for a full batch rather than generating immediately, so a
+        Waits briefly for a full pool rather than generating immediately, so a
         run is batched even though inspect hands requests over one at a time.
-        A short batch at the tail of a run costs a fraction of a second.
+        The processor pads every row in a batch to that batch's longest audio,
+        so an arrival-order batch costs its longest utterance times its width.
+        Pooling several batches' worth of requests and sorting by duration
+        before slicing keeps each resulting batch close to uniform-length
+        instead (MELT-proj/eval#7). A short pool at the tail of a run costs a
+        fraction of a second.
         """
+        pool_size = self.batch_size * self.batch_window
         while True:
-            batch: list[_Request] = []
+            pool: list[_Request] = []
             deadline = None
-            while len(batch) < self.batch_size:
+            while len(pool) < pool_size:
                 timeout = BATCH_WAIT_SECONDS if deadline is None else max(0.0, deadline - time.monotonic())
                 try:
-                    batch.append(self._queue.get(timeout=timeout or 0.01))
+                    pool.append(self._queue.get(timeout=timeout or 0.01))
                     if deadline is None:
                         deadline = time.monotonic() + BATCH_WAIT_SECONDS
                 except Empty:
                     break
 
-            if not batch:
+            if not pool:
                 continue
 
-            try:
-                for request, completion in zip(batch, self._generate_batch(batch)):
-                    request.future.set_result(
-                        ModelOutput.from_content(model=self.model_name, content=completion)
-                    )
-            except Exception as exc:  # noqa: BLE001 - every waiter must be released
-                # A failure here would otherwise hang the run: the awaiting
-                # coroutines poll a future that nobody ever completes.
-                logger.exception("MELT batch of %d failed", len(batch))
-                for request in batch:
-                    if not request.future.done():
-                        request.future.set_exception(exc)
+            pool.sort(key=lambda r: r.duration)
+            for start in range(0, len(pool), self.batch_size):
+                batch = pool[start : start + self.batch_size]
+                try:
+                    for request, completion in zip(batch, self._generate_batch(batch)):
+                        request.future.set_result(
+                            ModelOutput.from_content(model=self.model_name, content=completion)
+                        )
+                except Exception as exc:  # noqa: BLE001 - every waiter must be released
+                    # A failure here would otherwise hang the run: the awaiting
+                    # coroutines poll a future that nobody ever completes.
+                    logger.exception("MELT batch of %d failed", len(batch))
+                    for request in batch:
+                        if not request.future.done():
+                            request.future.set_exception(exc)
 
     def _generate_batch(self, batch: list[_Request]) -> list[str]:
         """Run one padded batch through the model."""

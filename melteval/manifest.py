@@ -16,7 +16,7 @@ from __future__ import annotations
 
 import json
 from collections.abc import Iterator
-from dataclasses import asdict, dataclass, field
+from dataclasses import asdict, dataclass, field, fields
 from pathlib import Path
 
 
@@ -110,9 +110,18 @@ class EvalRecord:
 
     @classmethod
     def from_dict(cls, data: dict) -> EvalRecord:
-        """Rebuild from a parsed manifest line."""
+        """Rebuild from a parsed manifest line.
+
+        Drops any key this version of the schema doesn't know about, so a
+        manifest frozen by a newer ``melteval`` (with a field this one hasn't
+        picked up yet) still reads instead of raising a `TypeError` on the
+        one line that would matter least -- the schema evolves, but a
+        manifest is a durable artifact that outlives any one checkout.
+        """
         data = dict(data)
         data["audio"] = AudioLocator.from_dict(data["audio"])
+        known = {f.name for f in fields(cls)}
+        data = {k: v for k, v in data.items() if k in known}
         return cls(**data)
 
 
