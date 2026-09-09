@@ -1,54 +1,58 @@
 #!/bin/bash
-# Submit the ASR+ST eval campaign for every checkpoint of one training run:
-# the run root plus every checkpoint-N subfolder.
+# Capped variant of submit_campaign_mn5.sh: caps every (task, corpus, language)
+# unit at CAP samples (default 2000, taken in manifest order -- see
+# `melteval.dataset.frozen_dataset`'s `limit`) instead of running the corpus's
+# full test split.
 #
-# **One job per (task, corpus, language).** Not one job per task. Those are the
-# units the report in projects/melt is built from, so they have to be
-# aggregated across logs either way, and splitting there buys two things:
+# Why a cap. Once the campaign was already split one job per unit
+# (submit_campaign_mn5.sh), most of what a full run buys over a 2000-sample
+# one is a tighter confidence interval on corpora that are already tens of
+# thousands of samples -- cv22_sidon/en alone is 16.4k. 2000 is enough to see
+# real signal per checkpoint without paying for the last few thousand samples
+# of precision on every unit, every checkpoint.
 #
-#  * Wall time that fits. The single-job form asks for the whole frozen set at
-#    once, and that estimate is model-dependent in a way an sbatch default
-#    cannot track: llama-1b got through the 161k-sample ASR set in ~5 h, qwen-2b
-#    needs ~21 h. The first campaign was sized from the former and the second
-#    one's ASR jobs were all going to be killed at the wall. Per unit the
-#    largest cell is cv22_sidon/en at 16.4k samples -- ~2 h even for the slow
-#    model -- so one ceiling covers both.
-#  * Backfill. MN5's scheduler slots a 4 h job into gaps an 18 h job cannot
-#    fit, so shorter requests start sooner even at equal priority.
+# Why bfloat16 and batch_size=4 by default here: larger batches showed
+# instability in later testing than the batch_size=16 the first two campaigns
+# ran at. `dtype` is passed explicitly even though it already matches the
+# provider's own default (melteval/providers/melt.py) so a future default
+# change there does not silently change what this script runs. The uncapped
+# sibling still defaults to batch_size=16 -- its wall times were sized from
+# real batch_size=16 throughput, and there is not yet a real batch_size=4
+# throughput number to size a full-scale (up to 16.4k samples/unit) run's
+# wall time from. Revisit both scripts' defaults together once one exists.
 #
-# The cost is one model load per unit (~2-5 min against hours of decode) and
-# more jobs in the queue: 34 per checkpoint, 272 for an eight-checkpoint run.
-# acc_ehpc allows 366 submitted per user, so submit one run at a time.
-#
-# The units come from the frozen set's own manifest, not from a list here: a
-# corpus added to configs/*.yaml shows up in the campaign by rebuilding the
-# frozen set, with nothing to keep in sync.
-#
-# For a quicker, cheaper pass -- capped samples per unit, tuned for the
-# batch_size=4/bfloat16 config adopted after larger batches showed instability
-# -- see the capped sibling, submit_campaign_mn5_capped.sh.
+# Writes to a LOG_ROOT under campaign-logs-capped2000/, not campaign-logs/ --
+# a *different* directory tree from the full-scale campaign, deliberately.
+# projects/melt's report reads every log under whatever root it is pointed at
+# and has no notion of "these two logs for the same checkpoint used different
+# sample counts, don't average them" -- so a capped and a full run must never
+# share a log root, and a report run on one must not be pointed at the other.
 #
 # Run this ON MN5 from the eval checkout:
-#   RUN_ROOT=/gpfs/scratch/epor48/outputs/<run> ./infra/submit_campaign_mn5.sh
+#   RUN_ROOT=/gpfs/scratch/epor48/outputs/<run> ./infra/submit_campaign_mn5_capped.sh
 set -euo pipefail
 
-RUN_ROOT="${RUN_ROOT:?usage: RUN_ROOT=/path/to/run ./infra/submit_campaign_mn5.sh}"
+RUN_ROOT="${RUN_ROOT:?usage: RUN_ROOT=/path/to/run ./infra/submit_campaign_mn5_capped.sh}"
 RUN_NAME=$(basename "$RUN_ROOT")
 ASR_SET="${ASR_SET:-/gpfs/scratch/epor48/itpt955676/eval-sets/asr-eval-campaign-v1}"
 ST_SET="${ST_SET:-/gpfs/scratch/epor48/itpt955676/eval-sets/st-eval-campaign-v1}"
 SIF="${MELT_SIF:-/gpfs/scratch/epor48/itpt955676/melt_eval_cuda126_v2.sif}"
 
-# One subfolder per checkpoint, so `inspect view --log-dir <folder>` scopes to
-# one checkpoint and the report can still walk the whole tree at once.
-LOG_ROOT="${LOG_ROOT:-/gpfs/scratch/epor48/itpt955676/campaign-logs/${RUN_NAME}}"
+LOG_ROOT="${LOG_ROOT:-/gpfs/scratch/epor48/itpt955676/campaign-logs-capped2000/${RUN_NAME}}"
 
-# Sized from the slowest model seen so far (qwen-2b, ~7.6k samples/hour) against
-# the largest single unit (16.4k samples), with margin. Raise ASR_TIME rather
-# than lower it if a bigger model lands: the failure mode is silent, a killed
-# job leaves a partial log, and only `inspect eval-retry` gets that work back.
-ASR_TIME="${ASR_TIME:-04:00:00}"
-ST_TIME="${ST_TIME:-03:00:00}"
-BATCH_SIZE="${BATCH_SIZE:-16}"
+CAP="${CAP:-2000}"
+BATCH_SIZE="${BATCH_SIZE:-4}"
+DTYPE="${DTYPE:-bfloat16}"
+
+# A 2000-sample cap and batch_size=4 shrink every unit far below the 4 h this
+# script's uncapped sibling budgets for its 16.4k-sample worst case -- expect
+# well under an hour per unit even on the slower of the two models seen so
+# far. Kept at 1.5 h anyway, not trimmed further: this is the first campaign
+# run at batch_size=4, so there is no real throughput measurement for it yet
+# to size a tighter number from. Revisit once one exists (see how ASR_TIME in
+# submit_campaign_mn5.sh was derived from the first campaign's real numbers).
+ASR_TIME="${ASR_TIME:-01:30:00}"
+ST_TIME="${ST_TIME:-01:30:00}"
 
 ACCOUNT="${ACCOUNT:-epor48}"
 QOS="${QOS:-acc_ehpc}"
@@ -84,12 +88,13 @@ mapfile -t ST_UNITS < <(units_of "$ST_SET")
 
 echo "Run:        $RUN_NAME"
 echo "Log root:   $LOG_ROOT"
+echo "Cap:        $CAP samples/unit, batch_size=$BATCH_SIZE, dtype=$DTYPE"
 echo "Checkpoints: ${#CHECKPOINTS[@]}"
 echo "Units:      ${#ASR_UNITS[@]} ASR + ${#ST_UNITS[@]} ST = $(( (${#ASR_UNITS[@]} + ${#ST_UNITS[@]}) * ${#CHECKPOINTS[@]} )) jobs"
 
 submit() {
     local ckpt="$1" name="$2" set_dir="$3" time="$4" task="$5" dataset_id="$6" lang="$7"
-    local args=(-T "task_filter=${task}")
+    local args=(-T "task_filter=${task}" -T "limit=${CAP}")
     [[ -n "$dataset_id" ]] && args+=(-T "dataset_id=${dataset_id}")
     [[ -n "$lang" ]] && args+=(-T "lang=${lang}")
     # Sub-checkpoints carry no tokenizer/processor/training config of their own
@@ -98,6 +103,7 @@ submit() {
     args+=(
         -M "processor=${RUN_ROOT}"
         -M "batch_size=${BATCH_SIZE}"
+        -M "dtype=${DTYPE}"
         -T "tokenizer=${RUN_ROOT}"
         -T "format_config=${RUN_ROOT}/training_config.yaml"
         --tags "${name}"
