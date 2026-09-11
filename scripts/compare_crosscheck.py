@@ -231,7 +231,7 @@ def main() -> None:
         sys.exit(0)
     print(pal.paint(
         f"FAIL: systematic flags set ({bool(systematic)}) or hyp-vs-hyp WER {corpus_wer:.4f} "
-        f"> {WER_PASS_THRESHOLD}. Inspect the pairs above before approving the branch.",
+        f"> {WER_PASS_THRESHOLD}.",
         "red", "bold",
     ))
     sys.exit(1)

@@ -457,7 +457,7 @@ def _with_audio_tag(text: str, tag: str, placement: str) -> str:
     """
     if tag in text:
         return text
-    return f"{text}{tag}" if placement == "suffix" else f"{tag}{text}"
+    return f"{text} {tag}" if placement == "suffix" else f"{tag} {text}"
 
 
 def _collate_audio(batch: list[_Request], sampling_rate: int):
