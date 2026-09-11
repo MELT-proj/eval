@@ -178,11 +178,12 @@ class TestSmurfAudioTag:
     TAG = "<|audioplaceholder|>"
 
     def test_suffix_matches_how_smurf_builds_its_conversations(self):
-        """Instruction turn first, audio turn second -- so the tag lands last."""
-        assert _with_audio_tag("Transcribe: ", self.TAG, "suffix") == f"Transcribe: {self.TAG}"
+        """Instruction turn first, audio turn second -- so the tag lands last,
+        joined by a single space."""
+        assert _with_audio_tag("Transcribe:", self.TAG, "suffix") == f"Transcribe: {self.TAG}"
 
     def test_prefix_puts_the_audio_first(self):
-        assert _with_audio_tag("Transcribe: ", self.TAG, "prefix") == f"{self.TAG}Transcribe: "
+        assert _with_audio_tag("Transcribe:", self.TAG, "prefix") == f"{self.TAG} Transcribe:"
 
     def test_a_prompt_that_already_positions_the_tag_is_left_alone(self):
         """A benchmark shipping its own prompt keeps control of the position,
