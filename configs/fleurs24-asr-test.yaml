@@ -1,0 +1,154 @@
+# FLEURS-24 ASR test set: the full `test` split for the 24 EU languages the
+# ablation campaign's language ladder trains and evaluates on
+# (training repo, projects/ablation-campaign/plan/05-language-ladder.md §3).
+# Every ladder tier (T10..T700, the mixed-tier and probe runs) scores CER/WER
+# against this set for all 24 languages, in and out of that arm's training
+# mix -- it is the "ASR in-domain / zero-shot" row of the evaluation table.
+#
+# text_field follows the training convention for FLEURS -- custom.pnc_text,
+# truecased and punctuated by the preprocessing repo's PNC pass -- see any
+# config/train/*.yaml FLEURS block and melteval/freeze.py's own docstring
+# example.
+#
+# ga (Irish) has no custom.pnc_text on FLEURS test *or* validation, checked
+# directly against the shar tree on 2026-09-15
+# (/mnt/scratch-nyx/giuseppe/melt/melt-data/shar/fleurs/ga_ie): every other
+# language in this file is 100% covered. text_field falls back silently to
+# the plain supervision text for ga only (get_text_from_cut, strict=False),
+# so the Irish reference is lowercase and unpunctuated while the other 23
+# are cased and punctuated. This mirrors a pre-existing training-time gap
+# (the training repo's num_tokens/pnc_text coverage note), not something
+# introduced here -- flagged on the campaign board, not worked around in
+# this config.
+#
+# One `inspect eval` run is enough for the whole set: the per-language
+# breakdown comes from the scorer's `grouped` metric (see
+# asr-eval-campaign-v1.yaml), so use `-T lang=<code>` to isolate one language
+# and `-T limit=N` for a debug run against this same frozen set rather than
+# shrinking it here.
+name: fleurs24-asr-test
+seed: 0
+
+input_cfg:
+  - type: lhotse_shar
+    shar_path: ${LOCAL_DATASETS_DIR}/fleurs/en_us/test
+    text_field: custom.pnc_text
+    tags: {task: asr, lang: en, dataset_id: fleurs}
+
+  - type: lhotse_shar
+    shar_path: ${LOCAL_DATASETS_DIR}/fleurs/es_419/test
+    text_field: custom.pnc_text
+    tags: {task: asr, lang: es, dataset_id: fleurs}
+
+  - type: lhotse_shar
+    shar_path: ${LOCAL_DATASETS_DIR}/fleurs/fr_fr/test
+    text_field: custom.pnc_text
+    tags: {task: asr, lang: fr, dataset_id: fleurs}
+
+  - type: lhotse_shar
+    shar_path: ${LOCAL_DATASETS_DIR}/fleurs/de_de/test
+    text_field: custom.pnc_text
+    tags: {task: asr, lang: de, dataset_id: fleurs}
+
+  - type: lhotse_shar
+    shar_path: ${LOCAL_DATASETS_DIR}/fleurs/it_it/test
+    text_field: custom.pnc_text
+    tags: {task: asr, lang: it, dataset_id: fleurs}
+
+  - type: lhotse_shar
+    shar_path: ${LOCAL_DATASETS_DIR}/fleurs/nl_nl/test
+    text_field: custom.pnc_text
+    tags: {task: asr, lang: nl, dataset_id: fleurs}
+
+  - type: lhotse_shar
+    shar_path: ${LOCAL_DATASETS_DIR}/fleurs/pt_br/test
+    text_field: custom.pnc_text
+    tags: {task: asr, lang: pt, dataset_id: fleurs}
+
+  - type: lhotse_shar
+    shar_path: ${LOCAL_DATASETS_DIR}/fleurs/pl_pl/test
+    text_field: custom.pnc_text
+    tags: {task: asr, lang: pl, dataset_id: fleurs}
+
+  - type: lhotse_shar
+    shar_path: ${LOCAL_DATASETS_DIR}/fleurs/hu_hu/test
+    text_field: custom.pnc_text
+    tags: {task: asr, lang: hu, dataset_id: fleurs}
+
+  - type: lhotse_shar
+    shar_path: ${LOCAL_DATASETS_DIR}/fleurs/fi_fi/test
+    text_field: custom.pnc_text
+    tags: {task: asr, lang: fi, dataset_id: fleurs}
+
+  - type: lhotse_shar
+    shar_path: ${LOCAL_DATASETS_DIR}/fleurs/cs_cz/test
+    text_field: custom.pnc_text
+    tags: {task: asr, lang: cs, dataset_id: fleurs}
+
+  - type: lhotse_shar
+    shar_path: ${LOCAL_DATASETS_DIR}/fleurs/ro_ro/test
+    text_field: custom.pnc_text
+    tags: {task: asr, lang: ro, dataset_id: fleurs}
+
+  - type: lhotse_shar
+    shar_path: ${LOCAL_DATASETS_DIR}/fleurs/sv_se/test
+    text_field: custom.pnc_text
+    tags: {task: asr, lang: sv, dataset_id: fleurs}
+
+  - type: lhotse_shar
+    shar_path: ${LOCAL_DATASETS_DIR}/fleurs/hr_hr/test
+    text_field: custom.pnc_text
+    tags: {task: asr, lang: hr, dataset_id: fleurs}
+
+  - type: lhotse_shar
+    shar_path: ${LOCAL_DATASETS_DIR}/fleurs/sk_sk/test
+    text_field: custom.pnc_text
+    tags: {task: asr, lang: sk, dataset_id: fleurs}
+
+  - type: lhotse_shar
+    shar_path: ${LOCAL_DATASETS_DIR}/fleurs/bg_bg/test
+    text_field: custom.pnc_text
+    tags: {task: asr, lang: bg, dataset_id: fleurs}
+
+  - type: lhotse_shar
+    shar_path: ${LOCAL_DATASETS_DIR}/fleurs/lv_lv/test
+    text_field: custom.pnc_text
+    tags: {task: asr, lang: lv, dataset_id: fleurs}
+
+  - type: lhotse_shar
+    shar_path: ${LOCAL_DATASETS_DIR}/fleurs/da_dk/test
+    text_field: custom.pnc_text
+    tags: {task: asr, lang: da, dataset_id: fleurs}
+
+  - type: lhotse_shar
+    shar_path: ${LOCAL_DATASETS_DIR}/fleurs/lt_lt/test
+    text_field: custom.pnc_text
+    tags: {task: asr, lang: lt, dataset_id: fleurs}
+
+  - type: lhotse_shar
+    shar_path: ${LOCAL_DATASETS_DIR}/fleurs/el_gr/test
+    text_field: custom.pnc_text
+    tags: {task: asr, lang: el, dataset_id: fleurs}
+
+  - type: lhotse_shar
+    shar_path: ${LOCAL_DATASETS_DIR}/fleurs/et_ee/test
+    text_field: custom.pnc_text
+    tags: {task: asr, lang: et, dataset_id: fleurs}
+
+  - type: lhotse_shar
+    shar_path: ${LOCAL_DATASETS_DIR}/fleurs/sl_si/test
+    text_field: custom.pnc_text
+    tags: {task: asr, lang: sl, dataset_id: fleurs}
+
+  # ga: no custom.pnc_text on this locale -- see the file header. Kept as
+  # custom.pnc_text anyway so the spec stays uniform and the fallback is the
+  # one get_text_from_cut already documents, not a bespoke override here.
+  - type: lhotse_shar
+    shar_path: ${LOCAL_DATASETS_DIR}/fleurs/ga_ie/test
+    text_field: custom.pnc_text
+    tags: {task: asr, lang: ga, dataset_id: fleurs}
+
+  - type: lhotse_shar
+    shar_path: ${LOCAL_DATASETS_DIR}/fleurs/mt_mt/test
+    text_field: custom.pnc_text
+    tags: {task: asr, lang: mt, dataset_id: fleurs}
