@@ -1,0 +1,189 @@
+# FLEURS X->en ST test set: the full FLEURS `test` audio for 23 EU locales
+# (all but English), scored against the *English* FLEURS transcription of the
+# same sentence id -- not a translation corpus, a sentence-parallel read of
+# the same script in different languages (training repo,
+# projects/ablation-campaign/plan/05-language-ladder.md Sec 3.1). Covers all
+# 24 ladder languages on the ST side except en itself; CoVoST2 X->en
+# (st-eval-campaign-v1.yaml) covers ten of them for cross-corpus comparison.
+#
+# Reference resolution: `reference_map` (new SharReader option, see
+# melteval/readers/shar.py) overrides the per-cut target text by cut id,
+# bypassing text_field/get_text_from_cut entirely. configs/refs/
+# fleurs-en-reference-test.json is `{sentence_id: raw_transcription}` for all
+# 350 ids in FLEURS en_us test, fetched once from the HF `google/fleurs`
+# metadata (cased, unnormalised -- the corpus's own transcription, not the
+# preprocessing repo's truecase/PNC pass, so scores stay comparable to
+# published Whisper/SeamlessM4T FLEURS numbers). Chosen over the lowercase
+# shar supervision text and over shar's own `custom.pnc_text`, which differs
+# across duplicate en_us recordings of the same sentence for 57/350 ids
+# (verified 2026-09-15 board entry) -- raw_transcription does not have this
+# problem (checked: 0/350 ids have more than one distinct value across their
+# recordings). The majority-pnc_text fallback in 05-language-ladder.md Sec
+# 3.1 was not needed: the HF fetch succeeded and agreed across recordings.
+#
+# source_text_field: custom.pnc_text carries the source-language (X)
+# transcript for `melteval rescore`'s COMET triples, same convention as
+# st-eval-campaign-v1.yaml's CoVoST2 sources. ga (Irish) has no
+# `custom.pnc_text` on FLEURS test/validation (fleurs24-asr-test.yaml's
+# header) so its source_text comes out empty; harmless for chrF/BLEU
+# (scored against the English reference only) but means no COMET source can
+# be built for ga until that gap is closed.
+#
+# Per-language breakdown: unlike ASR, do NOT use `-T lang=<code>` here.
+# get_tags_from_cut (training repo, helpers.py) sets the returned `lang` to
+# `tgt_lang` for any `task: st` cut ("kept as target for backward compat"),
+# so every record in this file reports lang=en regardless of its audio's
+# locale -- the `grouped(..., "lang", ...)` BLEU/chrF metric would collapse
+# all 23 languages into one "en" bucket. dataset_id is unique per source
+# (`fleurs-<src>_en`) for exactly this reason: isolate one language with
+# `-T dataset_id=fleurs-de_en`, matching how st-eval-campaign-v1.yaml already
+# isolates CoVoST2 directions. (Deviates from the flat `dataset_id: fleurs`
+# in the design note in 05-language-ladder.md Sec 3.1's tag example --
+# flagged on the campaign board with this reasoning; that section is design
+# guidance, not a Settled decision.)
+#
+# Verification (2026-09-15): all 23 sources built with zero
+# dropped_no_reference; sample counts, per-language hours and a manual spot
+# check of 20 (audio locale, English reference) pairs are in the board entry
+# and frozen_set.json.
+name: fleurs24-st-xen-test
+seed: 0
+
+input_cfg:
+  - type: lhotse_shar
+    shar_path: ${LOCAL_DATASETS_DIR}/fleurs/es_419/test
+    source_text_field: custom.pnc_text
+    reference_map: configs/refs/fleurs-en-reference-test.json
+    tags: {task: st, src_lang: es, tgt_lang: en, dataset_id: fleurs-es_en}
+
+  - type: lhotse_shar
+    shar_path: ${LOCAL_DATASETS_DIR}/fleurs/fr_fr/test
+    source_text_field: custom.pnc_text
+    reference_map: configs/refs/fleurs-en-reference-test.json
+    tags: {task: st, src_lang: fr, tgt_lang: en, dataset_id: fleurs-fr_en}
+
+  - type: lhotse_shar
+    shar_path: ${LOCAL_DATASETS_DIR}/fleurs/de_de/test
+    source_text_field: custom.pnc_text
+    reference_map: configs/refs/fleurs-en-reference-test.json
+    tags: {task: st, src_lang: de, tgt_lang: en, dataset_id: fleurs-de_en}
+
+  - type: lhotse_shar
+    shar_path: ${LOCAL_DATASETS_DIR}/fleurs/it_it/test
+    source_text_field: custom.pnc_text
+    reference_map: configs/refs/fleurs-en-reference-test.json
+    tags: {task: st, src_lang: it, tgt_lang: en, dataset_id: fleurs-it_en}
+
+  - type: lhotse_shar
+    shar_path: ${LOCAL_DATASETS_DIR}/fleurs/nl_nl/test
+    source_text_field: custom.pnc_text
+    reference_map: configs/refs/fleurs-en-reference-test.json
+    tags: {task: st, src_lang: nl, tgt_lang: en, dataset_id: fleurs-nl_en}
+
+  - type: lhotse_shar
+    shar_path: ${LOCAL_DATASETS_DIR}/fleurs/pt_br/test
+    source_text_field: custom.pnc_text
+    reference_map: configs/refs/fleurs-en-reference-test.json
+    tags: {task: st, src_lang: pt, tgt_lang: en, dataset_id: fleurs-pt_en}
+
+  - type: lhotse_shar
+    shar_path: ${LOCAL_DATASETS_DIR}/fleurs/pl_pl/test
+    source_text_field: custom.pnc_text
+    reference_map: configs/refs/fleurs-en-reference-test.json
+    tags: {task: st, src_lang: pl, tgt_lang: en, dataset_id: fleurs-pl_en}
+
+  - type: lhotse_shar
+    shar_path: ${LOCAL_DATASETS_DIR}/fleurs/hu_hu/test
+    source_text_field: custom.pnc_text
+    reference_map: configs/refs/fleurs-en-reference-test.json
+    tags: {task: st, src_lang: hu, tgt_lang: en, dataset_id: fleurs-hu_en}
+
+  - type: lhotse_shar
+    shar_path: ${LOCAL_DATASETS_DIR}/fleurs/fi_fi/test
+    source_text_field: custom.pnc_text
+    reference_map: configs/refs/fleurs-en-reference-test.json
+    tags: {task: st, src_lang: fi, tgt_lang: en, dataset_id: fleurs-fi_en}
+
+  - type: lhotse_shar
+    shar_path: ${LOCAL_DATASETS_DIR}/fleurs/cs_cz/test
+    source_text_field: custom.pnc_text
+    reference_map: configs/refs/fleurs-en-reference-test.json
+    tags: {task: st, src_lang: cs, tgt_lang: en, dataset_id: fleurs-cs_en}
+
+  - type: lhotse_shar
+    shar_path: ${LOCAL_DATASETS_DIR}/fleurs/ro_ro/test
+    source_text_field: custom.pnc_text
+    reference_map: configs/refs/fleurs-en-reference-test.json
+    tags: {task: st, src_lang: ro, tgt_lang: en, dataset_id: fleurs-ro_en}
+
+  - type: lhotse_shar
+    shar_path: ${LOCAL_DATASETS_DIR}/fleurs/sv_se/test
+    source_text_field: custom.pnc_text
+    reference_map: configs/refs/fleurs-en-reference-test.json
+    tags: {task: st, src_lang: sv, tgt_lang: en, dataset_id: fleurs-sv_en}
+
+  - type: lhotse_shar
+    shar_path: ${LOCAL_DATASETS_DIR}/fleurs/hr_hr/test
+    source_text_field: custom.pnc_text
+    reference_map: configs/refs/fleurs-en-reference-test.json
+    tags: {task: st, src_lang: hr, tgt_lang: en, dataset_id: fleurs-hr_en}
+
+  - type: lhotse_shar
+    shar_path: ${LOCAL_DATASETS_DIR}/fleurs/sk_sk/test
+    source_text_field: custom.pnc_text
+    reference_map: configs/refs/fleurs-en-reference-test.json
+    tags: {task: st, src_lang: sk, tgt_lang: en, dataset_id: fleurs-sk_en}
+
+  - type: lhotse_shar
+    shar_path: ${LOCAL_DATASETS_DIR}/fleurs/bg_bg/test
+    source_text_field: custom.pnc_text
+    reference_map: configs/refs/fleurs-en-reference-test.json
+    tags: {task: st, src_lang: bg, tgt_lang: en, dataset_id: fleurs-bg_en}
+
+  - type: lhotse_shar
+    shar_path: ${LOCAL_DATASETS_DIR}/fleurs/lv_lv/test
+    source_text_field: custom.pnc_text
+    reference_map: configs/refs/fleurs-en-reference-test.json
+    tags: {task: st, src_lang: lv, tgt_lang: en, dataset_id: fleurs-lv_en}
+
+  - type: lhotse_shar
+    shar_path: ${LOCAL_DATASETS_DIR}/fleurs/da_dk/test
+    source_text_field: custom.pnc_text
+    reference_map: configs/refs/fleurs-en-reference-test.json
+    tags: {task: st, src_lang: da, tgt_lang: en, dataset_id: fleurs-da_en}
+
+  - type: lhotse_shar
+    shar_path: ${LOCAL_DATASETS_DIR}/fleurs/lt_lt/test
+    source_text_field: custom.pnc_text
+    reference_map: configs/refs/fleurs-en-reference-test.json
+    tags: {task: st, src_lang: lt, tgt_lang: en, dataset_id: fleurs-lt_en}
+
+  - type: lhotse_shar
+    shar_path: ${LOCAL_DATASETS_DIR}/fleurs/el_gr/test
+    source_text_field: custom.pnc_text
+    reference_map: configs/refs/fleurs-en-reference-test.json
+    tags: {task: st, src_lang: el, tgt_lang: en, dataset_id: fleurs-el_en}
+
+  - type: lhotse_shar
+    shar_path: ${LOCAL_DATASETS_DIR}/fleurs/et_ee/test
+    source_text_field: custom.pnc_text
+    reference_map: configs/refs/fleurs-en-reference-test.json
+    tags: {task: st, src_lang: et, tgt_lang: en, dataset_id: fleurs-et_en}
+
+  - type: lhotse_shar
+    shar_path: ${LOCAL_DATASETS_DIR}/fleurs/sl_si/test
+    source_text_field: custom.pnc_text
+    reference_map: configs/refs/fleurs-en-reference-test.json
+    tags: {task: st, src_lang: sl, tgt_lang: en, dataset_id: fleurs-sl_en}
+
+  - type: lhotse_shar
+    shar_path: ${LOCAL_DATASETS_DIR}/fleurs/ga_ie/test
+    source_text_field: custom.pnc_text
+    reference_map: configs/refs/fleurs-en-reference-test.json
+    tags: {task: st, src_lang: ga, tgt_lang: en, dataset_id: fleurs-ga_en}
+
+  - type: lhotse_shar
+    shar_path: ${LOCAL_DATASETS_DIR}/fleurs/mt_mt/test
+    source_text_field: custom.pnc_text
+    reference_map: configs/refs/fleurs-en-reference-test.json
+    tags: {task: st, src_lang: mt, tgt_lang: en, dataset_id: fleurs-mt_en}
