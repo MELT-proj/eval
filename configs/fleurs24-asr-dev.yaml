@@ -5,7 +5,8 @@
 # earlier training configs (e.g. MA-v1.2.yaml) already point their
 # `validation_ds` at FLEURS `validation`, not `test`.
 #
-# Same text_field convention, and the same ga (Irish) caveat, as
+# Same text_field convention, the same ga (Irish) caveat, and the same
+# ru/uk addition (2026-09-16, not EU-24 languages, named probes), as
 # fleurs24-asr-test.yaml -- see that file's header; not repeated per-source
 # here.
 #
@@ -158,3 +159,15 @@ input_cfg:
     text_field: custom.pnc_text
     max_samples: 100
     tags: {task: asr, lang: mt, dataset_id: fleurs}
+
+  - type: lhotse_shar
+    shar_path: ${LOCAL_DATASETS_DIR}/fleurs/ru_ru/validation
+    text_field: custom.pnc_text
+    max_samples: 100
+    tags: {task: asr, lang: ru, dataset_id: fleurs}
+
+  - type: lhotse_shar
+    shar_path: ${LOCAL_DATASETS_DIR}/fleurs/uk_ua/validation
+    text_field: custom.pnc_text
+    max_samples: 100
+    tags: {task: asr, lang: uk, dataset_id: fleurs}

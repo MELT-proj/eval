@@ -1,7 +1,11 @@
 # FLEURS-24 ASR test set: the full `test` split for the 24 EU languages the
-# ablation campaign's language ladder trains and evaluates on
-# (training repo, projects/ablation-campaign/plan/05-language-ladder.md §3).
-# Every ladder tier (T10..T700, the mixed-tier and probe runs) scores CER/WER
+# ablation campaign's language ladder trains and evaluates on, plus ru/uk
+# (added 2026-09-16 -- Russian and Ukrainian are not among the 24 EU
+# languages but stay in the campaign's data and are named probes for
+# low-resource Slavic transfer; training repo,
+# projects/ablation-campaign/plan/05-language-ladder.md §3 and
+# plan/02-backbones.md §3.5). Every ladder tier (T10..T700, the mixed-tier
+# and probe runs) scores CER/WER
 # against this set for all 24 languages, in and out of that arm's training
 # mix -- it is the "ASR in-domain / zero-shot" row of the evaluation table.
 #
@@ -13,13 +17,15 @@
 # ga (Irish) has no custom.pnc_text on FLEURS test *or* validation, checked
 # directly against the shar tree on 2026-09-15
 # (/mnt/scratch-nyx/giuseppe/melt/melt-data/shar/fleurs/ga_ie): every other
-# language in this file is 100% covered. text_field falls back silently to
-# the plain supervision text for ga only (get_text_from_cut, strict=False),
-# so the Irish reference is lowercase and unpunctuated while the other 23
-# are cased and punctuated. This mirrors a pre-existing training-time gap
-# (the training repo's num_tokens/pnc_text coverage note), not something
-# introduced here -- flagged on the campaign board, not worked around in
-# this config.
+# language in this file is 100% covered, ru/uk included -- checked directly
+# against the shar tree on 2026-09-16 the same way ga was, since ga is
+# exactly the kind of surprise a same-field assumption can hide. text_field
+# falls back silently to the plain supervision text for ga only
+# (get_text_from_cut, strict=False), so the Irish reference is lowercase and
+# unpunctuated while every other language (23 EU + ru + uk) is cased and
+# punctuated. This mirrors a pre-existing training-time gap (the training
+# repo's num_tokens/pnc_text coverage note), not something introduced here
+# -- flagged on the campaign board, not worked around in this config.
 #
 # One `inspect eval` run is enough for the whole set: the per-language
 # breakdown comes from the scorer's `grouped` metric (see
@@ -152,3 +158,15 @@ input_cfg:
     shar_path: ${LOCAL_DATASETS_DIR}/fleurs/mt_mt/test
     text_field: custom.pnc_text
     tags: {task: asr, lang: mt, dataset_id: fleurs}
+
+  # ru/uk: not EU-24 languages, added as named probes (see file header).
+  # custom.pnc_text checked present on both, 2026-09-16.
+  - type: lhotse_shar
+    shar_path: ${LOCAL_DATASETS_DIR}/fleurs/ru_ru/test
+    text_field: custom.pnc_text
+    tags: {task: asr, lang: ru, dataset_id: fleurs}
+
+  - type: lhotse_shar
+    shar_path: ${LOCAL_DATASETS_DIR}/fleurs/uk_ua/test
+    text_field: custom.pnc_text
+    tags: {task: asr, lang: uk, dataset_id: fleurs}
