@@ -8,8 +8,8 @@
 # each freeze picks its own subset independently (no cross-task id pinning
 # implemented here).
 #
-# Same reference_map, source_text_field, dataset_id-for-breakdown and ga
-# caveats as fleurs24-st-xen-test.yaml -- see that file's header, not
+# Same reference_map, source_text_field, dataset_id-for-breakdown, ga and
+# ru/uk caveats as fleurs24-st-xen-test.yaml -- see that file's header, not
 # repeated per-source here. Reference map is configs/refs/
 # fleurs-en-reference-dev.json (150 ids, FLEURS en_us `validation`).
 name: fleurs24-st-xen-dev
@@ -176,3 +176,17 @@ input_cfg:
     reference_map: configs/refs/fleurs-en-reference-dev.json
     max_samples: 100
     tags: {task: st, src_lang: mt, tgt_lang: en, dataset_id: fleurs-mt_en}
+
+  - type: lhotse_shar
+    shar_path: ${LOCAL_DATASETS_DIR}/fleurs/ru_ru/validation
+    source_text_field: custom.pnc_text
+    reference_map: configs/refs/fleurs-en-reference-dev.json
+    max_samples: 100
+    tags: {task: st, src_lang: ru, tgt_lang: en, dataset_id: fleurs-ru_en}
+
+  - type: lhotse_shar
+    shar_path: ${LOCAL_DATASETS_DIR}/fleurs/uk_ua/validation
+    source_text_field: custom.pnc_text
+    reference_map: configs/refs/fleurs-en-reference-dev.json
+    max_samples: 100
+    tags: {task: st, src_lang: uk, tgt_lang: en, dataset_id: fleurs-uk_en}
