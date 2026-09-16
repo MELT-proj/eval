@@ -1,10 +1,14 @@
 # FLEURS X->en ST test set: the full FLEURS `test` audio for 23 EU locales
-# (all but English), scored against the *English* FLEURS transcription of the
-# same sentence id -- not a translation corpus, a sentence-parallel read of
-# the same script in different languages (training repo,
-# projects/ablation-campaign/plan/05-language-ladder.md Sec 3.1). Covers all
-# 24 ladder languages on the ST side except en itself; CoVoST2 X->en
-# (st-eval-campaign-v1.yaml) covers ten of them for cross-corpus comparison.
+# (all but English), plus ru/uk (added 2026-09-16 -- not EU-24 languages,
+# named probes for low-resource Slavic transfer, same reasoning as
+# fleurs24-asr-test.yaml's header in melt-eval main; training repo,
+# plan/02-backbones.md Sec 3.5), scored against the *English* FLEURS
+# transcription of the same sentence id -- not a translation corpus, a
+# sentence-parallel read of the same script in different languages (training
+# repo, projects/ablation-campaign/plan/05-language-ladder.md Sec 3.1).
+# Covers all 24 ladder languages on the ST side except en itself, plus the
+# two probes; CoVoST2 X->en (st-eval-campaign-v1.yaml) covers ten of them
+# for cross-corpus comparison.
 #
 # Reference resolution: `reference_map` (new SharReader option, see
 # melteval/readers/shar.py) overrides the per-cut target text by cut id,
@@ -187,3 +191,16 @@ input_cfg:
     source_text_field: custom.pnc_text
     reference_map: configs/refs/fleurs-en-reference-test.json
     tags: {task: st, src_lang: mt, tgt_lang: en, dataset_id: fleurs-mt_en}
+
+  # ru/uk: not EU-24 languages, added as named probes (see file header).
+  - type: lhotse_shar
+    shar_path: ${LOCAL_DATASETS_DIR}/fleurs/ru_ru/test
+    source_text_field: custom.pnc_text
+    reference_map: configs/refs/fleurs-en-reference-test.json
+    tags: {task: st, src_lang: ru, tgt_lang: en, dataset_id: fleurs-ru_en}
+
+  - type: lhotse_shar
+    shar_path: ${LOCAL_DATASETS_DIR}/fleurs/uk_ua/test
+    source_text_field: custom.pnc_text
+    reference_map: configs/refs/fleurs-en-reference-test.json
+    tags: {task: st, src_lang: uk, tgt_lang: en, dataset_id: fleurs-uk_en}
