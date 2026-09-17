@@ -27,6 +27,41 @@ melteval freeze  ──►  frozen set  ──►  inspect eval  ──►  melt
 Frozen sets **reference** audio rather than copying it — see
 [docs/frozen-sets.md](docs/frozen-sets.md).
 
+## How this differs from `inspect_evals`
+
+[`inspect_evals`](https://github.com/UKGovernmentBEIS/inspect_evals) — the
+upstream catalog of community evals — is the closest thing to a standard for
+how an `inspect_ai` task should be shaped (see its own
+[task-configurability standard](https://github.com/UKGovernmentBEIS/inspect_evals/blob/main/docs/task-configurability.md)).
+melt-eval follows it where it applies and departs from it in two places, both
+forced by evaluating against local audio rather than a published, versioned
+corpus:
+
+- **One generic task, not one task per benchmark.** `inspect_evals` registers
+  a dedicated `@task` function per benchmark (`inspect eval
+  inspect_evals/gpqa`), each runnable with defaults and just `--model`. Here
+  every benchmark — a HuggingFace split, a Shar mixture assembled for one
+  training run — goes through the same `speech` task (and its thin
+  `asr`/`st`/`audio_mcq`/… wrappers), selected with `-T frozen_set=` or `-T
+  spec=` rather than by name. A local Shar mixture is a one-off decision made
+  for a specific campaign, not a stable public benchmark worth giving its own
+  registered task; the frozen set (or spec) *is* the benchmark definition.
+- **Local corpora are frozen, not read live.** `inspect_evals` tasks build
+  their dataset inline from a revision-pinned source (typically
+  `hf_dataset(..., revision=...)`), which is already an immutable, reproducible
+  sample set. A local Shar tree has no equivalent pin — "which samples?" is a
+  mixture decision only `melteval freeze` makes and records (see
+  [docs/frozen-sets.md](docs/frozen-sets.md)) — and cluster compute nodes run
+  with no outbound internet, so a live loader would not even work there.
+  `configs/hf/*.yaml` specs *are* read live, the same way an `inspect_evals`
+  task would, because a pinned HuggingFace revision already gives them
+  everything freezing would add.
+
+Where nothing local-data-specific is in play, melt-eval follows the standard:
+judge models for graded tasks (`audio_chat`) are resolved through
+`inspect_ai`'s own `--model-role grader=<provider/model>`, not a bespoke task
+parameter — see "Evaluating a HuggingFace benchmark" below.
+
 ## Install
 
 melt-eval needs both `inspect_ai` and the training package (`melt-proj`) —
