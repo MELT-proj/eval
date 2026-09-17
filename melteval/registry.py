@@ -30,22 +30,21 @@ from melteval.scorers import (
 )
 
 
-#: Factories taking no required argument. ``audio_chat`` is deliberately not
-#: here: its scorer cannot be built without being told which model judges, so
-#: it is constructed in :func:`default_scorer` where that argument is in scope.
+#: Factories taking no required argument. ``audio_chat``'s judge is resolved
+#: from inspect_ai's ``grader`` model role at scoring time (see
+#: :func:`melteval.scorers.chat_scorer`), not passed in here, so it fits this
+#: table like every other task.
 TASK_SCORERS: dict[str, Callable[[], Scorer]] = {
     "asr": asr_scorer,
     "st": st_scorer,
     "chunked_asr": chunked_asr_scorer,
     "chunked_st": chunked_st_scorer,
     "audio_mcq": mcq_scorer,
+    "audio_chat": chat_scorer,
 }
 
-#: Tasks whose default scorer needs a judge model.
-GRADED_TASKS = ("audio_chat",)
 
-
-def default_scorer(task_filter: str | None, grader_model: str | None = None) -> Scorer:
+def default_scorer(task_filter: str | None) -> Scorer:
     """Return the default scorer for *task_filter*.
 
     With no task filter (a mixed or unfiltered frozen set) this falls back to
@@ -54,28 +53,23 @@ def default_scorer(task_filter: str | None, grader_model: str | None = None) -> 
 
     Args:
         task_filter: The task a frozen set was filtered to, or ``None``.
-        grader_model: Judge model, for the tasks in :data:`GRADED_TASKS`.
 
     Raises:
         ValueError: If *task_filter* is set but has no registered default.
             Silently falling back to ``exact()`` here would hide a typo (e.g.
             ``task_filter="ars"``) behind a number that looks like a real
-            score but is not. Also if a graded task is asked for without a
-            judge — see :func:`melteval.scorers.chat_scorer`.
+            score but is not.
     """
     if task_filter is None:
         from inspect_ai.scorer import exact
 
         return exact()
 
-    if task_filter in GRADED_TASKS:
-        return chat_scorer(grader_model)
-
     factory = TASK_SCORERS.get(task_filter)
     if factory is None:
         raise ValueError(
             f"No default scorer for task {task_filter!r} (have defaults for: "
-            f"{sorted([*TASK_SCORERS, *GRADED_TASKS])}). Pass scorer=... explicitly -- e.g. one "
-            "of inspect_ai.scorer's exact()/f1()/choice()/model_graded_qa()."
+            f"{sorted(TASK_SCORERS)}). Pass scorer=... explicitly -- e.g. one of "
+            "inspect_ai.scorer's exact()/f1()/choice()/model_graded_qa()."
         )
     return factory()
