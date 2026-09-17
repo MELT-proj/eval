@@ -15,5 +15,9 @@ runs/
 frozen/
 *.eval
 
+# Report artefacts from projects/melt: CSVs, charts and the extraction cache
+# are all rederivable from the logs.
+report-out/
+
 # Project notebook, as in the training repo.
 history/

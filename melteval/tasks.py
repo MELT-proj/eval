@@ -85,11 +85,23 @@ def speech(
         spec_dataset(spec, **filters) if spec else frozen_dataset(frozen_set, **filters)
     )
 
+    name = f"speech-{task_filter or 'all'}"
+    # dataset_id and lang fold into the task name (not just left in the task
+    # args) because together they're what tells two runs of the same
+    # task_filter apart in inspect view's log list -- e.g. six covost2
+    # directions all filtered to task_filter=st would otherwise all show up
+    # as "speech-st", and voxpopuli/it vs voxpopuli/fr would both show up as
+    # "speech-asr-voxpopuli" with nothing but the random log ID to tell them
+    # apart.
+    if dataset_id:
+        name = f"{name}-{dataset_id}"
+    if lang:
+        name = f"{name}-{lang}"
     return Task(
         dataset=dataset,
         solver=solver or speech_prompt(format_config=format_config, tokenizer=tokenizer),
         scorer=scorer or default_scorer(task_filter, grader_model),
-        name=f"speech-{task_filter or 'all'}",
+        name=name,
     )
 
 

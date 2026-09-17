@@ -78,8 +78,9 @@ class SharReader:
 
         Args:
             source_cfg: Source entry with ``shar_path`` and optional ``tags``,
-                ``text_field``, ``source_text_field``, ``min_duration``,
-                ``max_duration``, ``max_samples`` and ``seed``.
+                ``text_field``, ``source_text_field``, ``reference_map``,
+                ``min_duration``, ``max_duration``, ``max_samples`` and
+                ``seed``.
             source_index: Position in the spec, used for sample keys.
 
         Raises:
@@ -109,6 +110,12 @@ class SharReader:
         source_label = str(_get(source_cfg, "name", "") or "/".join(shar_path.parts[-3:]))
         text_field = str(_get(source_cfg, "text_field", "text"))
         source_text_field = _get(source_cfg, "source_text_field")
+        reference_map_path = _get(source_cfg, "reference_map")
+        reference_map = (
+            _load_reference_map(os.path.expandvars(str(reference_map_path)))
+            if reference_map_path
+            else None
+        )
         min_duration = _get(source_cfg, "min_duration")
         max_duration = _get(source_cfg, "max_duration")
         max_samples = _get(source_cfg, "max_samples")
@@ -142,7 +149,17 @@ class SharReader:
                 cut.custom = {**(cut.custom or {}), **tags}
                 cut.tags = tags
 
-            target = get_text_from_cut(cut, effective_text_field(cut, text_field))
+            if reference_map is not None:
+                # Overrides the per-cut text entirely: text_field resolution
+                # (get_text_from_cut / effective_text_field) is what the
+                # reference_map exists to bypass, for corpora like FLEURS
+                # X->en where the reference text does not live on the cut at
+                # all -- it is the *other* locale's transcription of the same
+                # sentence id, joined in at freeze time (see
+                # 05-language-ladder.md Sec 3.1 in the training repo).
+                target = reference_map.get(str(cut.id))
+            else:
+                target = get_text_from_cut(cut, effective_text_field(cut, text_field))
             if not target:
                 n_dropped_no_reference += 1
                 continue
@@ -227,6 +244,25 @@ class SharReader:
         reader, lock = _indexed_reader(shar_dir, str(indexes_root) if indexes_root else None)
         with lock:
             return reader[index]
+
+
+def _load_reference_map(path: str) -> dict[str, str]:
+    """Load a ``{cut_id: reference_text}`` JSON map.
+
+    Small (hundreds of entries for a FLEURS locale), so this reads the whole
+    file per source rather than caching -- the cost is dwarfed by the shar
+    manifest scan it sits next to.
+
+    Raises:
+        FileNotFoundError: If *path* does not exist.
+    """
+    import json
+
+    map_path = Path(path)
+    if not map_path.exists():
+        raise FileNotFoundError(f"reference_map not found: {map_path}")
+    data = json.loads(map_path.read_text(encoding="utf-8"))
+    return {str(k): str(v) for k, v in data.items()}
 
 
 def effective_text_field(cut, source_default: str) -> str:

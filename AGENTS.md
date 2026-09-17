@@ -36,6 +36,9 @@ forces it.
   use), `configs/hf/` for HuggingFace benchmarks (read live, or frozen -- see
   "Evaluating a HuggingFace benchmark" in README.md).
 - `docs/` — design notes worth reading before changing behaviour.
+- `projects/` — analysis of finished campaigns, one folder per project. Reads
+  eval logs; never part of the eval path itself, and never a dependency of
+  `melteval`.
 
 ## Coding conventions
 

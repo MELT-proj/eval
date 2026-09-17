@@ -1,0 +1,173 @@
+# FLEURS-24 ASR dev subset: ~100 utterances per language, subsampled from
+# FLEURS `validation` (not `test` -- kept fully held out for final results),
+# for the quick in-training generative eval round during MA/IFT campaign
+# runs (timeline.md week 1; 05-language-ladder.md §3). This mirrors how
+# earlier training configs (e.g. MA-v1.2.yaml) already point their
+# `validation_ds` at FLEURS `validation`, not `test`.
+#
+# Same text_field convention, the same ga (Irish) caveat, and the same
+# ru/uk addition (2026-09-16, not EU-24 languages, named probes), as
+# fleurs24-asr-test.yaml -- see that file's header; not repeated per-source
+# here.
+#
+# max_samples uses the freezer's seeded shuffle (seed below), so the same
+# 100 utterances are picked on every re-freeze of this spec.
+name: fleurs24-asr-dev
+seed: 0
+
+input_cfg:
+  - type: lhotse_shar
+    shar_path: ${LOCAL_DATASETS_DIR}/fleurs/en_us/validation
+    text_field: custom.pnc_text
+    max_samples: 100
+    tags: {task: asr, lang: en, dataset_id: fleurs}
+
+  - type: lhotse_shar
+    shar_path: ${LOCAL_DATASETS_DIR}/fleurs/es_419/validation
+    text_field: custom.pnc_text
+    max_samples: 100
+    tags: {task: asr, lang: es, dataset_id: fleurs}
+
+  - type: lhotse_shar
+    shar_path: ${LOCAL_DATASETS_DIR}/fleurs/fr_fr/validation
+    text_field: custom.pnc_text
+    max_samples: 100
+    tags: {task: asr, lang: fr, dataset_id: fleurs}
+
+  - type: lhotse_shar
+    shar_path: ${LOCAL_DATASETS_DIR}/fleurs/de_de/validation
+    text_field: custom.pnc_text
+    max_samples: 100
+    tags: {task: asr, lang: de, dataset_id: fleurs}
+
+  - type: lhotse_shar
+    shar_path: ${LOCAL_DATASETS_DIR}/fleurs/it_it/validation
+    text_field: custom.pnc_text
+    max_samples: 100
+    tags: {task: asr, lang: it, dataset_id: fleurs}
+
+  - type: lhotse_shar
+    shar_path: ${LOCAL_DATASETS_DIR}/fleurs/nl_nl/validation
+    text_field: custom.pnc_text
+    max_samples: 100
+    tags: {task: asr, lang: nl, dataset_id: fleurs}
+
+  - type: lhotse_shar
+    shar_path: ${LOCAL_DATASETS_DIR}/fleurs/pt_br/validation
+    text_field: custom.pnc_text
+    max_samples: 100
+    tags: {task: asr, lang: pt, dataset_id: fleurs}
+
+  - type: lhotse_shar
+    shar_path: ${LOCAL_DATASETS_DIR}/fleurs/pl_pl/validation
+    text_field: custom.pnc_text
+    max_samples: 100
+    tags: {task: asr, lang: pl, dataset_id: fleurs}
+
+  - type: lhotse_shar
+    shar_path: ${LOCAL_DATASETS_DIR}/fleurs/hu_hu/validation
+    text_field: custom.pnc_text
+    max_samples: 100
+    tags: {task: asr, lang: hu, dataset_id: fleurs}
+
+  - type: lhotse_shar
+    shar_path: ${LOCAL_DATASETS_DIR}/fleurs/fi_fi/validation
+    text_field: custom.pnc_text
+    max_samples: 100
+    tags: {task: asr, lang: fi, dataset_id: fleurs}
+
+  - type: lhotse_shar
+    shar_path: ${LOCAL_DATASETS_DIR}/fleurs/cs_cz/validation
+    text_field: custom.pnc_text
+    max_samples: 100
+    tags: {task: asr, lang: cs, dataset_id: fleurs}
+
+  - type: lhotse_shar
+    shar_path: ${LOCAL_DATASETS_DIR}/fleurs/ro_ro/validation
+    text_field: custom.pnc_text
+    max_samples: 100
+    tags: {task: asr, lang: ro, dataset_id: fleurs}
+
+  - type: lhotse_shar
+    shar_path: ${LOCAL_DATASETS_DIR}/fleurs/sv_se/validation
+    text_field: custom.pnc_text
+    max_samples: 100
+    tags: {task: asr, lang: sv, dataset_id: fleurs}
+
+  - type: lhotse_shar
+    shar_path: ${LOCAL_DATASETS_DIR}/fleurs/hr_hr/validation
+    text_field: custom.pnc_text
+    max_samples: 100
+    tags: {task: asr, lang: hr, dataset_id: fleurs}
+
+  - type: lhotse_shar
+    shar_path: ${LOCAL_DATASETS_DIR}/fleurs/sk_sk/validation
+    text_field: custom.pnc_text
+    max_samples: 100
+    tags: {task: asr, lang: sk, dataset_id: fleurs}
+
+  - type: lhotse_shar
+    shar_path: ${LOCAL_DATASETS_DIR}/fleurs/bg_bg/validation
+    text_field: custom.pnc_text
+    max_samples: 100
+    tags: {task: asr, lang: bg, dataset_id: fleurs}
+
+  - type: lhotse_shar
+    shar_path: ${LOCAL_DATASETS_DIR}/fleurs/lv_lv/validation
+    text_field: custom.pnc_text
+    max_samples: 100
+    tags: {task: asr, lang: lv, dataset_id: fleurs}
+
+  - type: lhotse_shar
+    shar_path: ${LOCAL_DATASETS_DIR}/fleurs/da_dk/validation
+    text_field: custom.pnc_text
+    max_samples: 100
+    tags: {task: asr, lang: da, dataset_id: fleurs}
+
+  - type: lhotse_shar
+    shar_path: ${LOCAL_DATASETS_DIR}/fleurs/lt_lt/validation
+    text_field: custom.pnc_text
+    max_samples: 100
+    tags: {task: asr, lang: lt, dataset_id: fleurs}
+
+  - type: lhotse_shar
+    shar_path: ${LOCAL_DATASETS_DIR}/fleurs/el_gr/validation
+    text_field: custom.pnc_text
+    max_samples: 100
+    tags: {task: asr, lang: el, dataset_id: fleurs}
+
+  - type: lhotse_shar
+    shar_path: ${LOCAL_DATASETS_DIR}/fleurs/et_ee/validation
+    text_field: custom.pnc_text
+    max_samples: 100
+    tags: {task: asr, lang: et, dataset_id: fleurs}
+
+  - type: lhotse_shar
+    shar_path: ${LOCAL_DATASETS_DIR}/fleurs/sl_si/validation
+    text_field: custom.pnc_text
+    max_samples: 100
+    tags: {task: asr, lang: sl, dataset_id: fleurs}
+
+  - type: lhotse_shar
+    shar_path: ${LOCAL_DATASETS_DIR}/fleurs/ga_ie/validation
+    text_field: custom.pnc_text
+    max_samples: 100
+    tags: {task: asr, lang: ga, dataset_id: fleurs}
+
+  - type: lhotse_shar
+    shar_path: ${LOCAL_DATASETS_DIR}/fleurs/mt_mt/validation
+    text_field: custom.pnc_text
+    max_samples: 100
+    tags: {task: asr, lang: mt, dataset_id: fleurs}
+
+  - type: lhotse_shar
+    shar_path: ${LOCAL_DATASETS_DIR}/fleurs/ru_ru/validation
+    text_field: custom.pnc_text
+    max_samples: 100
+    tags: {task: asr, lang: ru, dataset_id: fleurs}
+
+  - type: lhotse_shar
+    shar_path: ${LOCAL_DATASETS_DIR}/fleurs/uk_ua/validation
+    text_field: custom.pnc_text
+    max_samples: 100
+    tags: {task: asr, lang: uk, dataset_id: fleurs}

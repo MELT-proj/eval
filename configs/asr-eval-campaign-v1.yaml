@@ -1,0 +1,252 @@
+# ASR test sets for the checkpoint-comparison eval campaign: WER/CER across
+# four corpora and every language the campaign covers. Full `test` splits,
+# no max_samples -- use `-T limit=N` at `inspect eval` time for a debug run
+# against this same frozen set rather than shrinking it here.
+#
+# One `inspect eval` run is enough for the whole set (unlike ST): corpus WER
+# and CER are computed per language automatically via the scorer's `grouped`
+# metric (see melteval/scorers.py), so `-T task_filter=asr` alone reports an
+# overall number plus one wer_<lang>/cer_<lang> per language. Use `-T lang=`
+# or `-T dataset_id=` only to isolate one corpus/language for inspection.
+#
+#   voxpopuli   (en, es, de, it, fr, ro, nl, pl) -- plain supervisions[0].text
+#     (default, no text_field override). voxpopuli/es and /de cuts also carry
+#     custom.pnc_text, but the established eval convention (see melt-eval#…,
+#     ift700-first-eval) sticks to the plain field for every language so all
+#     eight are scored the same way.
+#   librispeech (en clean, en other) -- custom.pnc_text (punctuated/cased).
+#     Each split keeps its own dataset_id since ASR papers report clean/other
+#     separately, not pooled.
+#   mls_sidon   (all 8 languages available locally: nl, en, fr, de, it, pl,
+#     pt, es) -- custom.pnc_text, same Librivox-derived convention as
+#     librispeech. Shar folder names are full language names upstream; `lang`
+#     here is the ISO code.
+#   cv22_sidon  (en, es, de, it, fr, ro, nl, pl, pt, uk) -- CommonVoice 22.
+#     supervisions[0].text is empty for every cut in this corpus; the
+#     transcript lives at custom.metadata.sentence instead. (A handful of
+#     cv22_sidon languages -- ab/af/am/ar/as/ast/az -- have stale .idx
+#     sidecars on this host as of 2026-08; none of them are in this campaign,
+#     but re-check before adding a language outside this list.)
+name: asr-eval-campaign-v1
+seed: 0
+
+input_cfg:
+  # --- voxpopuli --------------------------------------------------------
+  - type: lhotse_shar
+    shar_path: ${LOCAL_DATASETS_DIR}/voxpopuli/en/test
+    tags:
+      task: asr
+      lang: en
+      dataset_id: voxpopuli
+
+  - type: lhotse_shar
+    shar_path: ${LOCAL_DATASETS_DIR}/voxpopuli/es/test
+    tags:
+      task: asr
+      lang: es
+      dataset_id: voxpopuli
+
+  - type: lhotse_shar
+    shar_path: ${LOCAL_DATASETS_DIR}/voxpopuli/de/test
+    tags:
+      task: asr
+      lang: de
+      dataset_id: voxpopuli
+
+  - type: lhotse_shar
+    shar_path: ${LOCAL_DATASETS_DIR}/voxpopuli/it/test
+    tags:
+      task: asr
+      lang: it
+      dataset_id: voxpopuli
+
+  - type: lhotse_shar
+    shar_path: ${LOCAL_DATASETS_DIR}/voxpopuli/fr/test
+    tags:
+      task: asr
+      lang: fr
+      dataset_id: voxpopuli
+
+  - type: lhotse_shar
+    shar_path: ${LOCAL_DATASETS_DIR}/voxpopuli/ro/test
+    tags:
+      task: asr
+      lang: ro
+      dataset_id: voxpopuli
+
+  - type: lhotse_shar
+    shar_path: ${LOCAL_DATASETS_DIR}/voxpopuli/nl/test
+    tags:
+      task: asr
+      lang: nl
+      dataset_id: voxpopuli
+
+  - type: lhotse_shar
+    shar_path: ${LOCAL_DATASETS_DIR}/voxpopuli/pl/test
+    tags:
+      task: asr
+      lang: pl
+      dataset_id: voxpopuli
+
+  # --- librispeech --------------------------------------------------------
+  - type: lhotse_shar
+    shar_path: ${LOCAL_DATASETS_DIR}/librispeech/clean/test
+    text_field: custom.pnc_text
+    tags:
+      task: asr
+      lang: en
+      dataset_id: librispeech-clean
+
+  - type: lhotse_shar
+    shar_path: ${LOCAL_DATASETS_DIR}/librispeech/other/test
+    text_field: custom.pnc_text
+    tags:
+      task: asr
+      lang: en
+      dataset_id: librispeech-other
+
+  # --- mls_sidon (all 8 languages available locally) ----------------------
+  - type: lhotse_shar
+    shar_path: ${LOCAL_DATASETS_DIR}/mls_sidon/dutch/test
+    text_field: custom.pnc_text
+    tags:
+      task: asr
+      lang: nl
+      dataset_id: mls_sidon
+
+  - type: lhotse_shar
+    shar_path: ${LOCAL_DATASETS_DIR}/mls_sidon/english/test
+    text_field: custom.pnc_text
+    tags:
+      task: asr
+      lang: en
+      dataset_id: mls_sidon
+
+  - type: lhotse_shar
+    shar_path: ${LOCAL_DATASETS_DIR}/mls_sidon/french/test
+    text_field: custom.pnc_text
+    tags:
+      task: asr
+      lang: fr
+      dataset_id: mls_sidon
+
+  - type: lhotse_shar
+    shar_path: ${LOCAL_DATASETS_DIR}/mls_sidon/german/test
+    text_field: custom.pnc_text
+    tags:
+      task: asr
+      lang: de
+      dataset_id: mls_sidon
+
+  - type: lhotse_shar
+    shar_path: ${LOCAL_DATASETS_DIR}/mls_sidon/italian/test
+    text_field: custom.pnc_text
+    tags:
+      task: asr
+      lang: it
+      dataset_id: mls_sidon
+
+  - type: lhotse_shar
+    shar_path: ${LOCAL_DATASETS_DIR}/mls_sidon/polish/test
+    text_field: custom.pnc_text
+    tags:
+      task: asr
+      lang: pl
+      dataset_id: mls_sidon
+
+  - type: lhotse_shar
+    shar_path: ${LOCAL_DATASETS_DIR}/mls_sidon/portuguese/test
+    text_field: custom.pnc_text
+    tags:
+      task: asr
+      lang: pt
+      dataset_id: mls_sidon
+
+  - type: lhotse_shar
+    shar_path: ${LOCAL_DATASETS_DIR}/mls_sidon/spanish/test
+    text_field: custom.pnc_text
+    tags:
+      task: asr
+      lang: es
+      dataset_id: mls_sidon
+
+  # --- cv22_sidon (CommonVoice 22) ----------------------------------------
+  - type: lhotse_shar
+    shar_path: ${LOCAL_DATASETS_DIR}/cv22_sidon/en/test
+    text_field: custom.metadata.sentence
+    tags:
+      task: asr
+      lang: en
+      dataset_id: cv22_sidon
+
+  - type: lhotse_shar
+    shar_path: ${LOCAL_DATASETS_DIR}/cv22_sidon/es/test
+    text_field: custom.metadata.sentence
+    tags:
+      task: asr
+      lang: es
+      dataset_id: cv22_sidon
+
+  - type: lhotse_shar
+    shar_path: ${LOCAL_DATASETS_DIR}/cv22_sidon/de/test
+    text_field: custom.metadata.sentence
+    tags:
+      task: asr
+      lang: de
+      dataset_id: cv22_sidon
+
+  - type: lhotse_shar
+    shar_path: ${LOCAL_DATASETS_DIR}/cv22_sidon/it/test
+    text_field: custom.metadata.sentence
+    tags:
+      task: asr
+      lang: it
+      dataset_id: cv22_sidon
+
+  - type: lhotse_shar
+    shar_path: ${LOCAL_DATASETS_DIR}/cv22_sidon/fr/test
+    text_field: custom.metadata.sentence
+    tags:
+      task: asr
+      lang: fr
+      dataset_id: cv22_sidon
+
+  - type: lhotse_shar
+    shar_path: ${LOCAL_DATASETS_DIR}/cv22_sidon/ro/test
+    text_field: custom.metadata.sentence
+    tags:
+      task: asr
+      lang: ro
+      dataset_id: cv22_sidon
+
+  - type: lhotse_shar
+    shar_path: ${LOCAL_DATASETS_DIR}/cv22_sidon/nl/test
+    text_field: custom.metadata.sentence
+    tags:
+      task: asr
+      lang: nl
+      dataset_id: cv22_sidon
+
+  - type: lhotse_shar
+    shar_path: ${LOCAL_DATASETS_DIR}/cv22_sidon/pl/test
+    text_field: custom.metadata.sentence
+    tags:
+      task: asr
+      lang: pl
+      dataset_id: cv22_sidon
+
+  - type: lhotse_shar
+    shar_path: ${LOCAL_DATASETS_DIR}/cv22_sidon/pt/test
+    text_field: custom.metadata.sentence
+    tags:
+      task: asr
+      lang: pt
+      dataset_id: cv22_sidon
+
+  - type: lhotse_shar
+    shar_path: ${LOCAL_DATASETS_DIR}/cv22_sidon/uk/test
+    text_field: custom.metadata.sentence
+    tags:
+      task: asr
+      lang: uk
+      dataset_id: cv22_sidon

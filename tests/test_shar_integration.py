@@ -104,6 +104,77 @@ class TestReferenceResolution:
             assert record.source_text and record.source_text != record.target
 
 
+class TestReferenceMap:
+    """FLEURS X->en ST joins in the English reference by sentence id.
+
+    05-language-ladder.md Sec 3.1 (training repo): the reference for an X-locale
+    cut is not on the cut at all, it is the *other* locale's transcription of
+    the same FLEURS sentence id. ``reference_map`` is the mechanism.
+    """
+
+    def test_reference_map_overrides_the_default_target(self, tmp_path: Path):
+        import json
+
+        # First pass with no override, to learn real cut ids from the corpus.
+        plain = tmp_path / "plain"
+        freeze(
+            _spec("fleurs/de_de/test", max_samples=5, text_field="custom.pnc_text",
+                  tags={"task": "asr", "lang": "de"}),
+            plain,
+        )
+        records = read_manifest(plain / MANIFEST_NAME)
+        assert len(records) == 5
+
+        ref_map_path = tmp_path / "refs.json"
+        overrides = {r.cut_id: f"ENGLISH REFERENCE FOR {r.cut_id}" for r in records}
+        ref_map_path.write_text(json.dumps(overrides), encoding="utf-8")
+
+        mapped = tmp_path / "mapped"
+        freeze(
+            _spec("fleurs/de_de/test", max_samples=5, reference_map=str(ref_map_path),
+                  tags={"task": "st", "src_lang": "de", "tgt_lang": "en"}),
+            mapped,
+        )
+        mapped_records = read_manifest(mapped / MANIFEST_NAME)
+        assert len(mapped_records) == 5
+        for record in mapped_records:
+            assert record.target == f"ENGLISH REFERENCE FOR {record.cut_id}"
+
+    def test_reference_map_miss_is_dropped_and_counted(self, tmp_path: Path):
+        """An id absent from the map is not a target of `""`, it is no sample.
+
+        Calls the reader directly rather than through `freeze()`: every id
+        missing is the degenerate case where the source contributes zero
+        records, and `freeze()` raises on a spec with no records at all
+        (correctly -- see TestFreezeValidation-style checks elsewhere), which
+        would mask the per-source drop count this test exists to check.
+        """
+        import json
+
+        from melteval.readers.shar import SharReader
+
+        ref_map_path = tmp_path / "refs.json"
+        ref_map_path.write_text(json.dumps({"not-a-real-cut-id": "unused"}), encoding="utf-8")
+
+        source_cfg = _spec("fleurs/de_de/test", max_samples=5, reference_map=str(ref_map_path),
+                            tags={"task": "st", "src_lang": "de", "tgt_lang": "en"})["input_cfg"][0]
+        result = SharReader().freeze(source_cfg, source_index=0)
+        assert result.records == []
+        # max_samples subsets *candidates*, but with an empty-hitting map every
+        # cut read is dropped before it becomes a candidate, so the drop count
+        # is the source's full read count, not max_samples.
+        assert result.stats["dropped_no_reference"] == result.stats["read"] > 0
+
+    def test_reference_map_missing_file_raises(self, tmp_path: Path):
+        with pytest.raises(FileNotFoundError):
+            freeze(
+                _spec("fleurs/de_de/test", max_samples=5,
+                      reference_map=str(tmp_path / "does-not-exist.json"),
+                      tags={"task": "st", "src_lang": "de", "tgt_lang": "en"}),
+                tmp_path / "out",
+            )
+
+
 class TestConcurrentAccess:
     """Regression test for MELT-proj/eval#2.
 
