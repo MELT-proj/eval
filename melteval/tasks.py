@@ -31,7 +31,6 @@ def speech(
     limit: int | None = None,
     format_config: str | None = None,
     tokenizer: str | None = None,
-    grader_model: str | None = None,
     scorer: Scorer | None = None,
     solver: Solver | None = None,
 ) -> Task:
@@ -59,7 +58,6 @@ def speech(
             to the checkpoint being evaluated.
         tokenizer: Where to load the chat template from. Defaults to the
             checkpoint being evaluated.
-        grader_model: Judge model for tasks scored by one (``audio_chat``).
         scorer: Scorer to apply. Defaults to the task's registered scorer, or
             ``exact()`` (a plumbing check, not a real metric) when
             *task_filter* is unset.
@@ -100,7 +98,7 @@ def speech(
     return Task(
         dataset=dataset,
         solver=solver or speech_prompt(format_config=format_config, tokenizer=tokenizer),
-        scorer=scorer or default_scorer(task_filter, grader_model),
+        scorer=scorer or default_scorer(task_filter),
         name=name,
     )
 
@@ -168,14 +166,15 @@ def audio_mcq(frozen_set: str | None = None, **kwargs) -> Task:
 def audio_chat(frozen_set: str | None = None, **kwargs) -> Task:
     """:func:`speech` restricted to open-ended audio QA, graded by a judge model.
 
-    Needs ``-T grader_model=<provider/model>`` (e.g. ``openai/gpt-4o``): the
-    named model judges each free-text answer against the reference and grades
-    it as agreeing, partially agreeing or disagreeing (partial credit), via
-    :func:`melteval.scorers.chat_scorer`. Free-text answers about audio have
-    no lexical metric that measures the task, so there is nothing to fall
-    back on — run ``inspect eval --no-score`` to generate now and grade the
-    log later with ``inspect score`` if no judge is reachable from the
-    cluster.
+    Needs a model bound to the ``grader`` role (``--model-role
+    grader=<provider/model>``, e.g. ``--model-role grader=openai/gpt-4o``):
+    the bound model judges each free-text answer against the reference and
+    grades it as agreeing, partially agreeing or disagreeing (partial
+    credit), via :func:`melteval.scorers.chat_scorer`. Free-text answers
+    about audio have no lexical metric that measures the task, so there is
+    nothing to fall back on — run ``inspect eval --no-score`` to generate now
+    and grade the log later with ``inspect score`` if no judge is reachable
+    from the cluster.
     """
     kwargs.setdefault("task_filter", "audio_chat")
     return speech(frozen_set, **kwargs)

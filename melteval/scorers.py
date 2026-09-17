@@ -721,11 +721,13 @@ GRADE: I   (disagrees with the reference, or does not answer)"""
 
 
 NO_JUDGE_MESSAGE = (
-    "Task `audio_chat` needs a judge model: pass -T grader_model=<provider/model> "
-    "(e.g. -T grader_model=openai/gpt-4o). Open-ended answers about audio have no "
+    "Task `audio_chat` needs a judge model bound to the 'grader' role: pass "
+    "--model-role grader=<provider/model> (e.g. --model-role grader=openai/gpt-4o) "
+    "to `inspect eval` or `inspect score`. Open-ended answers about audio have no "
     "lexical metric that measures the task, and grading them with the model under test "
     "would be marking its own homework. To generate now and grade later, run "
-    "`inspect eval --no-score` and score the log afterwards with `inspect score`."
+    "`inspect eval --no-score` and score the log afterwards with `inspect score "
+    "--model-role grader=<provider/model>`."
 )
 
 
@@ -736,7 +738,7 @@ NO_JUDGE_MESSAGE = (
         grouped(accuracy(), "dataset_id", all=False, name_template="accuracy_{group_name}"),
     ]
 )
-def chat_scorer(grader_model: str | None = None) -> Scorer:
+def chat_scorer() -> Scorer:
     """Grade a free-form answer about audio against the reference, via a judge.
 
     There is no lexical metric worth reporting here. The references are one or
@@ -745,14 +747,17 @@ def chat_scorer(grader_model: str | None = None) -> Scorer:
     above a terse right one — a number that looks like a score and ranks models
     backwards. So a missing judge is an error rather than a fallback.
 
-    The judge is resolved on the first sample scored, not here. Raising at
+    The judge is whatever model is bound to inspect_ai's ``grader`` role
+    (``--model-role grader=<provider/model>``, on either ``inspect eval`` or a
+    later ``inspect score`` pass) rather than a task-level parameter: role
+    bindings are inspect's own mechanism for this, and using it here means the
+    same ``--model-role`` flag configures every judge-graded task, on the
+    cluster or off it, with nothing melteval-specific to remember.
+
+    The role is resolved on the first sample scored, not here. Raising at
     construction time would also fire under ``inspect eval --no-score``, which
     is the one way to run this task on a cluster that cannot reach a judge:
     generate now, ``inspect score`` the log later from somewhere that can.
-
-    Args:
-        grader_model: The judge, as an inspect model string (for example
-            ``openai/gpt-4o``).
 
     Returns:
         A scorer delegating to inspect's
@@ -763,16 +768,16 @@ def chat_scorer(grader_model: str | None = None) -> Scorer:
 
     async def score(state: TaskState, target: Target) -> Score:
         if not delegate:
+            from inspect_ai.model import model_roles
             from inspect_ai.scorer import model_graded_qa
 
-            if not grader_model:
+            if "grader" not in model_roles():
                 raise ValueError(NO_JUDGE_MESSAGE)
             delegate.append(
                 model_graded_qa(
                     template=CHAT_GRADER_TEMPLATE,
                     instructions=CHAT_GRADER_INSTRUCTIONS,
                     partial_credit=True,
-                    model=grader_model,
                 )
             )
         return await delegate[0](state, target)

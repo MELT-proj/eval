@@ -22,7 +22,7 @@ from inspect_ai.model import ModelName, ModelOutput
 from inspect_ai.scorer import SampleScore, Score, Target
 from inspect_ai.solver import TaskState
 
-from melteval.registry import GRADED_TASKS, TASK_SCORERS, default_scorer
+from melteval.registry import TASK_SCORERS, default_scorer
 from melteval.scorers import (
     chat_scorer,
     choice_accuracy,
@@ -441,20 +441,18 @@ class TestChunkedScorersThroughRealInspect:
 
 class TestRegistry:
     def test_speech_and_mcq_tasks_have_argument_free_defaults(self):
-        assert set(TASK_SCORERS) == {"asr", "st", "chunked_asr", "chunked_st", "audio_mcq"}
-
-    def test_a_graded_task_is_not_in_the_argument_free_table(self):
-        """audio_chat cannot be built without being told which model judges,
-        so it is constructed in default_scorer() rather than looked up here."""
-        assert "audio_chat" not in TASK_SCORERS
-        assert "audio_chat" in GRADED_TASKS
-
-    def test_a_graded_task_resolves_once_a_judge_is_named(self):
-        assert default_scorer("audio_chat", "mockllm/model") is not None
+        assert set(TASK_SCORERS) == {
+            "asr",
+            "st",
+            "chunked_asr",
+            "chunked_st",
+            "audio_mcq",
+            "audio_chat",
+        }
 
     def test_a_graded_task_without_a_judge_still_builds(self):
-        """It refuses when it scores, not when it is built -- see
-        TestChatScorer."""
+        """It refuses when it scores, not when it is built -- the judge is a
+        model role resolved lazily; see TestChatScorer."""
         assert default_scorer("audio_chat") is not None
 
     def test_mcq_resolves_to_the_choice_scorer(self):
@@ -564,13 +562,61 @@ class TestChatScorer:
     def test_constructing_without_a_judge_is_allowed(self):
         """So that `inspect eval --no-score` can run on a cluster that cannot
         reach a judge -- generate now, score the log later."""
-        assert chat_scorer(None) is not None
+        assert chat_scorer() is not None
 
     def test_scoring_without_a_judge_is_refused(self):
         """No lexical fallback on purpose: it would rank fluent wrong answers
         above terse right ones."""
-        with pytest.raises(ValueError, match="grader_model"):
-            _run(chat_scorer(None)(_state("an answer"), Target("the reference")))
+        with pytest.raises(ValueError, match="--model-role grader"):
+            _run(chat_scorer()(_state("an answer"), Target("the reference")))
 
-    def test_builds_a_graded_scorer_when_given_one(self):
-        assert chat_scorer("mockllm/model") is not None
+
+class TestChatScorerThroughRealInspect:
+    """The judge is resolved from inspect_ai's ``model_roles()``, which is
+    only populated inside a running eval/scoring context -- only a real
+    `inspect_ai.eval()` run exercises that resolution path."""
+
+    def test_scores_when_a_grader_role_is_bound(self, tmp_path):
+        from inspect_ai import Task
+        from inspect_ai import eval as inspect_eval
+        from inspect_ai.dataset import MemoryDataset, Sample
+        from inspect_ai.model import ModelOutput as _ModelOutput
+        from inspect_ai.model import get_model
+
+        dataset = MemoryDataset(
+            samples=[
+                Sample(
+                    input="What is happening in the audio?",
+                    target="A dog is barking.",
+                    id="0",
+                    metadata={"dataset_id": "d"},
+                )
+            ]
+        )
+        task = Task(dataset=dataset, scorer=chat_scorer())
+
+        candidate = get_model(
+            "mockllm/model",
+            custom_outputs=[_ModelOutput.from_content(model="mockllm/model", content="A dog barks.")],
+            memoize=False,
+        )
+        grader = get_model(
+            "mockllm/model",
+            custom_outputs=[
+                _ModelOutput.from_content(
+                    model="mockllm/model", content="Matches the reference.\nGRADE: C"
+                )
+            ],
+            memoize=False,
+        )
+
+        [log] = inspect_eval(
+            task,
+            model=candidate,
+            model_roles={"grader": grader},
+            display="none",
+            log_dir=str(tmp_path),
+        )
+
+        assert log.status == "success"
+        assert log.results.scores[0].metrics["accuracy"].value == pytest.approx(1.0)

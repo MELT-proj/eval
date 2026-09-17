@@ -34,8 +34,8 @@
 #     sentence-resegmentation step this harness does not perform -- see
 #     `melteval/rescore.py` and `chunked_st_scorer`'s docstring.
 #   QA and SUM -> `audio_chat`. Free-text answers, gradeable only by a judge:
-#     add `-T grader_model=<provider/model>`, or `--no-score` to generate now
-#     and grade the log later. QA exists for every (track, language); SUM only
+#     add `--model-role grader=<provider/model>`, or `--no-score` to generate
+#     now and grade the log later. QA exists for every (track, language); SUM only
 #     in `long`. `qa_type`/`qa_origin` ride along in each sample's metadata
 #     (not broken out by melteval's own metrics) for anyone slicing the log
 #     by hand afterwards.

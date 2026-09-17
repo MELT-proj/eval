@@ -86,7 +86,7 @@ appended after the two required paths:
 | Cap the sample count | `-T limit=50` |
 | Bigger/smaller batches | `-M batch_size=32` |
 | Format from a different config than the checkpoint | `-T format_config=/path/to/training_config.yaml` |
-| Name the judge for a graded task | `-T grader_model=openai/gpt-4o` |
+| Name the judge for a graded task | `--model-role grader=openai/gpt-4o` |
 
 **ST specifically:** a frozen set covering more than one target language needs
 one run per language (`-T lang=de`, then a separate run with `-T lang=ar`,
@@ -134,15 +134,25 @@ configurations, all seven splits. It brings in two task types:
 | Task | Splits | Scored by |
 |---|---|---|
 | `audio_mcq` | Foundation speech/sound/music | accuracy over the options the sample carries, plus the share of completions no option could be read out of |
-| `audio_chat` | Chat speech/sound/music/mixed | a judge model — `-T grader_model=<provider/model>` |
+| `audio_chat` | Chat speech/sound/music/mixed | a judge model — `--model-role grader=<provider/model>` |
 
 Each sample brings its own question, so nothing is drawn from the training
 prompt pool; the source's `instruction_template` decides the layout.
 
 There is deliberately no lexical fallback for `audio_chat`: its references are
 free text that a correct answer need not share any words with, so BLEU or an
-exact match would rank a fluent wrong answer above a terse right one. On a
-cluster with no route to a judge, generate now and grade later:
+exact match would rank a fluent wrong answer above a terse right one. A
+missing judge is an error rather than a fallback — bind one with
+`--model-role grader=<provider/model>`, the same flag `inspect eval` and
+`inspect score` both already support for naming a judge:
+
+```bash
+infra/runners/submit_eval.sh artemis /path/to/checkpoint configs/hf/air-bench.yaml \
+  -T task_filter=audio_chat -T dataset_id=air-bench-chat-speech \
+  --model-role grader=openai/gpt-4o
+```
+
+On a cluster with no route to a judge, generate now and grade later instead:
 
 ```bash
 # on the cluster
@@ -150,7 +160,7 @@ infra/runners/submit_eval.sh artemis /path/to/checkpoint configs/hf/air-bench.ya
   -T task_filter=audio_chat -T dataset_id=air-bench-chat-speech --no-score
 # later, from somewhere that can reach a judge
 inspect score path/to/log.eval --scorer melteval/scorers.py@chat_scorer \
-  -S grader_model=openai/gpt-4o
+  --model-role grader=openai/gpt-4o
 ```
 
 **Cache the splits first.** Compute nodes run with `HF_HUB_OFFLINE=1` (see
@@ -178,7 +188,7 @@ reader (`melteval/readers/mcif.py`) and two grouped scorers instead of reusing
 |---|---|---|
 | `chunked_asr` | ASR, target language `en` | WER/CER, computed once per group after joining that group's completions in order -- see `melteval.scorers.chunked_asr_scorer` |
 | `chunked_st` | translation, the other three target languages | BLEU/chrF, same grouping. The paper's own metric is COMET after a resegmentation step this harness does not perform |
-| `audio_chat` | QA (every language) and summarisation (`long` track only) | a judge model, same as AIR-Bench Chat -- `-T grader_model=<provider/model>` |
+| `audio_chat` | QA (every language) and summarisation (`long` track only) | a judge model, same as AIR-Bench Chat -- `--model-role grader=<provider/model>` |
 
 In the `short` track a `chunked_asr`/`chunked_st` reference is a whole talk's
 transcript and spans dozens of samples, each a short segment the model

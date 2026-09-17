@@ -26,8 +26,8 @@
 #     than shown as empty options). `answer_gt` is the winning option's
 #     *text*, which is what melteval.scorers.mcq_scorer compares against.
 #   Chat -> `audio_chat`. Free-text answers, gradeable only by a judge:
-#     add `-T grader_model=<provider/model>`, or `--no-score` to generate now
-#     and grade the log later. There is no lexical fallback on purpose.
+#     add `--model-role grader=<provider/model>`, or `--no-score` to generate
+#     now and grade the log later. There is no lexical fallback on purpose.
 #
 # Each sample brings its own question, so nothing here draws from the training
 # prompt pool; `instruction_template` decides the layout and is the only place
