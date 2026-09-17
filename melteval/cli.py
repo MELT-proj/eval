@@ -39,6 +39,37 @@ def main(argv: list[str] | None = None) -> int:
     rescore_parser.add_argument("-o", "--out", required=True, help="Output JSONL path.")
     rescore_parser.set_defaults(func=_cmd_rescore)
 
+    text_prior_parser = subparsers.add_parser(
+        "text-prior",
+        help="Teacher-forced NLL/BPC of a frozen set's references under a bare backbone "
+        "(02-backbones.md §3) -- not an inspect task, GPU work, run via sbatch.",
+    )
+    text_prior_parser.add_argument("frozen_set", help="Frozen-set directory.")
+    text_prior_parser.add_argument("--model", required=True, help="HF hub id or local path.")
+    text_prior_parser.add_argument(
+        "--chat-template-config",
+        required=True,
+        choices=("llama3", "chatml"),
+        help="Assistant-turn boundary markers for label masking (chat_templates.py).",
+    )
+    text_prior_parser.add_argument(
+        "--chat-template-from",
+        default=None,
+        help="Load the tokenizer/chat template from here instead (a base checkpoint "
+        "that ships no chat template of its own).",
+    )
+    text_prior_parser.add_argument(
+        "--task", default=None, choices=("asr", "st"), help="Restrict to one task."
+    )
+    text_prior_parser.add_argument("--lang", default=None, help="Restrict to one language.")
+    text_prior_parser.add_argument(
+        "--limit", type=int, default=None, help="Cap samples per language."
+    )
+    text_prior_parser.add_argument("--device", default="cuda")
+    text_prior_parser.add_argument("--dtype", default="bfloat16")
+    text_prior_parser.add_argument("-o", "--out", required=True, help="Output JSON path.")
+    text_prior_parser.set_defaults(func=_cmd_text_prior)
+
     args = parser.parse_args(argv)
     logging.basicConfig(
         stream=sys.stderr,
@@ -78,6 +109,26 @@ def _cmd_rescore(args: argparse.Namespace) -> int:
     triples, stats = extract_triples(args.log)
     write_triples(triples, args.out)
     print(json.dumps(stats, indent=2))
+    return 0
+
+
+def _cmd_text_prior(args: argparse.Namespace) -> int:
+    """Score one backbone's text-only prior against a frozen set."""
+    from melteval.text_prior import run, write_results
+
+    results = run(
+        frozen_set=args.frozen_set,
+        model_id=args.model,
+        chat_template_config=args.chat_template_config,
+        chat_template_from=args.chat_template_from,
+        task=args.task,
+        lang=args.lang,
+        limit=args.limit,
+        device=args.device,
+        dtype=args.dtype,
+    )
+    write_results(results, args.out)
+    print(json.dumps(results["overall"], indent=2))
     return 0
 
 
