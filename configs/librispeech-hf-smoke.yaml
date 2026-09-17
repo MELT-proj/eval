@@ -1,0 +1,12 @@
+name: librispeech-hf-smoke
+seed: 0
+input_cfg:
+  - type: hf_dataset
+    repo: hf-internal-testing/librispeech_asr_dummy
+    revision: main
+    name: clean
+    split: validation      # ~73 muestras, unos pocos MB
+    tags:
+      task: asr
+      lang: en
+      dataset_id: librispeech-dummy

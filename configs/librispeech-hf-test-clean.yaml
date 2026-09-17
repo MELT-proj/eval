@@ -1,0 +1,16 @@
+# Full LibriSpeech test-clean via HF. 
+# 2620 samples.
+name: librispeech-hf-test-clean
+seed: 0
+
+input_cfg:
+  - type: hf_dataset
+    repo: openslr/librispeech_asr
+    revision: 71cacbfb7e2354c4226d01e70d77d5fca3d04ba1
+    name: clean
+    split: test              # 2620 samples
+    id_column: id
+    tags:
+      task: asr
+      lang: en
+      dataset_id: librispeech-test-clean
