@@ -362,8 +362,12 @@ def _grouped_pairs(scores: list[SampleScore]) -> list[tuple[str, str]]:
 
 
 @metric
-def chunked_wer() -> Metric:
-    """Corpus WER over grouped (not raw) hypothesis/reference pairs."""
+def chunked_wer_en() -> Metric:
+    """Corpus WER over grouped (not raw) hypothesis/reference pairs.
+
+    Normalization is fixed to English (see :func:`chunked_asr_scorer`), hence
+    the name -- this is not a general-purpose grouped WER.
+    """
 
     def calculate(scores: list[SampleScore]) -> Value:
         import jiwer
@@ -383,8 +387,12 @@ def chunked_wer() -> Metric:
 
 
 @metric
-def chunked_cer() -> Metric:
-    """Corpus CER over grouped (not raw) hypothesis/reference pairs."""
+def chunked_cer_en() -> Metric:
+    """Corpus CER over grouped (not raw) hypothesis/reference pairs.
+
+    Normalization is fixed to English (see :func:`chunked_asr_scorer`), hence
+    the name -- this is not a general-purpose grouped CER.
+    """
 
     def calculate(scores: list[SampleScore]) -> Value:
         import jiwer
@@ -405,10 +413,10 @@ def chunked_cer() -> Metric:
 
 @scorer(
     metrics=[
-        chunked_wer(),
-        chunked_cer(),
-        grouped(chunked_wer(), "dataset_id", all=False, name_template="wer_{group_name}"),
-        grouped(chunked_cer(), "dataset_id", all=False, name_template="cer_{group_name}"),
+        chunked_wer_en(),
+        chunked_cer_en(),
+        grouped(chunked_wer_en(), "dataset_id", all=False, name_template="wer_{group_name}"),
+        grouped(chunked_cer_en(), "dataset_id", all=False, name_template="cer_{group_name}"),
     ]
 )
 def chunked_asr_scorer() -> Scorer:
@@ -416,10 +424,10 @@ def chunked_asr_scorer() -> Scorer:
 
     Each sample is scored for its own record only in the sense of carrying its
     completion forward -- the actual WER/CER is computed once per group by
-    :func:`chunked_wer` / :func:`chunked_cer`, which reassemble each group's
-    completions in order before comparing to its reference. Normalization is
-    fixed to ``"english"``: this scorer exists for MCIF, whose grouped ASR
-    reference is only ever produced for an English target.
+    :func:`chunked_wer_en` / :func:`chunked_cer_en`, which reassemble each
+    group's completions in order before comparing to its reference.
+    Normalization is fixed to ``"english"``: this scorer exists for MCIF,
+    whose grouped ASR reference is only ever produced for an English target.
 
     Returns:
         A scorer whose ``Score.metadata`` carries ``{reference, hypothesis}``,

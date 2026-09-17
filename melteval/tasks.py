@@ -167,10 +167,14 @@ def audio_chat(frozen_set: str | None = None, **kwargs) -> Task:
     """:func:`speech` restricted to open-ended audio QA, graded by a judge model.
 
     Needs a model bound to the ``grader`` role (``--model-role
-    grader=<provider/model>``). Free-text answers about audio have no lexical
-    metric that measures the task, so there is nothing to fall back on — run
-    ``inspect eval --no-score`` to generate now and grade the log later if no
-    judge is reachable from the cluster.
+    grader=<provider/model>``, e.g. ``--model-role grader=openai/gpt-4o``):
+    the bound model judges each free-text answer against the reference and
+    grades it as agreeing, partially agreeing or disagreeing (partial
+    credit), via :func:`melteval.scorers.chat_scorer`. Free-text answers
+    about audio have no lexical metric that measures the task, so there is
+    nothing to fall back on — run ``inspect eval --no-score`` to generate now
+    and grade the log later with ``inspect score`` if no judge is reachable
+    from the cluster.
     """
     kwargs.setdefault("task_filter", "audio_chat")
     return speech(frozen_set, **kwargs)

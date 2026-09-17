@@ -28,10 +28,10 @@ from melteval.scorers import (
     choice_accuracy,
     chunked_asr_scorer,
     chunked_bleu,
-    chunked_cer,
+    chunked_cer_en,
     chunked_chrf,
     chunked_st_scorer,
-    chunked_wer,
+    chunked_wer_en,
     corpus_bleu,
     corpus_cer,
     corpus_chrf,
@@ -301,7 +301,7 @@ class TestChunkedScorers:
             _grouped_score("hello world", "hello", "g1", 0),
             _grouped_score("hello world", "world", "g1", 1),
         ]
-        assert chunked_wer()(scores) == pytest.approx(0.0)
+        assert chunked_wer_en()(scores) == pytest.approx(0.0)
 
     def test_group_order_does_not_depend_on_input_order(self):
         """Chunks can arrive from inspect in any order; the group's own
@@ -311,7 +311,7 @@ class TestChunkedScorers:
             _grouped_score("hello world", "world", "g1", 1),
         ]
         reversed_input = list(reversed(in_order))
-        assert chunked_wer()(reversed_input) == chunked_wer()(in_order)
+        assert chunked_wer_en()(reversed_input) == chunked_wer_en()(in_order)
 
     def test_wrong_join_order_would_have_scored_worse(self):
         """Sanity check that the test above is not vacuous: joining out of
@@ -320,7 +320,7 @@ class TestChunkedScorers:
             _grouped_score("the cat sat", "sat", "g1", 0),
             _grouped_score("the cat sat", "the cat", "g1", 1),
         ]
-        assert chunked_wer()(scores) > 0.0
+        assert chunked_wer_en()(scores) > 0.0
 
     def test_a_sample_without_grouping_metadata_is_its_own_group(self):
         """No `group_id` -- e.g. a corpus that never needed grouping -- must
@@ -332,7 +332,7 @@ class TestChunkedScorers:
                 sample_id="s0",
             )
         ]
-        assert chunked_wer()(scores) == pytest.approx(0.0)
+        assert chunked_wer_en()(scores) == pytest.approx(0.0)
 
     def test_distinct_references_in_one_group_raise(self):
         """Two chunks placed in the same group must agree on the reference --
@@ -342,13 +342,13 @@ class TestChunkedScorers:
             _grouped_score("ref two", "b", "g1", 1),
         ]
         with pytest.raises(ValueError, match="distinct references"):
-            chunked_wer()(scores)
+            chunked_wer_en()(scores)
 
     def test_same_group_id_in_different_corpora_does_not_collide(self):
         """`dataset_id` is part of the grouping key, since two unrelated
         corpora scored in one run could otherwise share a group label. If
         these two were merged into one group of two members, they would
-        disagree on the reference and `chunked_wer` would raise; scored as
+        disagree on the reference and `chunked_wer_en` would raise; scored as
         the two separate one-member groups they actually are, "alpha" is
         perfect (0 errors / 2 words) and "beta" is entirely wrong (2 errors /
         2 words), for a corpus WER of 2/4."""
@@ -356,10 +356,10 @@ class TestChunkedScorers:
             _grouped_score("hello world", "hello world", "g1", 0, dataset_id="alpha"),
             _grouped_score("goodnight moon", "wrong", "g1", 0, dataset_id="beta"),
         ]
-        assert chunked_wer()(scores) == pytest.approx(0.5)
+        assert chunked_wer_en()(scores) == pytest.approx(0.5)
 
     def test_empty_corpus_is_zero_not_a_division_error(self):
-        assert chunked_wer()([]) == 0.0
+        assert chunked_wer_en()([]) == 0.0
         assert chunked_bleu()([]) == 0.0
 
     def test_cer_uses_the_joined_group_too(self):
@@ -371,7 +371,7 @@ class TestChunkedScorers:
             _grouped_score("a b", "a", "g1", 0),
             _grouped_score("a b", "b", "g1", 1),
         ]
-        assert chunked_cer()(scores) == pytest.approx(0.0)
+        assert chunked_cer_en()(scores) == pytest.approx(0.0)
 
     def test_bleu_and_chrf_score_the_joined_hypothesis(self):
         scores = [
@@ -436,7 +436,7 @@ class TestChunkedScorersThroughRealInspect:
 
         assert log.status == "success"
         metrics = log.results.scores[0].metrics
-        assert metrics["chunked_wer"].value == pytest.approx(0.0)
+        assert metrics["chunked_wer_en"].value == pytest.approx(0.0)
 
 
 class TestRegistry:
