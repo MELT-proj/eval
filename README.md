@@ -141,8 +141,18 @@ prompt pool; the source's `instruction_template` decides the layout.
 
 There is deliberately no lexical fallback for `audio_chat`: its references are
 free text that a correct answer need not share any words with, so BLEU or an
-exact match would rank a fluent wrong answer above a terse right one. On a
-cluster with no route to a judge, generate now and grade later:
+exact match would rank a fluent wrong answer above a terse right one. A
+missing judge is an error rather than a fallback — bind one with
+`--model-role grader=<provider/model>`, the same flag `inspect eval` and
+`inspect score` both already support for naming a judge:
+
+```bash
+infra/runners/submit_eval.sh artemis /path/to/checkpoint configs/hf/air-bench.yaml \
+  -T task_filter=audio_chat -T dataset_id=air-bench-chat-speech \
+  --model-role grader=openai/gpt-4o
+```
+
+On a cluster with no route to a judge, generate now and grade later instead:
 
 ```bash
 # on the cluster
