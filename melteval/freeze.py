@@ -25,6 +25,7 @@ import hashlib
 import json
 import logging
 import os
+from collections.abc import Callable
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -65,19 +66,29 @@ def spec_hash(spec: dict) -> str:
     return hashlib.sha256(payload.encode("utf-8")).hexdigest()[:12]
 
 
-def freeze(spec: dict, out_dir: str | Path) -> dict:
-    """Build a frozen set from *spec* into *out_dir*.
+def read_sources(
+    spec: dict, *, include: Callable[[dict], bool] | None = None
+) -> tuple[list[EvalRecord], list[dict]]:
+    """Run every source in *spec* through its reader.
+
+    Shared by :func:`freeze` and by the live path in
+    :func:`melteval.dataset.spec_dataset`, so a spec read without being frozen
+    produces byte-identical records to the same spec frozen first.
 
     Args:
         spec: Parsed spec with an ``input_cfg`` list.
-        out_dir: Directory to write ``manifest.jsonl`` and ``frozen_set.json``.
+        include: Optional predicate on a source config. Sources it rejects are
+            skipped **without renumbering the rest**: ``source_index`` feeds
+            ``sample_key``, so a skipped source must not shift the keys of the
+            ones after it, or a live run and a frozen run of the same spec
+            would disagree on which sample is which.
 
     Returns:
-        The summary that was written.
+        The records, and one stats dict per source that was read.
 
     Raises:
-        ValueError: If the spec has no sources, or if no source yielded a
-            single usable sample.
+        ValueError: If the spec has no sources, or if no source that was read
+            yielded a single usable sample.
     """
     sources = spec.get("input_cfg") or []
     if not sources:
@@ -92,12 +103,16 @@ def freeze(spec: dict, out_dir: str | Path) -> dict:
         source_cfg = dict(source_cfg)
         source_cfg.setdefault("seed", default_seed)
         source_type = str(source_cfg.get("type", "lhotse_shar"))
+        label = str(source_cfg.get("name") or source_cfg.get("shar_path") or source_type)
+
+        if include is not None and not include(source_cfg):
+            logger.info("source %d (%s): skipped, excluded by filter", source_index, label)
+            continue
 
         reader = get_reader(source_type)
         result = reader.freeze(source_cfg, source_index)
         records.extend(result.records)
 
-        label = str(source_cfg.get("name") or source_cfg.get("shar_path") or source_type)
         per_source.append({"index": source_index, "source": label, "type": source_type, **result.stats})
         logger.info(
             "source %d (%s): kept %s of %s cuts, %.2f h",
@@ -118,6 +133,25 @@ def freeze(spec: dict, out_dir: str | Path) -> dict:
         )
 
     _assert_unique_keys(records)
+    return records, per_source
+
+
+def freeze(spec: dict, out_dir: str | Path) -> dict:
+    """Build a frozen set from *spec* into *out_dir*.
+
+    Args:
+        spec: Parsed spec with an ``input_cfg`` list.
+        out_dir: Directory to write ``manifest.jsonl`` and ``frozen_set.json``.
+
+    Returns:
+        The summary that was written.
+
+    Raises:
+        ValueError: If the spec has no sources, or if no source yielded a
+            single usable sample.
+    """
+    records, per_source = read_sources(spec)
+    default_seed = int(spec.get("seed", 0) or 0)
 
     out_dir = Path(out_dir)
     write_manifest(out_dir / MANIFEST_NAME, records)

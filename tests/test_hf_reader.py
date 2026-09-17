@@ -199,3 +199,120 @@ class TestLoadAudio:
         load_calls = [c for c in patched_load if c["repo"] == "org/speech-test"]
         # one call from freeze(), and load_audio must not repeat it per sample
         assert len(load_calls) <= 2
+
+
+class TestInstructionsAndChoices:
+    """Benchmarks that ship their own prompt per sample (AIR-Bench and kin)."""
+
+    @pytest.fixture
+    def qa_dataset(self):
+        return _build_dataset(
+            [
+                {
+                    "id": "q0", "text": "Female", "source_text": "",
+                    "question": "What is the speaker's gender?",
+                    "choice_a": "Male", "choice_b": "Female", "choice_c": "", "choice_d": "",
+                    "audio": {"bytes": _wav_bytes(1600), "path": None},
+                },
+                {
+                    "id": "q1", "text": "play_music", "source_text": "",
+                    # braces in a real question: this must not reach str.format
+                    "question": "What does {intent} evaluate to here?",
+                    "choice_a": "play_music", "choice_b": "post",
+                    "choice_c": "createoradd", "choice_d": "audio_volume_other",
+                    "audio": {"bytes": _wav_bytes(1600), "path": None},
+                },
+                {
+                    "id": "q2", "text": "an answer", "source_text": "",
+                    "question": "   ",  # no prompt of its own -> dropped
+                    "choice_a": "x", "choice_b": "y", "choice_c": "", "choice_d": "",
+                    "audio": {"bytes": _wav_bytes(1600), "path": None},
+                },
+            ]
+        )
+
+    @pytest.fixture
+    def patched_qa_load(self, monkeypatch, qa_dataset):
+        import melteval.readers.hf as hf_module
+
+        monkeypatch.setattr(hf_module, "load_dataset", lambda *a, **k: qa_dataset, raising=False)
+        monkeypatch.setattr("datasets.load_dataset", lambda *a, **k: qa_dataset)
+        hf_module._DATASET_CACHE.clear()
+
+    def _cfg(self, **overrides):
+        return _source_cfg(
+            text_column="text",
+            instruction_column="question",
+            choices_columns=["choice_a", "choice_b", "choice_c", "choice_d"],
+            **overrides,
+        )
+
+    def test_question_becomes_the_instruction(self, patched_qa_load):
+        record = HFReader().freeze(self._cfg(), 0).records[0]
+        assert "What is the speaker's gender?" in record.instruction
+
+    def test_audio_token_stays_a_placeholder(self, patched_qa_load):
+        """The solver expands it later; a reader that expanded it here would
+        hand the processor a prompt with no audio slot in it."""
+        record = HFReader().freeze(self._cfg(), 0).records[0]
+        assert "{audio_token}" in record.instruction
+
+    def test_blank_choice_columns_are_dropped(self, patched_qa_load):
+        record = HFReader().freeze(self._cfg(), 0).records[0]
+        assert record.choices == ["Male", "Female"]
+        assert "C." not in record.instruction
+
+    def test_choices_are_labelled_in_order(self, patched_qa_load):
+        record = HFReader().freeze(self._cfg(), 0).records[1]
+        assert "A. play_music" in record.instruction
+        assert "D. audio_volume_other" in record.instruction
+
+    def test_braces_in_a_question_survive_prompt_rendering(self, patched_qa_load):
+        """A stray brace used to be a KeyError at generation time, not here."""
+        from melteval.prompt import FormatSpec, render_user_prompt
+
+        record = HFReader().freeze(self._cfg(), 0).records[1]
+        spec = FormatSpec(
+            apply_chat_template=False, prompt_template=None,
+            prompt_template_selection="random", chat_template_config="chatml",
+            audio_token="<|audio|>", source="test",
+        )
+        rendered = render_user_prompt(
+            task="audio_mcq", sample_key=record.sample_key, spec=spec,
+            lang="en", instruction=record.instruction,
+        )
+        assert "What does {intent} evaluate to here?" in rendered
+        assert "<|audio|>" in rendered
+
+    def test_rows_without_a_question_are_dropped_and_counted(self, patched_qa_load):
+        result = HFReader().freeze(self._cfg(), 0)
+        assert result.stats["kept"] == 2
+        assert result.stats["dropped_no_instruction"] == 1
+
+    def test_no_instruction_column_leaves_the_record_alone(self, patched_qa_load):
+        record = HFReader().freeze(_source_cfg(text_column="text"), 0).records[0]
+        assert record.instruction is None
+        assert record.choices is None
+
+    def test_a_custom_template_controls_the_layout(self, patched_qa_load):
+        record = HFReader().freeze(
+            self._cfg(instruction_template="Listen: {audio_token}\nQ: {question}\n{choices}"), 0
+        ).records[0]
+        assert record.instruction.startswith("Listen: {audio_token}")
+        assert "Q: What is the speaker's gender?" in record.instruction
+
+    def test_free_form_sources_get_no_choices_block(self, patched_qa_load):
+        record = HFReader().freeze(
+            _source_cfg(text_column="text", instruction_column="question"), 0
+        ).records[0]
+        assert record.choices is None
+        assert "A." not in record.instruction
+
+    def test_a_template_that_drops_the_question_is_refused(self, patched_qa_load):
+        with pytest.raises(ValueError, match="no .question. placeholder"):
+            HFReader().freeze(self._cfg(instruction_template="{audio_token}\n{choices}"), 0)
+
+    def test_a_template_that_drops_existing_options_is_refused(self, patched_qa_load):
+        """Scoring against options the model was never shown measures nothing."""
+        with pytest.raises(ValueError, match="no .choices. placeholder"):
+            HFReader().freeze(self._cfg(instruction_template="{audio_token}\n{question}"), 0)

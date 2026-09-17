@@ -85,6 +85,12 @@ class EvalRecord:
         duration: Audio duration in seconds. The only reliable budgeting unit —
             ``custom.num_tokens`` is absent from most sources
             (MELT-proj/training#59).
+        extra: Reader-specific metadata that does not fit the fields above,
+            carried through to the sample unchanged (see
+            ``dataset.record_to_sample``). Exists so a reader whose corpus
+            needs something no other reader does -- MCIF's chunk-to-reference
+            grouping, for one -- does not force a schema migration on every
+            other reader.
     """
 
     sample_key: str
@@ -101,6 +107,7 @@ class EvalRecord:
     choices: list[str] | None = None
     cut_id: str | None = None
     duration: float | None = None
+    extra: dict[str, object] = field(default_factory=dict)
 
     def to_json(self) -> str:
         """Serialise to a single manifest line."""

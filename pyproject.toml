@@ -30,10 +30,15 @@ shar = [
     "melt-proj",
     "soundfile>=0.13",
 ]
-# Remote HuggingFace test splits, whose audio arrives at arbitrary sample rates.
+# Remote HuggingFace test splits, whose audio arrives at arbitrary sample rates
+# and in whatever format the publisher exported. soundfile is listed here as
+# well as under `shar`: the HF reader decodes with it directly rather than
+# through datasets' own Audio(decode=True) path, so a `[hf]`-only install
+# needs it too (MP3 needs libsndfile >= 1.1 behind it -- see readers/hf.py).
 hf = [
     "datasets>=4.0",
     "librosa>=0.11",
+    "soundfile>=0.13",
 ]
 # Lexical metrics. sacrebleu is pinned: BLEU is not comparable across versions
 # or tokenizer configurations, so the number and its signature must be stable.

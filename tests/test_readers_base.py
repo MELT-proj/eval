@@ -35,6 +35,7 @@ def _reset_registry(monkeypatch):
     monkeypatch.setattr(reader_base, "_LOADED", False)
     monkeypatch.delitem(sys.modules, "melteval.readers.shar", raising=False)
     monkeypatch.delitem(sys.modules, "melteval.readers.hf", raising=False)
+    monkeypatch.delitem(sys.modules, "melteval.readers.mcif", raising=False)
 
 
 class TestConcurrentFirstLoad:

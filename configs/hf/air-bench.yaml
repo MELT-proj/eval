@@ -1,0 +1,137 @@
+# AIR-Bench (https://huggingface.co/datasets/pbcong/AIR-bench), both
+# configurations, all seven splits.
+#
+# This spec is meant to be read **live** rather than frozen:
+#
+#   inspect eval melteval/tasks.py@speech --model melt/<checkpoint> \
+#     -T spec=configs/hf/air-bench.yaml \
+#     -T task_filter=audio_mcq -T dataset_id=air-bench-foundation-speech
+#
+# `melteval freeze` still works on it and produces the same samples with the
+# same keys. It just has nothing to add: the revision below already pins the
+# corpus, and AIR-Bench's splits are the benchmark's own definition of "which
+# samples", so there is no mixture decision left for a freeze pass to record.
+# Freeze the local Shar mixtures, where that decision is real.
+#
+# Always pass `-T dataset_id=...`. Every source here is a separate benchmark
+# split reported separately upstream, and a run without it pools all seven
+# into one number. The dataset_id filter also stops the other six splits from
+# being resolved at all (see `melteval.dataset.spec_dataset`) -- worth roughly
+# 12 GiB of parquet per run.
+#
+# Two shapes, two tasks:
+#
+#   Foundation -> `audio_mcq`. Four options per sample in choice_a..choice_d
+#     (binary questions leave c and d blank, and blanks are dropped rather
+#     than shown as empty options). `answer_gt` is the winning option's
+#     *text*, which is what melteval.scorers.mcq_scorer compares against.
+#   Chat -> `audio_chat`. Free-text answers, gradeable only by a judge:
+#     add `-T grader_model=<provider/model>`, or `--no-score` to generate now
+#     and grade the log later. There is no lexical fallback on purpose.
+#
+# Each sample brings its own question, so nothing here draws from the training
+# prompt pool; `instruction_template` decides the layout and is the only place
+# a placeholder survives (corpus text is brace-escaped on the way in).
+#
+# On artemis the compute nodes run with HF_HUB_OFFLINE=1, so every split has
+# to be in HF_HOME before a job starts. See README.md, "Evaluating a
+# HuggingFace benchmark".
+name: air-bench
+seed: 0
+
+input_cfg:
+  # --- Foundation: multiple choice ------------------------------------------
+  - type: hf_dataset
+    repo: pbcong/AIR-bench
+    name: Foundation
+    split: speech
+    revision: ae924f11e8658e263fe8521c55664970552e15ca
+    text_column: answer_gt
+    id_column: uniq_id
+    instruction_column: question
+    choices_columns: [choice_a, choice_b, choice_c, choice_d]
+    tags:
+      task: audio_mcq
+      lang: en
+      dataset_id: air-bench-foundation-speech
+
+  - type: hf_dataset
+    repo: pbcong/AIR-bench
+    name: Foundation
+    split: sound
+    revision: ae924f11e8658e263fe8521c55664970552e15ca
+    text_column: answer_gt
+    id_column: uniq_id
+    instruction_column: question
+    choices_columns: [choice_a, choice_b, choice_c, choice_d]
+    tags:
+      task: audio_mcq
+      lang: en
+      dataset_id: air-bench-foundation-sound
+
+  - type: hf_dataset
+    repo: pbcong/AIR-bench
+    name: Foundation
+    split: music
+    revision: ae924f11e8658e263fe8521c55664970552e15ca
+    text_column: answer_gt
+    id_column: uniq_id
+    instruction_column: question
+    choices_columns: [choice_a, choice_b, choice_c, choice_d]
+    tags:
+      task: audio_mcq
+      lang: en
+      dataset_id: air-bench-foundation-music
+
+  # --- Chat: open-ended, judge-scored ---------------------------------------
+  - type: hf_dataset
+    repo: pbcong/AIR-bench
+    name: Chat
+    split: speech
+    revision: ae924f11e8658e263fe8521c55664970552e15ca
+    text_column: answer_gt
+    id_column: uniq_id
+    instruction_column: question
+    tags:
+      task: audio_chat
+      lang: en
+      dataset_id: air-bench-chat-speech
+
+  - type: hf_dataset
+    repo: pbcong/AIR-bench
+    name: Chat
+    split: sound
+    revision: ae924f11e8658e263fe8521c55664970552e15ca
+    text_column: answer_gt
+    id_column: uniq_id
+    instruction_column: question
+    tags:
+      task: audio_chat
+      lang: en
+      dataset_id: air-bench-chat-sound
+
+  - type: hf_dataset
+    repo: pbcong/AIR-bench
+    name: Chat
+    split: music
+    revision: ae924f11e8658e263fe8521c55664970552e15ca
+    text_column: answer_gt
+    id_column: uniq_id
+    instruction_column: question
+    tags:
+      task: audio_chat
+      lang: en
+      dataset_id: air-bench-chat-music
+
+  - type: hf_dataset
+    repo: pbcong/AIR-bench
+    name: Chat
+    split: mixed
+    revision: ae924f11e8658e263fe8521c55664970552e15ca
+    text_column: answer_gt
+    id_column: uniq_id
+    instruction_column: question
+    tags:
+      task: audio_chat
+      lang: en
+      dataset_id: air-bench-chat-mixed
