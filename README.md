@@ -110,21 +110,6 @@ infra/runners/submit_eval.sh artemis \
   -T task_filter=asr -M batch_size=16
 ```
 
-### Example: MCIF
-
-```bash
-# long: whole talks, single pass
-infra/runners/submit_eval.sh artemis /path/to/ckpt configs/hf/mcif.yaml \
-  -T task_filter=chunked_asr -T dataset_id=mcif-long-fixed-en \
-  -M batch_size=1 --max-tokens 4096
-
-# short: chunked baseline, same talks
-infra/runners/submit_eval.sh artemis /path/to/ckpt configs/hf/mcif.yaml \
-  -T task_filter=chunked_asr -T dataset_id=mcif-short-fixed-en
-```
-
-### Tuning
-
 Common overrides, all `-T` (task parameter) or `-M` (model parameter) flags
 appended after the two required paths:
 
@@ -276,6 +261,19 @@ Recap of recent jobs on a site — QoS, state, resources used:
 
 ```bash
 infra/job_recap.sh artemis 20   # or: infra/job_recap.sh mn5 20
+```
+
+### Example: Running chunked-ASR MCIF eval
+
+```bash
+# long: whole talks, single pass
+infra/runners/submit_eval.sh artemis /path/to/ckpt configs/hf/mcif.yaml \
+  -T task_filter=chunked_asr -T dataset_id=mcif-long-fixed-en \
+  -M batch_size=1 --max-tokens 4096
+
+# short: chunked baseline, same talks
+infra/runners/submit_eval.sh artemis /path/to/ckpt configs/hf/mcif.yaml \
+  -T task_filter=chunked_asr -T dataset_id=mcif-short-fixed-en
 ```
 
 ## Evaluating SMURF checkpoints
