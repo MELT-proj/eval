@@ -201,7 +201,7 @@ def smurf_prompt(
 #: Which solver each speech provider must be run with. Only these two are
 #: checked: anything else (``mockllm``, an API model used to sanity-check the
 #: plumbing) has no format of its own to be wrong about.
-_SOLVER_FOR_PROVIDER = {"melt": "speech_prompt", "smurf": "smurf_prompt"}
+_SOLVER_FOR_PROVIDER = {"melt": speech_prompt, "smurf": smurf_prompt}
 
 
 def _require_provider(state: TaskState, expected: str) -> None:
@@ -226,8 +226,8 @@ def _require_provider(state: TaskState, expected: str) -> None:
     if api in _SOLVER_FOR_PROVIDER and api != expected:
         raise ValueError(
             f"Model {state.model} is a {api!r} checkpoint but the task is running "
-            f"{_SOLVER_FOR_PROVIDER[expected]}(). Its prompt format is not this one's: run it "
-            f"with -T prompt_style={api} (or pass solver={_SOLVER_FOR_PROVIDER[api]}(...))."
+            f"{_SOLVER_FOR_PROVIDER[expected].__name__}(). Its prompt format is not this one's: run it "
+            f"with -T prompt_style={api} (or pass solver={_SOLVER_FOR_PROVIDER[api].__name__}(...))."
         )
 
 

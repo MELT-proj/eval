@@ -26,7 +26,10 @@ from melteval.solver import smurf_prompt, speech_prompt
 #: the model is loaded, and this repo's rule is that the format is chosen in a
 #: place somebody can read, not derived. Mismatches are caught at generation
 #: time by :func:`melteval.solver._require_provider`.
-PROMPT_STYLES = ("melt", "smurf")
+SOLVERS = {
+    "melt": (speech_prompt, {"format_config", "tokenizer"}),
+    "smurf": (smurf_prompt, {"instruction", "prompt_config"}),
+}
 
 
 @task
@@ -170,8 +173,10 @@ def _prompt_solver(
         ValueError: If *prompt_style* is unknown, or an argument belongs to a
             different style.
     """
-    if prompt_style not in PROMPT_STYLES:
-        raise ValueError(f"Unknown prompt_style {prompt_style!r}; expected one of {PROMPT_STYLES}.")
+    if prompt_style not in SOLVERS:
+        raise ValueError(f"Unknown prompt_style {prompt_style!r}; expected one of {tuple(SOLVERS)}.")
+
+    solver_fn, valid_kwargs = SOLVERS[prompt_style]
 
     given = {
         "format_config": format_config,
@@ -179,25 +184,20 @@ def _prompt_solver(
         "instruction": instruction,
         "prompt_config": prompt_config,
     }
-    belongs_to = {
-        "format_config": "melt",
-        "tokenizer": "melt",
-        "instruction": "smurf",
-        "prompt_config": "smurf",
-    }
+
     misplaced = [
-        name for name, value in given.items() if value is not None and belongs_to[name] != prompt_style
+        name for name, value in given.items() if value is not None and name not in valid_kwargs
     ]
+
     if misplaced:
+        owner = {name: style for style, (_, kwargs) in SOLVERS.items() for name in kwargs}
         raise ValueError(
             f"{', '.join(sorted(misplaced))} {'belongs' if len(misplaced) == 1 else 'belong'} to "
-            f"prompt_style={belongs_to[misplaced[0]]!r}, but this task is running "
+            f"prompt_style={owner[misplaced[0]]!r}, but this task is running "
             f"prompt_style={prompt_style!r}."
         )
 
-    if prompt_style == "smurf":
-        return smurf_prompt(instruction=instruction, prompt_config=prompt_config)
-    return speech_prompt(format_config=format_config, tokenizer=tokenizer)
+    return solver_fn(**{name: given[name] for name in valid_kwargs if given[name] is not None})
 
 
 @task
