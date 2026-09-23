@@ -251,11 +251,12 @@ for s in ds.samples:
 "
 ```
 
-**Available sites:** `artemis` (a6000/h100/h200, working). `mn5` is scaffolded
-but its venv has not been built yet — MN5 has no outbound internet, so that
-venv has to be assembled elsewhere and copied over first; see the comment at
-the top of `infra/sites/mn5.sh`. Copy `infra/sites/example.sh` to add a new
-site.
+**Available sites:** `artemis` (a6000/h100/h200, working). `mn5` works, but
+through **container mode** (`infra/run_eval_container_mn5.sbatch`), not
+`submit_eval.sh`'s venv path — `mn5`'s `VENV_PATH` has still not been built,
+since MN5 has no outbound internet and nobody has assembled one elsewhere and
+copied it over yet; see the comment at the top of `infra/sites/mn5.sh` for
+both paths. Copy `infra/sites/example.sh` to add a new site.
 
 Recap of recent jobs on a site — QoS, state, resources used:
 
