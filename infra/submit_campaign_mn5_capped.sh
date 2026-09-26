@@ -36,7 +36,12 @@ RUN_ROOT="${RUN_ROOT:?usage: RUN_ROOT=/path/to/run ./infra/submit_campaign_mn5_c
 RUN_NAME=$(basename "$RUN_ROOT")
 ASR_SET="${ASR_SET:-/gpfs/scratch/epor48/itpt955676/eval-sets/asr-eval-campaign-v1}"
 ST_SET="${ST_SET:-/gpfs/scratch/epor48/itpt955676/eval-sets/st-eval-campaign-v1}"
-SIF="${MELT_SIF:-/gpfs/scratch/epor48/itpt955676/melt_eval_cuda126_v2.sif}"
+# v2 (built 2026-09-08) predates training's stack_factor axis (PR #126,
+# 2026-09-15) and cannot load a checkpoint trained with stack_factor != 1 --
+# every MA-700-screen-* arm. Rebuild with infra/setup/build_singularity.sh
+# and promote (see infra/sites/mn5.sh) rather than reusing an old image
+# whenever the training side gains an axis that changes checkpoint shapes.
+SIF="${MELT_SIF:-/gpfs/scratch/epor48/melt_eval_cuda126.sif}"
 
 LOG_ROOT="${LOG_ROOT:-/gpfs/scratch/epor48/itpt955676/campaign-logs-capped2000/${RUN_NAME}}"
 

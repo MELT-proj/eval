@@ -17,6 +17,13 @@ dependencies = [
     # numbers should not move with them. Upstream tags are `release/YYYY-MM-DD`,
     # not `v0.3.x`, if a git ref is ever needed.
     "inspect_ai==0.3.254",
+    # inspect_ai's agent/ACP code path (imported unconditionally from
+    # inspect_ai/_eval/eval.py) needs `acp.helpers`, which is not declared as
+    # an inspect_ai dependency and is a different PyPI package from the
+    # similarly-named `acp-sdk` (wrong namespace, no `helpers.py` -- do not
+    # substitute it). Without this, `import melteval` (and the `melteval`
+    # entry point) crashes at `inspect_ai.agent._acp.event_mapping`.
+    "agent-client-protocol==0.12.1",
     "omegaconf>=2.3",
     "pyyaml>=6.0",
     "numpy>=1.24",

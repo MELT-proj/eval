@@ -251,16 +251,30 @@ for s in ds.samples:
 "
 ```
 
-**Available sites:** `artemis` (a6000/h100/h200, working). `mn5` is scaffolded
-but its venv has not been built yet — MN5 has no outbound internet, so that
-venv has to be assembled elsewhere and copied over first; see the comment at
-the top of `infra/sites/mn5.sh`. Copy `infra/sites/example.sh` to add a new
-site.
+**Available sites:** `artemis` (a6000/h100/h200, working). `mn5` works, but
+through **container mode** (`infra/run_eval_container_mn5.sbatch`), not
+`submit_eval.sh`'s venv path — `mn5`'s `VENV_PATH` has still not been built,
+since MN5 has no outbound internet and nobody has assembled one elsewhere and
+copied it over yet; see the comment at the top of `infra/sites/mn5.sh` for
+both paths. Copy `infra/sites/example.sh` to add a new site.
 
 Recap of recent jobs on a site — QoS, state, resources used:
 
 ```bash
 infra/job_recap.sh artemis 20   # or: infra/job_recap.sh mn5 20
+```
+
+### Example: Running chunked-ASR MCIF eval
+
+```bash
+# long: whole talks, single pass
+infra/runners/submit_eval.sh artemis /path/to/ckpt configs/hf/mcif.yaml \
+  -T task_filter=chunked_asr -T dataset_id=mcif-long-fixed-en \
+  -M batch_size=1 --max-tokens 4096
+
+# short: chunked baseline, same talks
+infra/runners/submit_eval.sh artemis /path/to/ckpt configs/hf/mcif.yaml \
+  -T task_filter=chunked_asr -T dataset_id=mcif-short-fixed-en
 ```
 
 ## Evaluating SMURF checkpoints
