@@ -12,13 +12,14 @@ see :mod:`melteval.registry`.
 from __future__ import annotations
 
 from inspect_ai import Task, task
+from inspect_ai.model import GenerateConfig
 from inspect_ai.scorer import Scorer
 from inspect_ai.solver import Solver
 
 from melteval.dataset import frozen_dataset, spec_dataset
-from melteval.registry import default_scorer
+from melteval.registry import default_max_tokens, default_scorer
 from melteval.scorers import asr_scorer
-from melteval.solver import smurf_prompt, speech_prompt
+from melteval.solver import instruction_prompt, smurf_prompt, speech_prompt
 
 
 #: Model family whose prompt format a run uses, and the solver that builds it.
@@ -29,6 +30,8 @@ from melteval.solver import smurf_prompt, speech_prompt
 SOLVERS = {
     "melt": (speech_prompt, {"format_config", "tokenizer"}),
     "smurf": (smurf_prompt, {"instruction", "prompt_config"}),
+    "qwen2_audio": (instruction_prompt, {"instruction"}),
+    "qwen3_omni": (instruction_prompt, {"instruction"}),
 }
 
 
@@ -71,21 +74,22 @@ def speech(
         dataset_id: Restrict to one corpus.
         limit: Take at most this many samples, in manifest order.
         prompt_style: Which model family's prompt format to build — ``melt``
-            (default) or ``smurf``. Must match the ``--model`` provider.
+            (default), ``smurf``, ``qwen2_audio`` or ``qwen3_omni``. Must match
+            the ``--model`` provider.
         format_config: ``melt`` only. Training config to take the prompt format
             from. Defaults to the checkpoint being evaluated.
         tokenizer: ``melt`` only. Where to load the chat template from.
             Defaults to the checkpoint being evaluated.
-        instruction: ``smurf`` only. Fixed instruction text for samples that do
-            not carry their own.
+        instruction: ``smurf``, ``qwen2_audio`` and ``qwen3_omni``. Fixed instruction text for
+            samples that do not carry their own.
         prompt_config: ``smurf`` only. SMURF data/inference config to read the
             instruction (``tags.context``) from.
         normalizer: ``task_filter="asr"`` only. Text normalizer for the WER/CER
-            scorer -- ``"basic"`` (default) and ``"english"`` both import
-            ``melt.evaluation``, which is not installed in a SMURF-only
-            environment (see "Environment" in docs/smurf-provider.md); pass
-            ``"none"`` there to score raw strings instead. See
-            :func:`melteval.scorers.get_normalizer`.
+            scorer -- ``"basic"`` (default), ``"english"`` or ``"none"``. The
+            first two are melteval's copy of the training package's
+            normalizers (see :mod:`melteval.normalizers`), so they give the
+            same result in every environment, with or without ``melt-proj``.
+            See :func:`melteval.scorers.get_normalizer`.
         scorer: Scorer to apply. Defaults to the task's registered scorer, or
             ``exact()`` (a plumbing check, not a real metric) when
             *task_filter* is unset. Mutually exclusive with *normalizer*.
@@ -151,6 +155,7 @@ def speech(
             prompt_config=prompt_config,
         ),
         scorer=resolved_scorer,
+        config=GenerateConfig(max_tokens=default_max_tokens(task_filter)),
         name=name,
     )
 
@@ -190,10 +195,10 @@ def _prompt_solver(
     ]
 
     if misplaced:
-        owner = {name: style for style, (_, kwargs) in SOLVERS.items() for name in kwargs}
+        owners = [style for style, (_, kwargs) in SOLVERS.items() if misplaced[0] in kwargs]
         raise ValueError(
             f"{', '.join(sorted(misplaced))} {'belongs' if len(misplaced) == 1 else 'belong'} to "
-            f"prompt_style={owner[misplaced[0]]!r}, but this task is running "
+            f"prompt_style={' or '.join(repr(o) for o in owners)}, but this task is running "
             f"prompt_style={prompt_style!r}."
         )
 

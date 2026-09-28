@@ -28,7 +28,7 @@ from threading import Lock, Thread
 from typing import Any
 
 import anyio
-from inspect_ai.model import ChatMessage, GenerateConfig, ModelAPI, ModelOutput
+from inspect_ai.model import ChatMessage, GenerateConfig, ModelAPI, ModelOutput, StopReason
 from inspect_ai.tool import ToolChoice, ToolInfo
 
 from melteval.dataset import AUDIO_DATA_KEY
@@ -44,6 +44,8 @@ DEFAULT_BATCH_SIZE = 8
 DEFAULT_BATCH_WINDOW = 4
 #: How long the batch thread waits for more work before running a short batch.
 BATCH_WAIT_SECONDS = 0.25
+#: ``max_new_tokens`` when the task sets no ``max_tokens``.
+DEFAULT_MAX_TOKENS = 256
 
 
 @dataclass
@@ -58,6 +60,17 @@ class _Request:
     #: Computed from the already-decoded audio, so it costs nothing extra --
     #: by the time a request exists, `generate()` has already loaded it.
     duration: float = 0.0
+    #: Recorded on the sample's ModelOutput, so a provider can say in the log
+    #: what it did to one request (e.g. truncated its audio).
+    #: This was added because baseline models such as Qwen2-Audio and Qwen3-Omni
+    #: only accept short audio. With ``truncate_long_audio=true``, long clips are
+    #: cut, and we write down their original length here. That way, if a sample
+    #: gets a bad WER, we know if it was cut or if the model got it wrong.
+    metadata: dict = field(default_factory=dict)
+    #: Why generation stopped, for the sample's ModelOutput. This applies when a
+    #: completion ran into ``max_new_tokens`` rather than ending on its own: a cut
+    #: answer is scored like any other, so the log is the only place it can show.
+    stop_reason: StopReason = "stop"
     future: Future = field(default_factory=Future)
 
 
@@ -221,9 +234,12 @@ class BatchedSpeechAPI(ModelAPI):
                             "per request, in order."
                         )
                     for request, completion in zip(batch, completions):
-                        request.future.set_result(
-                            ModelOutput.from_content(model=self.model_name, content=completion)
+                        output = ModelOutput.from_content(
+                            model=self.model_name, content=completion, stop_reason=request.stop_reason
                         )
+                        if request.metadata:
+                            output.metadata = dict(request.metadata)
+                        request.future.set_result(output)
                 except Exception as exc:  # noqa: BLE001 - every waiter must be released
                     # A failure here would otherwise hang the run: the awaiting
                     # coroutines poll a future that nobody ever completes.
@@ -263,3 +279,60 @@ def _load_audio(locator: dict):
 
     audio_locator = AudioLocator.from_dict(locator)
     return reader_for_locator(audio_locator).load_audio(audio_locator)
+
+
+def _generate_kwargs(config: GenerateConfig) -> dict[str, Any]:
+    """Translate an inspect generate config into transformers kwargs.
+
+    Shared by every provider whose model exposes transformers' ``generate()``.
+
+    Greedy by default: an eval that samples is measuring the sampler as much as
+    the model, and two runs would not be comparable.
+    """
+    kwargs: dict[str, Any] = {
+        "max_new_tokens": config.max_tokens or DEFAULT_MAX_TOKENS,
+        "use_cache": True,
+        "do_sample": config.temperature is not None and config.temperature > 0,
+    }
+    if config.temperature is not None and config.temperature > 0:
+        kwargs["temperature"] = config.temperature
+    if config.top_p is not None:
+        kwargs["top_p"] = config.top_p
+    if config.top_k is not None:
+        kwargs["top_k"] = config.top_k
+    if config.num_choices is not None and config.num_choices > 1:
+        kwargs["num_return_sequences"] = config.num_choices
+    return kwargs
+
+
+def mark_max_tokens(batch: list[_Request], new_tokens: Any, stop_ids: set[int]) -> None:
+    """Set ``stop_reason="max_tokens"`` on each request whose completion ran into ``max_new_tokens``.
+
+    ``generate()`` pads a batch to its longest row, and a row that ended on its
+    own ends in an end-of-sequence token or padding after it. So a row was cut
+    exactly when the batch reached the limit and that row's last token is
+    neither.
+
+    Args:
+        batch: The requests, in the order of *new_tokens*' rows.
+        new_tokens: The generated token ids only (no prompt), one row per request.
+        stop_ids: Token ids that end or pad a finished row: end-of-sequence
+            and padding at least.
+    """
+    max_new_tokens = batch[0].config.max_tokens or DEFAULT_MAX_TOKENS
+    if new_tokens.shape[1] < max_new_tokens:
+        return
+    for request, last in zip(batch, new_tokens[:, -1].tolist()):
+        if last not in stop_ids:
+            request.stop_reason = "max_tokens"
+
+
+def stop_ids(tokenizer, model) -> set[int]:
+    """Token ids that end or pad a finished row: the tokenizer's special tokens and the model's eos/pad."""
+    ids = set(getattr(tokenizer, "all_special_ids", None) or [])
+    generation_config = getattr(model, "generation_config", None)
+    for name in ("eos_token_id", "pad_token_id"):
+        value = getattr(generation_config, name, None)
+        if value is not None:
+            ids.update(value if isinstance(value, list) else [value])
+    return ids

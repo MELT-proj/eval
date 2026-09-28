@@ -380,8 +380,8 @@ debug slice) can't be scored this way; generate the whole `dataset_id` first.
 `evaluation` module imports all three at module load, even to compute WER
 alone) — keep it in its own venv, the same reasoning as the COMET/MetricX venv
 above. Its own pin of `torchmetrics` also expects `pkg_resources`, which a
-fresh venv's `setuptools` may not provide anymore; `pip install "setuptools<81"`
-if `import mcif.evaluation` fails with `ModuleNotFoundError: pkg_resources`.
+fresh venv's `setuptools` no longer provides (removed in 81). The `mcif` extra
+installs both with that cap: `uv pip install -e ".[mcif]"` into the MCIF venv.
 
 ## Development
 

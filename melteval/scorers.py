@@ -79,12 +79,15 @@ def get_normalizer(name: str):
     """
     if name == "none":
         return lambda text: text
+    # melteval's own copy, identical to melt.evaluation's (see
+    # melteval/normalizers), so a SMURF or baseline environment without
+    # melt-proj scores with exactly the normalizer a MELT run does.
     if name == "basic":
-        from melt.evaluation import BasicTextNormalizer
+        from melteval.normalizers import BasicTextNormalizer
 
         return BasicTextNormalizer()
     if name == "english":
-        from melt.evaluation import EnglishTextNormalizer
+        from melteval.normalizers import EnglishTextNormalizer
 
         return EnglishTextNormalizer()
     raise ValueError(f"Unknown normalizer {name!r}. Expected one of: {_NORMALIZER_NAMES}")
@@ -122,12 +125,82 @@ def corpus_cer() -> Metric:
     return calculate
 
 
+@metric
+def corpus_wer_extracted() -> Metric:
+    """Corpus WER after :func:`strip_transcript_preamble` -- a secondary figure beside :func:`corpus_wer`."""
+
+    def calculate(scores: list[SampleScore]) -> Value:
+        return _sum_ratio(scores, "wer_errors_extracted", "ref_words")
+
+    return calculate
+
+
+@metric
+def corpus_cer_extracted() -> Metric:
+    """Corpus CER after :func:`strip_transcript_preamble`."""
+
+    def calculate(scores: list[SampleScore]) -> Value:
+        return _sum_ratio(scores, "cer_errors_extracted", "ref_chars")
+
+    return calculate
+
+
+@metric
+def preamble_rate() -> Metric:
+    """Share of samples whose completion wrapped the transcription in a preamble."""
+
+    def calculate(scores: list[SampleScore]) -> Value:
+        return sum(s.score.value["preamble"] for s in scores) / len(scores) if scores else 0.0
+
+    return calculate
+
+
+#: ``<short lead-in about the audio>: '<quoted text>'`` and nothing else. The
+#: lead-in must name the audio or the act of transcribing -- that is what tells
+#: "The transcription is: '...'" apart from a transcribed line of dialogue such
+#: as "He said: 'come here'", which has to be scored as it stands.
+_PREAMBLE_RE = re.compile(
+    r"""^\s*(?P<lead>[^'"‘’“”:\n]{3,120}?)\s*:\s*(?P<open>['"‘“])(?P<body>.+)(?P<close>['"’”])\s*[.!?]?\s*$""",
+    re.DOTALL,
+)
+_PREAMBLE_LEAD_WORDS = re.compile(r"\b(audio|speech|transcri\w*|recording|content|speaker|clip|utterance)\b", re.I)
+_CLOSING_QUOTE = {"'": "'", '"': '"', "‘": "’", "“": "”"}
+
+
+def strip_transcript_preamble(text: str) -> tuple[str, bool]:
+    """Extract the quoted transcription from a completion that wraps it in a preamble.
+
+    Some instruct models answer a transcription request with a sentence around
+    it -- Qwen2-Audio says "The original content of this audio is: '...'" or
+    "The transcription is: '...'" on about a third of LibriSpeech. Scored as it
+    stands, the lead-in counts as inserted words and the WER measures the
+    wrapper more than the recognition. :func:`asr_scorer` reports both: the
+    completion as it stands (the headline) and this extraction (a secondary
+    ``*_extracted`` figure), plus how often it applied.
+
+    Deliberately narrow: the whole completion must be one lead-in, a colon and
+    one quoted span, and the lead-in must mention the audio or transcribing.
+
+    Returns:
+        The quoted text and ``True``, or *text* unchanged and ``False``.
+    """
+    match = _PREAMBLE_RE.match(text)
+    if not match or not _PREAMBLE_LEAD_WORDS.search(match["lead"]):
+        return text, False
+    if match["close"] != _CLOSING_QUOTE[match["open"]] and match["close"] != match["open"]:
+        return text, False
+    return match["body"].strip(), True
+
+
 @scorer(
     metrics=[
         corpus_wer(),
         corpus_cer(),
         grouped(corpus_wer(), "lang", all=False, name_template="wer_{group_name}"),
         grouped(corpus_cer(), "lang", all=False, name_template="cer_{group_name}"),
+        corpus_wer_extracted(),
+        corpus_cer_extracted(),
+        preamble_rate(),
     ]
 )
 def asr_scorer(normalizer: str = "basic") -> Scorer:
@@ -142,10 +215,17 @@ def asr_scorer(normalizer: str = "basic") -> Scorer:
         normalizer: Which text normalizer to apply to both reference and
             hypothesis before computing edit distance.
 
+    The completion is scored as it stands -- that is ``corpus_wer``. The same
+    counts after :func:`strip_transcript_preamble` are reported beside it as
+    ``corpus_wer_extracted``, with ``preamble_rate``, so a model that wraps its
+    transcriptions in a sentence shows as such instead of just as a worse WER.
+
     Returns:
         A scorer whose ``Score.value`` carries
         ``{wer_errors, ref_words, cer_errors, ref_chars}`` — counts to be
-        summed by :func:`corpus_wer` / :func:`corpus_cer`, not rates.
+        summed by :func:`corpus_wer` / :func:`corpus_cer`, not rates — plus
+        ``wer_errors_extracted``/``cer_errors_extracted`` and ``preamble``
+        (0 or 1).
     """
     normalize = get_normalizer(normalizer)
 
@@ -154,6 +234,8 @@ def asr_scorer(normalizer: str = "basic") -> Scorer:
 
         reference = normalize(target.text)
         hypothesis = normalize(state.output.completion)
+        extracted, had_preamble = strip_transcript_preamble(state.output.completion)
+        hypothesis_extracted = normalize(extracted) if had_preamble else hypothesis
 
         # An empty reference makes jiwer's alignment degenerate (division by
         # zero reference length); skip rather than let one bad sample corrupt
@@ -161,13 +243,26 @@ def asr_scorer(normalizer: str = "basic") -> Scorer:
         # positive number of words.
         if not reference.strip():
             return Score(
-                value={"wer_errors": 0, "ref_words": 0, "cer_errors": 0, "ref_chars": 0},
+                value={
+                    "wer_errors": 0,
+                    "ref_words": 0,
+                    "cer_errors": 0,
+                    "ref_chars": 0,
+                    "wer_errors_extracted": 0,
+                    "cer_errors_extracted": 0,
+                    "preamble": int(had_preamble),
+                },
                 answer=hypothesis,
                 explanation="Empty reference after normalization; excluded from corpus WER/CER.",
             )
 
         words = jiwer.process_words([reference], [hypothesis])
         chars = jiwer.process_characters([reference], [hypothesis])
+        if had_preamble:
+            words_x = jiwer.process_words([reference], [hypothesis_extracted])
+            chars_x = jiwer.process_characters([reference], [hypothesis_extracted])
+        else:
+            words_x, chars_x = words, chars
 
         return Score(
             value={
@@ -175,8 +270,14 @@ def asr_scorer(normalizer: str = "basic") -> Scorer:
                 "ref_words": words.substitutions + words.deletions + words.hits,
                 "cer_errors": chars.substitutions + chars.deletions + chars.insertions,
                 "ref_chars": chars.substitutions + chars.deletions + chars.hits,
+                "wer_errors_extracted": words_x.substitutions + words_x.deletions + words_x.insertions,
+                "cer_errors_extracted": chars_x.substitutions + chars_x.deletions + chars_x.insertions,
+                "preamble": int(had_preamble),
             },
             answer=hypothesis,
+            # The extracted hypothesis, when it differs, so the log shows what
+            # the secondary figure was computed on (a string: metadata, not value).
+            metadata={"extracted_hypothesis": hypothesis_extracted} if had_preamble else None,
         )
 
     return score
@@ -315,7 +416,7 @@ def st_scorer() -> Scorer:
 # =============================================================================
 
 
-def _grouped_pairs(scores: list[SampleScore]) -> list[tuple[str, str]]:
+def _grouped_pairs(scores: list[SampleScore], hypothesis_key: str = "hypothesis") -> list[tuple[str, str]]:
     """Reassemble chunk-level completions into one (hypothesis, reference) pair per group.
 
     Some corpora already give one sample one reference. Others -- MCIF's
@@ -330,6 +431,12 @@ def _grouped_pairs(scores: list[SampleScore]) -> list[tuple[str, str]]:
     because two corpora scored in the same run could otherwise collide on the
     same group label by coincidence.
 
+    Args:
+        scores: Chunk-level scores whose metadata carries the reference and
+            the hypothesis.
+        hypothesis_key: Which hypothesis to join -- ``"hypothesis_extracted"``
+            for the preamble-stripped one :func:`chunked_asr_scorer` records.
+
     Raises:
         ValueError: If a group's members disagree on the reference text --
             that would mean two chunks were placed in the same group by
@@ -343,7 +450,7 @@ def _grouped_pairs(scores: list[SampleScore]) -> list[tuple[str, str]]:
         key = (str(meta.get("dataset_id", "")), str(group_id))
         order = meta.get("group_order", 0)
         groups.setdefault(key, []).append(
-            (order, s.score.metadata["hypothesis"], s.score.metadata["reference"])
+            (order, s.score.metadata[hypothesis_key], s.score.metadata["reference"])
         )
 
     pairs = []
@@ -361,6 +468,22 @@ def _grouped_pairs(scores: list[SampleScore]) -> list[tuple[str, str]]:
     return pairs
 
 
+def _grouped_wer_en(scores: list[SampleScore], hypothesis_key: str = "hypothesis") -> float:
+    """Corpus WER over grouped pairs, English-normalized (see :func:`chunked_wer_en`)."""
+    import jiwer
+
+    normalize = get_normalizer("english")
+    total_errors = total_words = 0
+    for hypothesis, reference in _grouped_pairs(scores, hypothesis_key):
+        ref_n, hyp_n = normalize(reference), normalize(hypothesis)
+        if not ref_n.strip():
+            continue
+        words = jiwer.process_words([ref_n], [hyp_n])
+        total_errors += words.substitutions + words.deletions + words.insertions
+        total_words += words.substitutions + words.deletions + words.hits
+    return total_errors / total_words if total_words > 0 else 0.0
+
+
 @metric
 def chunked_wer_en() -> Metric:
     """Corpus WER over grouped (not raw) hypothesis/reference pairs.
@@ -370,18 +493,21 @@ def chunked_wer_en() -> Metric:
     """
 
     def calculate(scores: list[SampleScore]) -> Value:
-        import jiwer
+        return _grouped_wer_en(scores)
 
-        normalize = get_normalizer("english")
-        total_errors = total_words = 0
-        for hypothesis, reference in _grouped_pairs(scores):
-            ref_n, hyp_n = normalize(reference), normalize(hypothesis)
-            if not ref_n.strip():
-                continue
-            words = jiwer.process_words([ref_n], [hyp_n])
-            total_errors += words.substitutions + words.deletions + words.insertions
-            total_words += words.substitutions + words.deletions + words.hits
-        return total_errors / total_words if total_words > 0 else 0.0
+    return calculate
+
+
+@metric
+def chunked_wer_en_extracted() -> Metric:
+    """:func:`chunked_wer_en` after :func:`strip_transcript_preamble` on each chunk -- a secondary figure.
+
+    Stripped per chunk, before the group is joined: the wrapper goes around
+    every chunk's completion, so a talk cut into 30 segments carries 30 of them.
+    """
+
+    def calculate(scores: list[SampleScore]) -> Value:
+        return _grouped_wer_en(scores, "hypothesis_extracted")
 
     return calculate
 
@@ -415,8 +541,13 @@ def chunked_cer_en() -> Metric:
     metrics=[
         chunked_wer_en(),
         chunked_cer_en(),
+        chunked_wer_en_extracted(),
+        preamble_rate(),
         grouped(chunked_wer_en(), "dataset_id", all=False, name_template="wer_{group_name}"),
         grouped(chunked_cer_en(), "dataset_id", all=False, name_template="cer_{group_name}"),
+        grouped(
+            chunked_wer_en_extracted(), "dataset_id", all=False, name_template="wer_extracted_{group_name}"
+        ),
     ]
 )
 def chunked_asr_scorer() -> Scorer:
@@ -429,20 +560,31 @@ def chunked_asr_scorer() -> Scorer:
     Normalization is fixed to ``"english"``: this scorer exists for MCIF,
     whose grouped ASR reference is only ever produced for an English target.
 
+    Like :func:`asr_scorer`, it also reports the WER after stripping a
+    "The transcription is: '...'" wrapper from each chunk
+    (``chunked_wer_en_extracted``), and how often one was stripped
+    (``preamble_rate``): Qwen2-Audio wraps most MCIF segments, and the
+    headline WER then measures the wrapper more than the recognition.
+
     Returns:
-        A scorer whose ``Score.metadata`` carries ``{reference, hypothesis}``,
-        matching :func:`st_scorer`'s shape for the same reason: corpus WER is
-        not the mean of per-sample rates, so nothing meaningful is computed
-        per sample here.
+        A scorer whose ``Score.metadata`` carries ``{reference, hypothesis,
+        hypothesis_extracted}``, matching :func:`st_scorer`'s shape for the
+        same reason: corpus WER is not the mean of per-sample rates, so
+        nothing meaningful is computed per sample here.
     """
 
     async def score(state: TaskState, target: Target) -> Score:
         hypothesis = state.output.completion
         reference = target.text
+        extracted, had_preamble = strip_transcript_preamble(hypothesis)
         return Score(
-            value={"hyp_tokens": len(hypothesis.split()), "ref_tokens": len(reference.split())},
+            value={
+                "hyp_tokens": len(hypothesis.split()),
+                "ref_tokens": len(reference.split()),
+                "preamble": int(had_preamble),
+            },
             answer=hypothesis,
-            metadata={"reference": reference, "hypothesis": hypothesis},
+            metadata={"reference": reference, "hypothesis": hypothesis, "hypothesis_extracted": extracted},
         )
 
     return score

@@ -41,7 +41,7 @@ from typing import Any
 
 from inspect_ai.model import GenerateConfig, modelapi
 
-from melteval.providers.base import DEFAULT_BATCH_SIZE, BatchedSpeechAPI, _Request
+from melteval.providers.base import DEFAULT_BATCH_SIZE, DEFAULT_MAX_TOKENS, BatchedSpeechAPI, _Request, mark_max_tokens
 
 
 logger = logging.getLogger(__name__)
@@ -215,6 +215,7 @@ class SmurfAPI(BatchedSpeechAPI):
 
         # Audio is always present here, so SALM generates from ``inputs_embeds``
         # and HuggingFace returns only the new tokens -- no prompt to strip.
+        mark_max_tokens(batch, answer_ids, {self.model.text_eos_id, self.model.text_pad_id})
         return [
             self.model.tokenizer.ids_to_text(ids, remove_special_tokens=True).strip()
             for ids in answer_ids.cpu()
@@ -237,7 +238,8 @@ class SmurfAPI(BatchedSpeechAPI):
         )
 
 
-# These modules must all land on the same GPU as the LLM's decoder layer 0. This is due to how HF-s generate() picks devices for its own
+# These modules must all land on the same GPU as the LLM's decoder layer 0. This
+# is due to how HF's generate() picks devices for its own
 _ANCHOR_MODULES = ("embed_tokens", "perception", "llm.lm_head", "llm.model.norm", "llm.model.rotary_emb")
 
 
@@ -246,7 +248,8 @@ def _plan_device_map(
 ) -> dict[str, int]:
     """Decide which GPU every anchor module and every decoder layer goes on.
 
-    Pure arithmetic: we are just looking at the sizes of modules and the available budgets to decide placement, without touching any actual GPUs.
+    Pure arithmetic: we are just looking at the sizes of modules and the
+    available budgets to decide placement, without touching any actual GPUs.
 
     Args:
         anchor_names: Dotted attribute paths of the modules that must all
@@ -512,7 +515,7 @@ def _generation_kwargs(config: GenerateConfig, num_beams: int = 1) -> dict[str, 
     not be comparable.
     """
     kwargs: dict[str, Any] = {
-        "max_new_tokens": config.max_tokens or 256,
+        "max_new_tokens": config.max_tokens or DEFAULT_MAX_TOKENS,
         "do_sample": config.temperature is not None and config.temperature > 0,
     }
     if num_beams > 1:

@@ -39,6 +39,12 @@
 #     /path/to/checkpoints/epoch=0-step=3600.ckpt /path/to/frozen-set \
 #     -T instruction="Transcribe this English audio: "
 #
+#   # An off-the-shelf baseline: the "checkpoint" is the model's HF cache
+#   # snapshot
+#   MELTEVAL_PROVIDER=qwen2_audio infra/runners/submit_eval.sh artemis \
+#     "$HF_HOME"/hub/models--Qwen--Qwen2-Audio-7B-Instruct/snapshots/<sha> /path/to/frozen-set \
+#     -T task_filter=asr -T instruction='"Transcribe this audio."' --log-format json
+#
 # <site> selects infra/sites/<site>.sh, which exports VENV_PATH/OUTPUT_DIR/
 # LOCAL_DATASETS_DIR and defines the SBATCH_ARGS array (partition/QoS/time).
 # Every site file takes its values as `${VAR:-default}`, so an environment
@@ -61,4 +67,7 @@ source "$SITE_FILE"
 mkdir -p logs   # SLURM won't create the --output dir; a missing dir kills the job silently.
 
 echo "[submit_eval] site=${SITE} sbatch ${SBATCH_ARGS[*]} infra/run_eval.sbatch $*"
+# A caller can tag the job (scripts/run_matrix.py tags each one with its
+# model and slice) so it can tell what is already queued or running.
+[[ -n "${MELT_JOB_TAG:-}" ]] && SBATCH_ARGS+=(--comment="${MELT_JOB_TAG}")
 sbatch "${SBATCH_ARGS[@]}" infra/run_eval.sbatch "$@"

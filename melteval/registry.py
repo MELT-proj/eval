@@ -43,6 +43,25 @@ TASK_SCORERS: dict[str, Callable[[], Scorer]] = {
     "audio_chat": chat_scorer,
 }
 
+#: Generation budget per task, used when the run does not set ``--max-tokens``
+#: (which always wins; inspect merges the command line over a task's config).
+#: Without it the providers fall back to their own 256, sized for a transcript
+#: of one sentence.
+#: ``audio_mcq`` answers are one option, but some models reason before naming it.
+TASK_MAX_TOKENS: dict[str, int] = {
+    "asr": 256,
+    "st": 256,
+    "chunked_asr": 256,
+    "chunked_st": 256,
+    "audio_mcq": 512,
+    "audio_chat": 1024,
+}
+
+
+def default_max_tokens(task_filter: str | None) -> int | None:
+    """Return the default generation budget for *task_filter*, or ``None`` to leave it to the provider."""
+    return TASK_MAX_TOKENS.get(task_filter) if task_filter else None
+
 
 def default_scorer(task_filter: str | None) -> Scorer:
     """Return the default scorer for *task_filter*.

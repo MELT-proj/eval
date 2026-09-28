@@ -10,7 +10,9 @@ There is one solver per model family, because "the format the model was trained
 in" is answered by a different file for each: :func:`speech_prompt` reads a
 MELT ``training_config.yaml`` and renders the whole sequence including the chat
 template; :func:`smurf_prompt` renders only the instruction, because a SMURF
-checkpoint applies its own chat template inside ``generate()``.
+checkpoint applies its own chat template inside ``generate()``;
+:func:`instruction_prompt` does the same for off-the-shelf baselines (Qwen2-Audio, Qwen3-Omni)
+whose provider applies the model's own template.
 """
 
 from __future__ import annotations
@@ -27,6 +29,7 @@ from melteval.prompt import (
     load_smurf_prompt_spec,
     render_smurf_prompt,
     render_user_prompt,
+    strip_audio_token,
 )
 
 
@@ -155,78 +158,148 @@ def smurf_prompt(
     template = instruction if instruction is not None else (spec.instruction if spec else None)
     source = "argument" if instruction is not None else ("config" if spec else None)
 
+    recorded = spec.to_dict() if spec else {"provider": "smurf", "source": "argument"}
+
     async def solve(state: TaskState, generate: Generate) -> TaskState:
-        _require_provider(state, "smurf")
-        metadata = state.metadata or {}
-
-        sample_instruction = metadata.get("instruction")
-        sample_template = sample_instruction or template
-        if not sample_template:
-            raise ValueError(
-                f"No instruction for sample {state.sample_id}: it carries none of its own, and "
-                "neither instruction= nor prompt_config= was given. A SMURF checkpoint is prompted "
-                "by the conversation's context tag, so evaluating without one would measure a "
-                "prompt no run was trained on."
-            )
-
-        prompt = render_smurf_prompt(
-            sample_template,
-            task=str(metadata.get("task") or ""),
-            lang=str(metadata.get("lang") or ""),
-            src_lang=str(metadata.get("src_lang") or ""),
-            tgt_lang=str(metadata.get("tgt_lang") or ""),
-        )
-
-        content: list = [ContentText(text=prompt)]
-        audio = metadata.get("audio")
-        if audio is not None:
-            content.append(ContentData(data={AUDIO_DATA_KEY: audio}))
-
-        state.messages = [ChatMessageUser(content=content)]
-
-        recorded = spec.to_dict() if spec else {"provider": "smurf", "source": "argument"}
-        recorded["instruction"] = sample_template
-        recorded["instruction_source"] = "sample" if sample_instruction else (source or "sample")
-        # The chat template is the model's, applied in the provider. Recorded so
-        # a log makes clear that its absence here is a decision, not an omission.
-        recorded["apply_chat_template"] = False
-        state.store.set("melteval:format_spec", recorded)
-        state.store.set("melteval:prompt", prompt)
-
-        return await generate(state)
+        return await _instruction_solve(state, generate, ("smurf",), template, source, recorded)
 
     return solve
 
 
-#: Which solver each speech provider must be run with. Only these two are
+@solver
+def instruction_prompt(instruction: str | None = None) -> Solver:
+    """Build the model input for a baseline that applies its own chat template.
+
+    For off-the-shelf speech LLMs whose provider wraps the prompt in the model's
+    own template and places the audio itself, so that what this solver renders
+    is the bare instruction, that is, the same as SMURF but without the config
+    file.
+
+    Args:
+        instruction: The instruction template.
+
+    Returns:
+        A solver that replaces the message list and generates.
+    """
+
+    async def solve(state: TaskState, generate: Generate) -> TaskState:
+        return await _instruction_solve(
+            state,
+            generate,
+            _INSTRUCTION_PROVIDERS,
+            instruction,
+            "argument" if instruction is not None else None,
+            {"provider": getattr(state.model, "api", ""), "source": "argument"},
+        )
+
+    return solve
+
+
+async def _instruction_solve(
+    state: TaskState,
+    generate: Generate,
+    providers: tuple[str, ...],
+    template: str | None,
+    source: str | None,
+    recorded: dict,
+) -> TaskState:
+    """Render a bare instruction for *state*, attach its audio, and generate.
+
+    This is a shared body of every solver whose provider applies the model's own
+    chat template (:func:`smurf_prompt`, :func:`instruction_prompt`).
+
+    Args:
+        state: The sample's task state.
+        generate: inspect's generate function.
+        providers: The providers this solver may be run against.
+        template: The instruction template for samples that carry none.
+        source: Where *template* came from, for the log.
+        recorded: Base of what is stored as ``melteval:format_spec``.
+
+    Raises:
+        ValueError: If the sample carries no instruction and *template* is unset.
+    """
+    _require_provider(state, *providers)
+    metadata = state.metadata or {}
+
+    sample_instruction = metadata.get("instruction")
+    sample_template = sample_instruction or template
+    if not sample_template:
+        raise ValueError(
+            f"No instruction for sample {state.sample_id}: it carries none of its own, and none was "
+            f"given to the solver. An empty user turn is a valid input to a speech LLM "
+            "and produces fluent text and a plausible score, so it is refused rather than guessed."
+        )
+
+    # A benchmark's own prompt marks where MELT's audio token goes; here the
+    # provider places the audio, so the marker is dropped (see strip_audio_token).
+    template_to_render, audio_token_stripped = strip_audio_token(sample_template)
+    prompt = render_smurf_prompt(
+        template_to_render,
+        task=str(metadata.get("task") or ""),
+        lang=str(metadata.get("lang") or ""),
+        src_lang=str(metadata.get("src_lang") or ""),
+        tgt_lang=str(metadata.get("tgt_lang") or ""),
+    )
+
+    content: list = [ContentText(text=prompt)]
+    audio = metadata.get("audio")
+    if audio is not None:
+        content.append(ContentData(data={AUDIO_DATA_KEY: audio}))
+
+    state.messages = [ChatMessageUser(content=content)]
+
+    recorded = dict(recorded)
+    recorded["instruction"] = sample_template
+    recorded["instruction_source"] = "sample" if sample_instruction else (source or "sample")
+    # The chat template is the model's, applied in the provider. Recorded so
+    # a log makes clear that its absence here is a decision, not an omission.
+    recorded["apply_chat_template"] = False
+    if audio_token_stripped:
+        recorded["audio_token_stripped"] = True
+    state.store.set("melteval:format_spec", recorded)
+    state.store.set("melteval:prompt", prompt)
+
+    return await generate(state)
+
+
+#: Which solver each speech provider must be run with. Only these are
 #: checked: anything else (``mockllm``, an API model used to sanity-check the
 #: plumbing) has no format of its own to be wrong about.
-_SOLVER_FOR_PROVIDER = {"melt": speech_prompt, "smurf": smurf_prompt}
+_SOLVER_FOR_PROVIDER = {
+    "melt": speech_prompt,
+    "smurf": smurf_prompt,
+    "qwen2_audio": instruction_prompt,
+    "qwen3_omni": instruction_prompt,
+}
+
+#: Providers that :func:`instruction_prompt` serves.
+_INSTRUCTION_PROVIDERS = ("qwen2_audio", "qwen3_omni")
 
 
-def _require_provider(state: TaskState, expected: str) -> None:
-    """Fail fast when a checkpoint is paired with the other family's solver.
+def _require_provider(state: TaskState, *expected: str) -> None:
+    """Fail fast when a checkpoint is paired with another family's solver.
 
-    The two prompt formats are not merely different, they are each other's
+    The prompt formats are not merely different, they are each other's
     double-application: MELT's solver emits a chat-templated string containing
-    ``<|audio|>``, which a SMURF checkpoint would wrap in a *second* chat
-    template and never expand, while SMURF's bare instruction reaches a MELT
+    ``<|audio|>``, which a SMURF or Qwen2-Audio model would wrap in a *second*
+    chat template and never expand, while a bare instruction reaches a MELT
     processor with no audio token to put the encoder frames in. Both produce
     fluent, wrong text and a plausible score — the failure mode this repo keeps
     tripping over (MELT-proj/training#58).
 
     Args:
         state: The sample's task state, whose ``model.api`` names the provider.
-        expected: The provider this solver belongs to.
+        expected: The providers this solver belongs to.
 
     Raises:
-        ValueError: If the model comes from the other known speech provider.
+        ValueError: If the model comes from another known speech provider.
     """
     api = getattr(state.model, "api", "")
-    if api in _SOLVER_FOR_PROVIDER and api != expected:
+    if api in _SOLVER_FOR_PROVIDER and api not in expected:
         raise ValueError(
             f"Model {state.model} is a {api!r} checkpoint but the task is running "
-            f"{_SOLVER_FOR_PROVIDER[expected].__name__}(). Its prompt format is not this one's: run it "
+            f"{_SOLVER_FOR_PROVIDER[expected[0]].__name__}(). Its prompt format is not this one's: run it "
             f"with -T prompt_style={api} (or pass solver={_SOLVER_FOR_PROVIDER[api].__name__}(...))."
         )
 

@@ -1,0 +1,154 @@
+# Every model against every benchmark: the baseline comparison matrix.
+#
+#   python scripts/run_matrix.py configs/matrix/baselines-v1.yaml --site bocconi --dry-run
+#   python scripts/run_matrix.py configs/matrix/baselines-v1.yaml --site bocconi
+#   python projects/baselines/report.py --log-root <log_root> --out report-out
+#
+# One SLURM job per (model, benchmark slice), through infra/runners/submit_eval.sh. 
+# A slice that already has a successful log is skipped, so re-running this after a 
+# partial sweep submits only what is missing.
+#
+
+name: baselines-v1
+
+# Where logs go: <log_root>/<model>/<benchmark>/<slice>/. Per site, or one
+# string for all. Defaults to the site file's OUTPUT_DIR/<name>.
+log_root:
+  bocconi: ${HOME}/scratch/eval-logs/matrix-baselines-v1
+
+models:
+  - name: qwen2-audio-7b-instruct
+    provider: qwen2_audio
+    checkpoint: ${HF_HOME}/hub/models--Qwen--Qwen2-Audio-7B-Instruct/snapshots/*
+    # 30 s window. A few clips in otherwise short-utterance sets run past it
+    # (9 of 2620 in LibriSpeech test-clean, up to 35 s): cut them to 30 s, as
+    # the model does out of the box, rather than fail the run. Each cut sample
+    # is marked in the log and counted in the report's `runs` sheet.
+    args: [-M, batch_size=8, -M, truncate_long_audio=true]
+    # Whole talks (minutes long) are another matter: 30 s of a talk is not a
+    # transcription of it, so MCIF long is not run for this model at all.
+    skip: [mcif-long-*]
+    # For benchmarks marked `needs_instruction` (their samples carry none of
+    # their own). A model on the bare-instruction path with no entry for a
+    # slice's task skips that slice. English targets only in this matrix.
+    instruction:
+      # Asks for the bare transcription: with "Transcribe this audio." it
+      # prefixes many answers with "The original content of this audio is:",
+      # which is scored as-is (smoke test 2026-09-26, 20 samples: 32 % WER).
+      asr: "Transcribe this audio. Output only the transcription."
+      st: "Translate this audio into English."
+
+  - name: qwen3-omni-30b-a3b-instruct
+    provider: qwen3_omni
+    checkpoint: ${HF_HOME}/hub/models--Qwen--Qwen3-Omni-30B-A3B-Instruct/snapshots/*
+    args: [-M, batch_size=4]
+    instruction:
+      asr: "Transcribe this audio."
+      st: "Translate this audio into English."
+
+  - name: smurf
+    provider: smurf
+    # Always one .ckpt file in checkpoints/smurf/ (gitignored).
+    checkpoint: checkpoints/smurf/*.ckpt
+    args: [-M, batch_size=8]
+    # SMURF's trained prompt; no ST entry, so its ST slices are skipped until
+    # one is added (or pass -T prompt_config=<inference yaml> in args instead).
+    instruction:
+      asr: "Transcribe this English audio: "
+
+  - name: melt
+    provider: melt
+    # Always one run folder in checkpoints/melt/. The prompt format
+    # is read from its training_config.yaml, looked for in the folder and up to
+    # two levels above it; without one the run fails rather than guess.
+    checkpoint: checkpoints/melt/*/
+    # MELT needs melt-proj, which the SMURF venv does not have: point this at
+    # a venv built with `.[shar,hf,metrics]`
+    venv: ${MELT_VENV_PATH}
+    args: [-M, batch_size=4]
+
+benchmarks:
+  - name: air-bench
+    spec: configs/hf/air-bench.yaml
+    # Chat answers are graded by a judge: a model from `models:` above, loaded
+    # text-only (its own checkpoint and venv), or an API model as
+    # provider/model. Every model under test is graded by the same judge.
+    # Caveat: Qwen3-Omni is also a model under test, so it grades its own
+    # answers. And this is melteval's chat_scorer rubric, not AIR-Bench's own
+    # GPT-4 1-10 protocol, so the numbers are not comparable with the paper's.
+    score:
+      judge: qwen3-omni-30b-a3b-instruct
+    slices:
+      - {task: audio_mcq, dataset_id: air-bench-foundation-speech}
+      - {task: audio_mcq, dataset_id: air-bench-foundation-sound}
+      - {task: audio_mcq, dataset_id: air-bench-foundation-music}
+      - {task: audio_chat, dataset_id: air-bench-chat-speech}
+      - {task: audio_chat, dataset_id: air-bench-chat-sound}
+      - {task: audio_chat, dataset_id: air-bench-chat-music}
+      - {task: audio_chat, dataset_id: air-bench-chat-mixed}
+
+  - name: mcif
+    spec: configs/hf/mcif.yaml
+    # QA/SUM are graded with the paper's own metric. Needs a venv with
+    # `mcif-bench` and melt-eval installed (see projects/baselines/README.md).
+    # SUM exists in the long track only, so those slices add its scorer.
+    score:
+      venv: ${MCIF_VENV_PATH}
+      scorers: [melteval/mcif_scoring.py@mcif_official_qa_scorer]
+    # Each dataset_id holds several task kinds; one job per kind.
+    slices:
+      - {task: chunked_asr, dataset_id: mcif-short-fixed-en}
+      - {task: audio_chat, dataset_id: mcif-short-fixed-en}
+      - {task: chunked_st, dataset_id: mcif-short-fixed-de}
+      - {task: audio_chat, dataset_id: mcif-short-fixed-de}
+      - {task: chunked_st, dataset_id: mcif-short-fixed-it}
+      - {task: audio_chat, dataset_id: mcif-short-fixed-it}
+      - {task: chunked_st, dataset_id: mcif-short-fixed-zh}
+      - {task: audio_chat, dataset_id: mcif-short-fixed-zh}
+      - {task: chunked_asr, dataset_id: mcif-short-mixed-en}
+      - {task: audio_chat, dataset_id: mcif-short-mixed-en}
+      - {task: chunked_st, dataset_id: mcif-short-mixed-de}
+      - {task: audio_chat, dataset_id: mcif-short-mixed-de}
+      - {task: chunked_st, dataset_id: mcif-short-mixed-it}
+      - {task: audio_chat, dataset_id: mcif-short-mixed-it}
+      - {task: chunked_st, dataset_id: mcif-short-mixed-zh}
+      - {task: audio_chat, dataset_id: mcif-short-mixed-zh}
+      # long: whole talks in one pass (README, "Running chunked-ASR MCIF eval").
+      - {task: chunked_asr, dataset_id: mcif-long-fixed-en, args: [-M, batch_size=1, --max-tokens, "4096"], time: "08:00:00"}
+      - {task: audio_chat, dataset_id: mcif-long-fixed-en, args: [-M, batch_size=1], time: "08:00:00",
+         scorers: [melteval/mcif_scoring.py@mcif_official_qa_scorer, melteval/mcif_scoring.py@mcif_official_sum_scorer]}
+      - {task: chunked_st, dataset_id: mcif-long-fixed-de, args: [-M, batch_size=1, --max-tokens, "4096"], time: "08:00:00"}
+      - {task: audio_chat, dataset_id: mcif-long-fixed-de, args: [-M, batch_size=1], time: "08:00:00",
+         scorers: [melteval/mcif_scoring.py@mcif_official_qa_scorer, melteval/mcif_scoring.py@mcif_official_sum_scorer]}
+      - {task: chunked_st, dataset_id: mcif-long-fixed-it, args: [-M, batch_size=1, --max-tokens, "4096"], time: "08:00:00"}
+      - {task: audio_chat, dataset_id: mcif-long-fixed-it, args: [-M, batch_size=1], time: "08:00:00",
+         scorers: [melteval/mcif_scoring.py@mcif_official_qa_scorer, melteval/mcif_scoring.py@mcif_official_sum_scorer]}
+      - {task: chunked_st, dataset_id: mcif-long-fixed-zh, args: [-M, batch_size=1, --max-tokens, "4096"], time: "08:00:00"}
+      - {task: audio_chat, dataset_id: mcif-long-fixed-zh, args: [-M, batch_size=1], time: "08:00:00",
+         scorers: [melteval/mcif_scoring.py@mcif_official_qa_scorer, melteval/mcif_scoring.py@mcif_official_sum_scorer]}
+
+  - name: librispeech
+    spec: configs/librispeech-hf-test-clean.yaml
+    needs_instruction: true
+    slices:
+      # 2620 samples: Qwen3-Omni (batch 4) needs ~1h15, past short_gpuh200's
+      # 1h10 cap; it timed out twice at 2192 and 2584. 2 h moves it to gpuh200.
+      - {task: asr, dataset_id: librispeech-test-clean, time: "02:00:00"}
+
+  # Shar frozen sets: only where the corpora are (see configs/fleurs24-*.yaml).
+  # Paths come from the environment: set them on the sites that have the sets
+  # (`melteval freeze configs/fleurs24-asr-test.yaml -o <dir>`).
+  - name: fleurs24-asr
+    frozen_set: ${FLEURS24_ASR_SET}
+    needs_instruction: true
+    slices:
+      - {task: asr}
+
+  - name: fleurs24-st-xen
+    frozen_set: ${FLEURS24_ST_XEN_SET}
+    needs_instruction: true
+    slices:
+      - {task: st, dataset_id: fleurs-de_en}
+      - {task: st, dataset_id: fleurs-es_en}
+      - {task: st, dataset_id: fleurs-fr_en}
+      - {task: st, dataset_id: fleurs-it_en}

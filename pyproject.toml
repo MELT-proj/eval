@@ -27,6 +27,8 @@ dependencies = [
     "omegaconf>=2.3",
     "pyyaml>=6.0",
     "numpy>=1.24",
+    # melteval/normalizers (Whisper's normalizers) needs it.
+    "regex",
 ]
 
 [project.optional-dependencies]
@@ -59,6 +61,14 @@ metrics = [
     "jiwer>=4.0",
     "sacrebleu==2.5.1",
 ]
+# MCIF's official QA/SUM scorers (melteval/mcif_scoring.py), installed into a
+# venv of their own (see infra/sites/bocconi.sh): mcif-bench drags in COMET,
+# bert-score and torch. Its torchmetrics pin imports `pkg_resources`, which
+# setuptools dropped in 81 -- without this cap scoring dies on import.
+mcif = [
+    "mcif-bench",
+    "setuptools<81",
+]
 dev = [
     "pytest",
     "ruff",
@@ -72,6 +82,8 @@ analysis = [
     "pyarrow>=15",
     "matplotlib>=3.8",
     "seaborn>=0.13",
+    # projects/baselines writes its table as .xlsx through pandas.
+    "openpyxl>=3.1",
 ]
 # Deterministic, faster batched decode (MELT-proj/eval#7, MELT-proj/training#118).
 # Pinned to the same prebuilt wheel as the training repo, matching the `shar`
@@ -95,6 +107,9 @@ melteval = "melteval"
 [tool.uv.sources]
 melt-proj = { path = "../training", editable = true }
 flash-attn = { url = "https://github.com/Dao-AILab/flash-attention/releases/download/v2.8.3/flash_attn-2.8.3+cu12torch2.9cxx11abiTRUE-cp312-cp312-linux_x86_64.whl" }
+
+[tool.setuptools.package-data]
+melteval = ["normalizers/english.json"]
 
 [tool.setuptools.packages.find]
 where = ["."]
