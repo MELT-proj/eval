@@ -1,0 +1,23 @@
+# Checkpoint watcher for a SMURF training run:
+#
+#   python scripts/watch_checkpoints.py run    configs/watch/smurf.yaml
+#   python scripts/watch_checkpoints.py status configs/watch/smurf.yaml
+#   python scripts/watch_checkpoints.py candidates configs/watch/smurf.yaml
+
+site: jupiter                          # infra/sites/<site>.sh
+ckpt_dir: /e/project1/e-ext-2025e01-100/speech_stream/eurollm_speech_config_run/checkpoints   # where the *.ckpt files land
+pattern: "step=*[0-9].ckpt"   # will catch:step=1000.ckpt, step=2000.ckpt, ...
+eval_config: configs/eval/smurf.yaml   # models x benchmarks; its first model is the prototype
+output_dir: ${EVAL_ROOT}/smurf-run     # ledger, per-step configs, logs/ and results/
+
+every_n: 2            # evaluate the 1st, 3rd, 5th... checkpoint found (1 = all of them)
+settle_minutes: 10    # a .ckpt untouched for this long is considered fully written
+max_in_flight: 2      # checkpoints being evaluated at once (each one is several SLURM jobs)
+
+retention:            # what `candidates` keeps; the rest is only listed, never deleted
+  keep_last: 2
+  keep_best:
+    k: 3
+    metric: mcif/chunked_asr-mcif-short-fixed-en/wer_mcif-short-fixed-en   # benchmark/slice/metric (results_long.csv)
+    mode: min         # min for WER, max for accuracy or BLEU
+  keep_every: 10000   # plus every checkpoint whose step is a multiple of this
