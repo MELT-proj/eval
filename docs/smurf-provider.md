@@ -11,25 +11,26 @@ checkpoints. Only two things differ, and both are contained: the provider
 
 ```bash
 inspect eval melteval/tasks.py@asr \
-  --model smurf/path/to/epoch=0-step=3600.ckpt \
+  --model smurf/<path-to-.ckpt> \
   -T frozen_set=runs/asr-test-v1 \
   -T prompt_style=smurf \
   -T instruction="Transcribe this English audio: " \
   -M batch_size=4
 ```
 
-On a cluster, the runner takes it from an environment variable, because the
-checkpoint and the venv both change with the family:
+On a cluster, the venv changes with the family too (the two model stacks do
+not co-install):
 
 ```bash
-MELTEVAL_PROVIDER=smurf VENV_PATH=/path/to/venvs/smurf-eval/bin/activate \
+VENV_PATH=/path/to/venvs/smurf-eval/bin/activate \
   infra/runners/submit_eval.sh artemis \
-  /path/to/epoch=0-step=3600.ckpt /path/to/frozen-set \
+  smurf/<path-to-.ckpt> /path/to/frozen-set \
   -T instruction="Transcribe this English audio: "
 ```
 
-`-T prompt_style=smurf` is added automatically there, since the provider and
-the prompt format have to agree.
+`-T prompt_style=smurf` is added automatically there, since the model and the
+prompt format have to agree. In a config for `scripts/evaluate.py`, the same
+is `model: smurf/<ckpt>` plus `venv:` (see [running-evaluations.md](running-evaluations.md)).
 
 ## Why not `fbk_speechllm.inference`
 
@@ -62,7 +63,7 @@ This is the part worth reading before changing anything.
 **The chat template is the model's.** Given turns rather than token ids, SALM
 formats them with the `PromptFormatter` named by its own `cfg.prompt_format`
 (`qwen` for the current runs). So `smurf_prompt` renders the *bare
-instruction* and stops. Running a SMURF checkpoint under `speech_prompt`
+instruction* and stops. Running a SMURF checkpoint under `melt_prompt`
 instead would apply MELT's chat template first and NeMo's on top of it —
 `melteval.solver._require_provider` raises rather than let that happen.
 

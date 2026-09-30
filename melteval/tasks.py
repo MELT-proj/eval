@@ -19,7 +19,7 @@ from inspect_ai.solver import Solver
 from melteval.dataset import frozen_dataset, spec_dataset
 from melteval.registry import default_max_tokens, default_scorer
 from melteval.scorers import asr_scorer
-from melteval.solver import instruction_prompt, smurf_prompt, speech_prompt
+from melteval.solver import instruction_prompt, melt_prompt, smurf_prompt
 
 
 #: Model family whose prompt format a run uses, and the solver that builds it.
@@ -28,10 +28,9 @@ from melteval.solver import instruction_prompt, smurf_prompt, speech_prompt
 #: place somebody can read, not derived. Mismatches are caught at generation
 #: time by :func:`melteval.solver._require_provider`.
 SOLVERS = {
-    "melt": (speech_prompt, {"format_config", "tokenizer"}),
+    "melt": (melt_prompt, {"format_config", "tokenizer"}),
     "smurf": (smurf_prompt, {"instruction", "prompt_config"}),
-    "qwen2_audio": (instruction_prompt, {"instruction"}),
-    "qwen3_omni": (instruction_prompt, {"instruction"}),
+    "hf": (instruction_prompt, {"instruction"}),
 }
 
 
@@ -74,13 +73,15 @@ def speech(
         dataset_id: Restrict to one corpus.
         limit: Take at most this many samples, in manifest order.
         prompt_style: Which model family's prompt format to build — ``melt``
-            (default), ``smurf``, ``qwen2_audio`` or ``qwen3_omni``. Must match
-            the ``--model`` provider.
+            (default, ``--model melt/<checkpoint>``), ``hf``
+            (``--model melt/hf/<model>``) or ``smurf`` (``--model
+            smurf/<checkpoint>``). Must match the model; see
+            :mod:`melteval.providers`.
         format_config: ``melt`` only. Training config to take the prompt format
             from. Defaults to the checkpoint being evaluated.
         tokenizer: ``melt`` only. Where to load the chat template from.
             Defaults to the checkpoint being evaluated.
-        instruction: ``smurf``, ``qwen2_audio`` and ``qwen3_omni``. Fixed instruction text for
+        instruction: ``smurf`` and ``hf``. Fixed instruction text for
             samples that do not carry their own.
         prompt_config: ``smurf`` only. SMURF data/inference config to read the
             instruction (``tags.context``) from.

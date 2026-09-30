@@ -1,8 +1,7 @@
-"""In-process model provider for Qwen3-Omni (``Qwen/Qwen3-Omni-30B-A3B-Instruct``).
+"""Qwen3-Omni (``Qwen/Qwen3-Omni-30B-A3B-Instruct``), addressed as ``--model melt/hf/qwen3_omni``.
 
-Registered as ``qwen3_omni``, so the model is addressed as
-``--model qwen3_omni/<path-or-hub-id>``; pass the snapshot directory in the
-HuggingFace cache, as for Qwen2-Audio (see docs/baseline-providers.md).
+The ``melt`` provider builds this class (see :mod:`melteval.providers.router`),
+loading the Hub revision pinned on the class.
 
 Everything but three model-specific facts comes from
 :mod:`melteval.providers.hf`:
@@ -34,7 +33,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from inspect_ai.model import GenerateConfig, modelapi
+from inspect_ai.model import GenerateConfig
 
 from melteval.providers.base import _generate_kwargs, _Request
 from melteval.providers.hf import HFSpeechChatAPI, generate, render
@@ -44,7 +43,6 @@ FAMILY = "Qwen3-Omni"
 PROCESSOR_KWARGS = {"truncation": False}
 
 
-@modelapi(name="qwen3_omni")
 class Qwen3OmniAPI(HFSpeechChatAPI):
     """Generate text from Qwen3-Omni (or a checkpoint of the same architecture).
 
@@ -54,6 +52,8 @@ class Qwen3OmniAPI(HFSpeechChatAPI):
     """
 
     family = FAMILY
+    repo = "Qwen/Qwen3-Omni-30B-A3B-Instruct"
+    revision = "26291f793822fb6be9555850f06dfe95f2d7e695"
 
     def _load_classes(self) -> tuple[Any, Any]:
         """Qwen3-Omni's model and processor classes."""

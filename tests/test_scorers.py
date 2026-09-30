@@ -36,7 +36,7 @@ from melteval.scorers import (
     corpus_bleu,
     corpus_cer,
     corpus_chrf,
-    corpus_wer,
+    corpus_wer_raw,
     get_normalizer,
     resolve_choice,
     unresolved_rate,
@@ -59,7 +59,7 @@ def _run(coro):
 
 
 def _sample_score(value: dict, metadata: dict | None = None) -> SampleScore:
-    """Build a `SampleScore` with a numeric `Score.value`, as `corpus_wer`/
+    """Build a `SampleScore` with a numeric `Score.value`, as `corpus_wer_raw`/
     `corpus_cer` (and any real scorer) expect -- *not* a vehicle for text; see
     `_st_sample_score` for that."""
     return SampleScore(score=Score(value=value), sample_metadata=metadata or {})
@@ -107,7 +107,7 @@ class TestAsrScorer:
 
     def test_counts_are_raw_not_a_rate(self, score_fn):
         """A one-word substitution out of six must show up as 1/6, not 0.1667
-        pre-divided -- corpus_wer does the division, once, over the corpus.
+        pre-divided -- corpus_wer_raw does the division, once, over the corpus.
         "rug" -> "mat" is 3 character substitutions, not 1 -- CER operates on
         the whole string, not word-aligned."""
         state = _state("the cat sat on the rug")
@@ -212,7 +212,7 @@ class TestTranscriptPreamble:
             log_dir=str(tmp_path),
         )
         metrics = {n: m.value for s in log.results.scores for n, m in s.metrics.items()}
-        assert metrics["corpus_wer"] == pytest.approx(3 / 6)
+        assert metrics["corpus_wer_raw"] == pytest.approx(3 / 6)
         assert metrics["corpus_wer_extracted"] == 0.0
         assert metrics["preamble_rate"] == pytest.approx(0.5)
 
@@ -229,7 +229,7 @@ class TestCorpusWerCer:
             _sample_score({"wer_errors": 1, "ref_words": 10, "cer_errors": 0, "ref_chars": 0}),
             _sample_score({"wer_errors": 1, "ref_words": 2, "cer_errors": 0, "ref_chars": 0}),
         ]
-        assert corpus_wer()(scores) == pytest.approx(2 / 12)
+        assert corpus_wer_raw()(scores) == pytest.approx(2 / 12)
 
     def test_differs_from_the_mean_of_per_sample_rates(self):
         """The architectural point of this module: a short bad sample must not
@@ -239,12 +239,12 @@ class TestCorpusWerCer:
             _sample_score({"wer_errors": 0, "ref_words": 995, "cer_errors": 0, "ref_chars": 0}),
         ]
         mean_of_rates = (1.0 + 0.0) / 2
-        corpus_rate = corpus_wer()(scores)
+        corpus_rate = corpus_wer_raw()(scores)
         assert corpus_rate == pytest.approx(5 / 1000)
         assert corpus_rate != pytest.approx(mean_of_rates)
 
     def test_empty_corpus_is_zero_not_a_division_error(self):
-        assert corpus_wer()([]) == 0.0
+        assert corpus_wer_raw()([]) == 0.0
 
     def test_cer_uses_its_own_counters(self):
         scores = [_sample_score({"wer_errors": 9, "ref_words": 9, "cer_errors": 1, "ref_chars": 20})]
@@ -410,7 +410,7 @@ class TestChunkedScorers:
 
     def test_a_sample_without_grouping_metadata_is_its_own_group(self):
         """No `group_id` -- e.g. a corpus that never needed grouping -- must
-        still score, one sample at a time, exactly like `corpus_wer` would."""
+        still score, one sample at a time, exactly like `corpus_wer_raw` would."""
         scores = [
             SampleScore(
                 score=Score(value={}, metadata={"reference": "hi", "hypothesis": "hi"}),

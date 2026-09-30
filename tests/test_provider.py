@@ -164,16 +164,6 @@ class TestBatchWorker:
         assert outputs[0].metadata == {"audio_truncated_from_seconds": 31.6}
         assert outputs[1].metadata is None
 
-    def test_a_requests_stop_reason_reaches_its_output(self):
-        """How a completion cut at max_tokens is told apart in the log from one that ended on its own."""
-
-        def generate(batch):
-            batch[1].stop_reason = "max_tokens"
-            return [r.text for r in batch]
-
-        futures = self._submit(self._api(generate), 2)
-        assert [f.result(timeout=10).stop_reason for f in futures] == ["stop", "max_tokens"]
-
     def test_a_short_completion_list_fails_the_batch_instead_of_misaligning(self):
         """zip() would pair the completions off in order and drop the tail --
         scoring later samples against another sample's audio, silently."""
@@ -268,50 +258,6 @@ class TestSmurfCollateAudio:
             _collate_audio(batch, 16000)
 
 
-class TestMarkMaxTokens:
-    """``mark_max_tokens``: which rows of a batch ran into ``max_new_tokens``."""
-
-    EOS, PAD = 2, 0
-
-    def _mark(self, rows, max_tokens):
-        torch = pytest.importorskip("torch")
-        from melteval.providers.base import _Request, mark_max_tokens
-
-        batch = [
-            _Request(text="p", audio=None, sample_rate=16000, config=GenerateConfig(max_tokens=max_tokens))
-            for _ in rows
-        ]
-        mark_max_tokens(batch, torch.tensor(rows), {self.EOS, self.PAD})
-        return [r.stop_reason for r in batch]
-
-    def test_only_a_row_without_eos_or_padding_at_the_limit_was_cut(self):
-        rows = [
-            [5, 6, 7, 8],  # still going at the limit
-            [5, 6, 7, self.EOS],  # ended on the very last token
-            [5, self.EOS, self.PAD, self.PAD],  # ended early, padded to the batch
-        ]
-        assert self._mark(rows, max_tokens=4) == ["max_tokens", "stop", "stop"]
-
-    def test_a_batch_shorter_than_the_limit_was_not_cut(self):
-        assert self._mark([[5, 6, 7]], max_tokens=4) == ["stop"]
-
-    def test_the_default_limit_applies_when_the_task_sets_none(self):
-        from melteval.providers.base import DEFAULT_MAX_TOKENS
-
-        assert self._mark([[5] * DEFAULT_MAX_TOKENS], max_tokens=None) == ["max_tokens"]
-
-
-class TestStopIds:
-    def test_special_tokens_and_the_models_eos_and_pad_are_all_included(self):
-        import types
-
-        from melteval.providers.base import stop_ids
-
-        tokenizer = types.SimpleNamespace(all_special_ids=[1, 2])
-        model = types.SimpleNamespace(generation_config=types.SimpleNamespace(eos_token_id=[3, 4], pad_token_id=5))
-        assert stop_ids(tokenizer, model) == {1, 2, 3, 4, 5}
-
-
 class TestPlanDeviceMap:
     """Pure placement arithmetic for `device_map="auto"` -- no CUDA needed.
 
@@ -375,7 +321,7 @@ class _FakeQwenProcessor:
         import types
 
         self.feature_extractor = types.SimpleNamespace(sampling_rate=16000, chunk_length=30)
-        self.tokenizer = types.SimpleNamespace(padding_side="right", all_special_ids=[0])
+        self.tokenizer = types.SimpleNamespace(padding_side="right")
         self.calls: list[dict] = []
         self.conversations: list = []
 
@@ -463,21 +409,6 @@ class TestQwen2Audio:
     def test_missing_audio_is_an_error(self):
         with pytest.raises(ValueError, match="no audio"):
             self._run([_QwenRequest(audio=None)])
-
-    def test_a_completion_cut_at_max_tokens_is_marked(self):
-        """The fake model emits one token per row: 0 (special, as eos) for the
-        first, 1 for the second. At max_tokens=1 only the second was cut."""
-        config = GenerateConfig(max_tokens=1)
-        batch = [_QwenRequest(config=config), _QwenRequest(config=config)]
-        self._run(batch)
-
-        assert [r.stop_reason for r in batch] == ["stop", "max_tokens"]
-
-    def test_nothing_is_marked_below_the_limit(self):
-        batch = [_QwenRequest(), _QwenRequest()]
-        self._run(batch)
-
-        assert [r.stop_reason for r in batch] == ["stop", "stop"]
 
     def test_sample_rate_mismatch_is_an_error(self):
         with pytest.raises(ValueError, match="8000"):
@@ -619,4 +550,66 @@ class _QwenRequest:
     duration: float = 1.0
     config: GenerateConfig = field(default_factory=GenerateConfig)
     metadata: dict = field(default_factory=dict)
-    stop_reason: str = "stop"
+
+
+class TestRouter:
+    """``melt/<name>``: which class serves it, loaded from which weights -- no weights loaded here."""
+
+    @pytest.fixture
+    def built(self, monkeypatch):
+        """Replace every class the router can build with a recorder of its arguments."""
+        from melteval.providers import router
+
+        calls = []
+
+        def recorder(cls_name, repo=None, revision=None):
+            class Recorder:
+                def __init__(self, model_name, base_url, api_key, config, **kwargs):
+                    calls.append((cls_name, model_name, kwargs))
+
+            Recorder.repo, Recorder.revision = repo, revision
+            return Recorder
+
+        monkeypatch.setattr(router, "HF_MODELS", {"qwen2_audio": recorder("qwen2_audio", "Qwen/Q2", "abc123")})
+        monkeypatch.setattr(router, "MELTAPI", recorder("melt"))
+        return calls
+
+    def test_hf_loads_the_pinned_revision_and_keeps_its_short_name(self, built):
+        """The log says `melt/hf/qwen2_audio`; the weights come from repo@revision."""
+        from melteval.providers.router import create_model
+
+        create_model("hf/qwen2_audio", batch_size=4)
+        assert built == [("qwen2_audio", "hf/qwen2_audio", {"path": "Qwen/Q2", "revision": "abc123", "batch_size": 4})]
+
+    def test_revision_and_path_override_the_pin(self, built):
+        from melteval.providers.router import create_model
+
+        create_model("hf/qwen2_audio", revision="def456")
+        create_model("hf/qwen2_audio", path="/local/finetune")
+        assert [call[2] for call in built] == [
+            {"path": "Qwen/Q2", "revision": "def456"},
+            {"path": "/local/finetune", "revision": None},
+        ]
+
+    def test_anything_else_is_a_melt_checkpoint(self, built):
+        from melteval.providers.router import create_model
+
+        create_model("/abs/run/checkpoint-1000")
+        assert built == [("melt", "/abs/run/checkpoint-1000", {})]
+
+    def test_unknown_hf_model_and_vllm_are_errors(self, built):
+        from melteval.providers.router import create_model
+
+        with pytest.raises(ValueError, match="known: melt/hf/qwen2_audio"):
+            create_model("hf/whisper")
+        with pytest.raises(ValueError, match="not implemented"):
+            create_model("vllm/some/model")
+
+    def test_inspect_resolves_melt_to_the_router(self, built):
+        """Through inspect's own model lookup, as `--model melt/hf/...` is."""
+        from inspect_ai.model import get_model
+
+        import melteval  # noqa: F401 -- registers the provider
+
+        get_model("melt/hf/qwen2_audio", memoize=False)
+        assert built[0][:2] == ("qwen2_audio", "hf/qwen2_audio")

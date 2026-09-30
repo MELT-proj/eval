@@ -7,12 +7,13 @@ recorded alongside it. A parity bug should be readable in the log rather than
 inferred from a disappointing score.
 
 There is one solver per model family, because "the format the model was trained
-in" is answered by a different file for each: :func:`speech_prompt` reads a
+in" is answered by a different file for each: :func:`melt_prompt` reads a
 MELT ``training_config.yaml`` and renders the whole sequence including the chat
 template; :func:`smurf_prompt` renders only the instruction, because a SMURF
 checkpoint applies its own chat template inside ``generate()``;
-:func:`instruction_prompt` does the same for off-the-shelf baselines (Qwen2-Audio, Qwen3-Omni)
-whose provider applies the model's own template.
+:func:`instruction_prompt` does the same for off-the-shelf baselines
+(``melt/hf/<model>``: Qwen2-Audio, Qwen3-Omni) whose provider applies the
+model's own template.
 """
 
 from __future__ import annotations
@@ -31,10 +32,11 @@ from melteval.prompt import (
     render_user_prompt,
     strip_audio_token,
 )
+from melteval.providers import model_family
 
 
 @solver
-def speech_prompt(
+def melt_prompt(
     format_config: str | None = None,
     tokenizer: str | None = None,
     apply_chat_template: bool | None = None,
@@ -114,7 +116,7 @@ def smurf_prompt(
 ) -> Solver:
     """Build the model input for a SMURF (NeMo/SALM) checkpoint.
 
-    Deliberately shorter than :func:`speech_prompt`, and the difference is the
+    Deliberately shorter than :func:`melt_prompt`, and the difference is the
     point. A SMURF checkpoint carries its own ``PromptFormatter`` and its own
     audio placeholder, and applies both inside ``generate()``. Everything this
     solver would add on top — a chat template, an audio token — would be
@@ -189,7 +191,7 @@ def instruction_prompt(instruction: str | None = None) -> Solver:
             _INSTRUCTION_PROVIDERS,
             instruction,
             "argument" if instruction is not None else None,
-            {"provider": getattr(state.model, "api", ""), "source": "argument"},
+            {"provider": "hf", "source": "argument"},
         )
 
     return solve
@@ -263,18 +265,18 @@ async def _instruction_solve(
     return await generate(state)
 
 
-#: Which solver each speech provider must be run with. Only these are
-#: checked: anything else (``mockllm``, an API model used to sanity-check the
-#: plumbing) has no format of its own to be wrong about.
+#: Which solver each model family (:func:`melteval.providers.model_family`)
+#: must be run with. Only these are checked: anything else (``mockllm``, an API
+#: model used to sanity-check the plumbing) has no format of its own to be
+#: wrong about.
 _SOLVER_FOR_PROVIDER = {
-    "melt": speech_prompt,
+    "melt": melt_prompt,
     "smurf": smurf_prompt,
-    "qwen2_audio": instruction_prompt,
-    "qwen3_omni": instruction_prompt,
+    "hf": instruction_prompt,
 }
 
-#: Providers that :func:`instruction_prompt` serves.
-_INSTRUCTION_PROVIDERS = ("qwen2_audio", "qwen3_omni")
+#: Families that :func:`instruction_prompt` serves.
+_INSTRUCTION_PROVIDERS = ("hf",)
 
 
 def _require_provider(state: TaskState, *expected: str) -> None:
@@ -289,18 +291,19 @@ def _require_provider(state: TaskState, *expected: str) -> None:
     tripping over (MELT-proj/training#58).
 
     Args:
-        state: The sample's task state, whose ``model.api`` names the provider.
-        expected: The providers this solver belongs to.
+        state: The sample's task state, whose ``model`` (``api``/``name``)
+            names the family.
+        expected: The families this solver belongs to.
 
     Raises:
-        ValueError: If the model comes from another known speech provider.
+        ValueError: If the model belongs to another known speech family.
     """
-    api = getattr(state.model, "api", "")
-    if api in _SOLVER_FOR_PROVIDER and api not in expected:
+    family = model_family(getattr(state.model, "api", ""), getattr(state.model, "name", ""))
+    if family in _SOLVER_FOR_PROVIDER and family not in expected:
         raise ValueError(
-            f"Model {state.model} is a {api!r} checkpoint but the task is running "
+            f"Model {state.model} is a {family!r} model but the task is running "
             f"{_SOLVER_FOR_PROVIDER[expected[0]].__name__}(). Its prompt format is not this one's: run it "
-            f"with -T prompt_style={api} (or pass solver={_SOLVER_FOR_PROVIDER[api].__name__}(...))."
+            f"with -T prompt_style={family} (or pass solver={_SOLVER_FOR_PROVIDER[family].__name__}(...))."
         )
 
 

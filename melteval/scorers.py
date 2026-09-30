@@ -106,7 +106,7 @@ def _sum_ratio(scores: list[SampleScore], error_key: str, total_key: str) -> Val
 
 
 @metric
-def corpus_wer() -> Metric:
+def corpus_wer_raw() -> Metric:
     """Corpus WER: total word errors over total reference words."""
 
     def calculate(scores: list[SampleScore]) -> Value:
@@ -127,7 +127,7 @@ def corpus_cer() -> Metric:
 
 @metric
 def corpus_wer_extracted() -> Metric:
-    """Corpus WER after :func:`strip_transcript_preamble` -- a secondary figure beside :func:`corpus_wer`."""
+    """Corpus WER after :func:`strip_transcript_preamble` -- a secondary figure beside :func:`corpus_wer_raw`."""
 
     def calculate(scores: list[SampleScore]) -> Value:
         return _sum_ratio(scores, "wer_errors_extracted", "ref_words")
@@ -194,9 +194,9 @@ def strip_transcript_preamble(text: str) -> tuple[str, bool]:
 
 @scorer(
     metrics=[
-        corpus_wer(),
+        corpus_wer_raw(),
         corpus_cer(),
-        grouped(corpus_wer(), "lang", all=False, name_template="wer_{group_name}"),
+        grouped(corpus_wer_raw(), "lang", all=False, name_template="wer_{group_name}"),
         grouped(corpus_cer(), "lang", all=False, name_template="cer_{group_name}"),
         corpus_wer_extracted(),
         corpus_cer_extracted(),
@@ -215,7 +215,7 @@ def asr_scorer(normalizer: str = "basic") -> Scorer:
         normalizer: Which text normalizer to apply to both reference and
             hypothesis before computing edit distance.
 
-    The completion is scored as it stands -- that is ``corpus_wer``. The same
+    The completion is scored as it stands -- that is ``corpus_wer_raw``. The same
     counts after :func:`strip_transcript_preamble` are reported beside it as
     ``corpus_wer_extracted``, with ``preamble_rate``, so a model that wraps its
     transcriptions in a sentence shows as such instead of just as a worse WER.
@@ -223,7 +223,7 @@ def asr_scorer(normalizer: str = "basic") -> Scorer:
     Returns:
         A scorer whose ``Score.value`` carries
         ``{wer_errors, ref_words, cer_errors, ref_chars}`` — counts to be
-        summed by :func:`corpus_wer` / :func:`corpus_cer`, not rates — plus
+        summed by :func:`corpus_wer_raw` / :func:`corpus_cer`, not rates — plus
         ``wer_errors_extracted``/``cer_errors_extracted`` and ``preamble``
         (0 or 1).
     """

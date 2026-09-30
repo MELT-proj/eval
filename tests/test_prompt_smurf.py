@@ -326,66 +326,83 @@ class TestSmurfSolverThroughRealInspect:
         assert "No instruction for sample" in str(log.error or log.samples[0].error)
 
 
-class TestQwen2AudioPromptStyle:
-    """``prompt_style=qwen2_audio`` shares SMURF's bare-instruction path but not its config file."""
+class TestHFPromptStyle:
+    """``prompt_style=hf`` (``melt/hf/<model>``) shares SMURF's bare-instruction path but not its config file."""
 
     def test_builds_with_an_instruction(self):
         from melteval.tasks import _prompt_solver
 
-        assert _prompt_solver("qwen2_audio", None, None, "Transcribe this audio.", None) is not None
+        assert _prompt_solver("hf", None, None, "Transcribe this audio.", None) is not None
 
     def test_melt_and_smurf_only_arguments_are_rejected(self):
         from melteval.tasks import _prompt_solver
 
         with pytest.raises(ValueError, match="format_config"):
-            _prompt_solver("qwen2_audio", "/some/training_config.yaml", None, None, None)
+            _prompt_solver("hf", "/some/training_config.yaml", None, None, None)
         with pytest.raises(ValueError, match="prompt_config.*'smurf'"):
-            _prompt_solver("qwen2_audio", None, None, None, "/some/asr_inference.yaml")
+            _prompt_solver("hf", None, None, None, "/some/asr_inference.yaml")
 
     def test_a_shared_argument_names_every_style_it_belongs_to(self):
-        """`instruction` is both smurf's and qwen2_audio's; naming only one would
+        """`instruction` is both smurf's and hf's; naming only one would
         send the user to the wrong fix."""
         from melteval.tasks import _prompt_solver
 
-        with pytest.raises(ValueError, match="'smurf' or 'qwen2_audio'"):
+        with pytest.raises(ValueError, match="'smurf' or 'hf'"):
             _prompt_solver("melt", None, None, "Transcribe: ", None)
 
 
-class TestProviderGuard:
-    """Crossing a provider with another family's solver produces fluent, wrong text."""
+class TestModelFamily:
+    """Which prompt path a model name implies (melteval.providers)."""
 
-    def _state(self, api):
+    @pytest.mark.parametrize(
+        ("model", "family"),
+        [
+            ("melt//abs/ckpt", "melt"),
+            ("melt/relative/ckpt", "melt"),
+            ("melt/hf/qwen2_audio", "hf"),
+            ("melt/vllm/some/model", "vllm"),
+            ("smurf//abs/model.ckpt", "smurf"),
+            ("mockllm/model", None),
+            ("openai/gpt-4o", None),
+        ],
+    )
+    def test_family_of(self, model, family):
+        from melteval.providers import family_of
+
+        assert family_of(model) == family
+
+
+class TestProviderGuard:
+    """Crossing a model with another family's solver produces fluent, wrong text."""
+
+    def _state(self, model):
         from types import SimpleNamespace
 
-        return SimpleNamespace(model=SimpleNamespace(api=api))
+        api, _, name = model.partition("/")
+        return SimpleNamespace(model=SimpleNamespace(api=api, name=name))
 
-    @pytest.mark.parametrize("api", ["melt", "smurf"])
-    def test_instruction_prompt_rejects_the_other_families(self, api):
+    @pytest.mark.parametrize(("model", "family"), [("melt//ckpt", "melt"), ("smurf//m.ckpt", "smurf")])
+    def test_instruction_prompt_rejects_the_other_families(self, model, family):
         from melteval.solver import _INSTRUCTION_PROVIDERS, _require_provider
 
-        with pytest.raises(ValueError, match=f"prompt_style={api}"):
-            _require_provider(self._state(api), *_INSTRUCTION_PROVIDERS)
+        with pytest.raises(ValueError, match=f"prompt_style={family}"):
+            _require_provider(self._state(model), *_INSTRUCTION_PROVIDERS)
 
-    @pytest.mark.parametrize("api", ["qwen2_audio", "qwen3_omni"])
+    @pytest.mark.parametrize("model", ["melt/hf/qwen2_audio", "melt/hf/qwen3_omni"])
     @pytest.mark.parametrize("expected", ["melt", "smurf"])
-    def test_other_solvers_reject_the_hf_baselines(self, expected, api):
+    def test_other_solvers_reject_the_hf_baselines(self, expected, model):
+        """`melt/hf/...` shares the `melt` provider with MELT checkpoints, but not their prompt path."""
         from melteval.solver import _require_provider
 
-        with pytest.raises(ValueError, match=f"prompt_style={api}"):
-            _require_provider(self._state(api), expected)
-
-    def test_qwen3_omni_is_served_by_instruction_prompt(self):
-        from melteval.solver import _INSTRUCTION_PROVIDERS, _require_provider
-        from melteval.tasks import _prompt_solver
-
-        _require_provider(self._state("qwen3_omni"), *_INSTRUCTION_PROVIDERS)
-        assert _prompt_solver("qwen3_omni", None, None, "Transcribe this audio.", None) is not None
+        with pytest.raises(ValueError, match="prompt_style=hf"):
+            _require_provider(self._state(model), expected)
 
     def test_a_matching_or_unknown_provider_passes(self):
-        from melteval.solver import _require_provider
+        from melteval.solver import _INSTRUCTION_PROVIDERS, _require_provider
 
-        _require_provider(self._state("qwen2_audio"), "qwen2_audio")
-        _require_provider(self._state("mockllm"), "qwen2_audio")
+        _require_provider(self._state("melt/hf/qwen3_omni"), *_INSTRUCTION_PROVIDERS)
+        _require_provider(self._state("melt//ckpt"), "melt")
+        _require_provider(self._state("mockllm/model"), *_INSTRUCTION_PROVIDERS)
 
 
 class TestInstructionSolverThroughRealInspect(TestSmurfSolverThroughRealInspect):

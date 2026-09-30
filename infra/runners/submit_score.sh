@@ -5,7 +5,7 @@
 #
 #   VENV_PATH=<venv>/bin/activate infra/runners/submit_score.sh <site> <log>... -- <inspect score args...>
 #
-# Normally called by `scripts/run_matrix.py score`.
+# Normally called by `scripts/evaluate.py score`.
 set -euo pipefail
 die() { echo "ERROR: $*" >&2; exit 1; }
 
@@ -18,8 +18,12 @@ SITE_FILE="${SCRIPT_DIR}/../sites/${SITE}.sh"
 source "$SITE_FILE"
 
 mkdir -p logs   # SLURM won't create the --output dir; a missing dir kills the job silently.
+if [[ -n "${MELT_SLURM_OUT:-}" ]]; then
+    mkdir -p "$(dirname "${MELT_SLURM_OUT}")"
+    SBATCH_ARGS+=(--output="${MELT_SLURM_OUT}")
+fi
 echo "[submit_score] site=${SITE} venv=${VENV_PATH} sbatch ${SBATCH_ARGS[*]} infra/run_score.sbatch $*"
-# A caller can tag the job (scripts/run_matrix.py tags each one with its
+# A caller can tag the job (scripts/evaluate.py tags each one with its
 # model and slice) so it can tell what is already queued or running.
 [[ -n "${MELT_JOB_TAG:-}" ]] && SBATCH_ARGS+=(--comment="${MELT_JOB_TAG}")
 sbatch "${SBATCH_ARGS[@]}" infra/run_score.sbatch "$@"

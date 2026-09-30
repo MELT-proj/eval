@@ -14,19 +14,11 @@ export VENV_PATH="${VENV_PATH:-$HOME/repos/eval/.venv/bin/activate}"
 
 # MELT checkpoints need melt-proj (from a sibling ../training checkout), whose
 # `shar` extra pins lhotse/torch differently from the NeMo stack above, so MELT
-# gets its own venv here. configs/matrix/*.yaml points MELT models at it; for a
+# gets its own venv here. configs/eval/*.yaml points MELT models at it; for a
 # one-off run, override VENV_PATH with it.
 #   uv venv --python 3.12 $HOME/repos/eval/.venv-melt
 #   VIRTUAL_ENV=$HOME/repos/eval/.venv-melt uv pip install --prerelease=allow -e ".[shar,hf,metrics]"
 export MELT_VENV_PATH="${MELT_VENV_PATH:-$HOME/repos/eval/.venv-melt/bin/activate}"
-
-# MCIF's official QA/SUM metric (BERTScore, via the `mcif-bench` package --
-# melteval/mcif_scoring.py) scores finished logs in a venv of its own: its
-# COMET/BERTScore pins are nobody else's business. Only `run_matrix.py score`
-# uses it.
-#   uv venv --python 3.12 $HOME/repos/eval/.venv-mcif
-#   VIRTUAL_ENV=$HOME/repos/eval/.venv-mcif uv pip install -e ".[mcif]"
-export MCIF_VENV_PATH="${MCIF_VENV_PATH:-$HOME/repos/eval/.venv-mcif/bin/activate}"
 
 # --- storage (host paths) -------------------------------------------------
 # The HF cache lives on BeeGFS (/scratch -> /mnt/beegfsnew/scratch), not under
@@ -36,6 +28,8 @@ export MCIF_VENV_PATH="${MCIF_VENV_PATH:-$HOME/repos/eval/.venv-mcif/bin/activat
 # download made there is not the one the job reads.
 export HF_HOME="${HF_HOME:-/scratch/${USER}/hf_cache}"
 export OUTPUT_DIR="${OUTPUT_DIR:-$HOME/scratch/eval-logs}"
+# Where scripts/evaluate.py puts each campaign (configs/eval/*.yaml: output_dir).
+export EVAL_ROOT="${EVAL_ROOT:-$HOME/scratch/eval-runs}"
 export TMPDIR="${TMPDIR:-$HOME/scratch/triton-eval}"
 export TRITON_CACHE_DIR="${TRITON_CACHE_DIR:-$TMPDIR}"
 
@@ -51,7 +45,7 @@ export TRITON_CACHE_DIR="${TRITON_CACHE_DIR:-$TMPDIR}"
 # (shorter partitions have more nodes and schedule sooner).
 #
 # QOS `normal` caps a user at 30 submitted jobs (pending + running) and 10
-# running (`sacctmgr show qos`). scripts/run_matrix.py reads MAX_QUEUED and
+# running (`sacctmgr show qos`). scripts/evaluate.py reads MAX_QUEUED and
 # waits for room before submitting past it, so a large matrix does not fail
 # half-way at the 31st sbatch.
 export MAX_QUEUED="${MAX_QUEUED:-28}"
@@ -59,7 +53,7 @@ export MAX_QUEUED="${MAX_QUEUED:-28}"
 # Default: the most short_gpuh200 allows. A time limit is only a ceiling -- a
 # job that needs 6 minutes frees the GPU after 6 -- and asking for more would
 # push every job onto the busier day-long partition. Slices that need longer
-# say so with `time:` in the matrix.
+# say so with `time:` in the evaluation config.
 _melt_time="${MELT_TIME:-01:10:00}"
 _melt_seconds() {  # [D-]HH:MM:SS -> seconds
     local t="$1" d=0

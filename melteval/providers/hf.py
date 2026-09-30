@@ -28,8 +28,6 @@ from melteval.providers.base import (
     BatchedSpeechAPI,
     _generate_kwargs,
     _Request,
-    mark_max_tokens,
-    stop_ids,
 )
 
 
@@ -45,6 +43,11 @@ class HFSpeechChatAPI(BatchedSpeechAPI):
 
     #: Human-readable model family, for logs and error messages.
     family: str = "HF speech model"
+    #: HuggingFace Hub repository the model is loaded from by default.
+    repo: str | None = None
+    #: Hub commit loaded by default. Pinned so a number is always tied to the
+    #: same weights (docs/baseline-providers.md lists them).
+    revision: str | None = None
 
     def __init__(
         self,
@@ -58,13 +61,16 @@ class HFSpeechChatAPI(BatchedSpeechAPI):
         batch_window: int = DEFAULT_BATCH_WINDOW,
         text_only: bool = False,
         truncate_long_audio: bool = False,
+        path: str | None = None,
+        revision: str | None = None,
         **model_args: Any,
     ) -> None:
         """Load the model and its processor.
 
         Args:
-            model_name: Local model directory (preferably a pinned HF cache
-                snapshot) or a Hub id resolvable offline from the cache.
+            model_name: The model's name in the log, e.g. ``hf/qwen2_audio``
+                (see :func:`melteval.providers.router.create_model`). Also where
+                it is loaded from when *path* is not given.
             base_url: Unused; a local model has no endpoint.
             api_key: Unused; a local model needs no credential.
             config: Default generation config.
@@ -76,7 +82,7 @@ class HFSpeechChatAPI(BatchedSpeechAPI):
                 by audio length before batching (see :class:`BatchedSpeechAPI`).
             text_only: Serve text-only requests, with no audio in the prompt
                 -- for using the model as a judge (``--model-role
-                grader="{model: qwen3_omni/<path>, model_args: {text_only:
+                grader="{model: melt/hf/qwen3_omni, model_args: {text_only:
                 true}}"``). Off by default, and a request carrying audio is
                 refused in this mode: in a speech eval, a sample that lost its
                 audio would otherwise be answered from the text alone, with a
@@ -87,15 +93,18 @@ class HFSpeechChatAPI(BatchedSpeechAPI):
                 says so in its output metadata (``audio_truncated_from_seconds``)
                 and the run logs a warning with the count, so the choice is
                 visible in the log rather than silent.
+            path: Hub id or local directory to load the weights from.
+            revision: Hub commit to load; ``None`` for a local directory.
             **model_args: Forwarded to ``from_pretrained``. ``attn_implementation``
                 defaults to ``sdpa``, which needs nothing extra installed;
                 ``device_map=auto`` shards a model too big for one GPU.
         """
         super().__init__(model_name, base_url, api_key, config, batch_size=batch_size, batch_window=batch_window)
         model_cls, processor_cls = self._load_classes()
-        logger.info("Loading %s from %s", self.family, model_name)
+        source = path or model_name
+        logger.info("Loading %s from %s (revision %s)", self.family, source, revision or "-")
         self.model, self.processor, self.device = load(
-            model_cls, processor_cls, model_name, device=device, dtype=dtype, **model_args
+            model_cls, processor_cls, source, device=device, dtype=dtype, revision=revision, **model_args
         )
         self._prepare_model()
         # -M/model_args values arrive YAML-parsed, but a quoted "false" would
@@ -160,8 +169,20 @@ def _truthy(value: Any) -> bool:
     return str(value).strip().lower() in ("true", "1", "yes")
 
 
-def load(model_cls, processor_cls, model_name: str, device: str | None, dtype: str, **model_args: Any):
+def load(
+    model_cls,
+    processor_cls,
+    model_name: str,
+    device: str | None,
+    dtype: str,
+    revision: str | None = None,
+    **model_args: Any,
+):
     """Load a model and its processor, ready for batched generation.
+
+    *revision* is a Hub commit. With ``HF_HUB_OFFLINE=1`` a commit hash is
+    looked up in the cache directly, so a pinned revision loads offline once
+    it has been downloaded.
 
     Returns:
         ``(model, processor, device)``, where *device* is where inputs go.
@@ -170,7 +191,7 @@ def load(model_cls, processor_cls, model_name: str, device: str | None, dtype: s
 
     torch_dtype = getattr(torch, dtype) if isinstance(dtype, str) else dtype
     model_args.setdefault("attn_implementation", "sdpa")
-    model = model_cls.from_pretrained(model_name, dtype=torch_dtype, **model_args)
+    model = model_cls.from_pretrained(model_name, dtype=torch_dtype, revision=revision, **model_args)
     if "device_map" in model_args:
         device = str(model.device)
     else:
@@ -178,7 +199,7 @@ def load(model_cls, processor_cls, model_name: str, device: str | None, dtype: s
         model = model.to(device)
     model.eval()
 
-    processor = processor_cls.from_pretrained(model_name)
+    processor = processor_cls.from_pretrained(model_name, revision=revision)
     # Batched generation from a decoder-only model has to be left-padded:
     # with right padding, the pad tokens sit between the prompt and the first
     # generated token, and the one slice in `generate` that strips the prompt
@@ -284,7 +305,6 @@ def generate(
     # Left padding puts every row's prompt in the same leading columns, so one
     # slice strips all of them.
     new_tokens = generated[:, inputs["input_ids"].shape[1] :]
-    mark_max_tokens(batch, new_tokens, stop_ids(processor.tokenizer, model))
     return [
         text.strip()
         for text in processor.batch_decode(new_tokens, skip_special_tokens=True, clean_up_tokenization_spaces=False)

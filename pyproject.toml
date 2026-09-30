@@ -61,14 +61,6 @@ metrics = [
     "jiwer>=4.0",
     "sacrebleu==2.5.1",
 ]
-# MCIF's official QA/SUM scorers (melteval/mcif_scoring.py), installed into a
-# venv of their own (see infra/sites/bocconi.sh): mcif-bench drags in COMET,
-# bert-score and torch. Its torchmetrics pin imports `pkg_resources`, which
-# setuptools dropped in 81 -- without this cap scoring dies on import.
-mcif = [
-    "mcif-bench",
-    "setuptools<81",
-]
 dev = [
     "pytest",
     "ruff",

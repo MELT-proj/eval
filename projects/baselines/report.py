@@ -1,9 +1,11 @@
-"""Baseline matrix report: one table of every model on every benchmark slice, to CSV and Excel.
+"""Evaluation report: one table of every model on every benchmark slice, to CSV and Excel.
 
     python projects/baselines/report.py --log-root <dir> [--log-root <dir> ...] --out report-out
 
-Reads the logs ``scripts/run_matrix.py`` produced and writes:
+``scripts/evaluate.py report`` runs this over ``<output_dir>/logs`` into
+``<output_dir>/results``. Reads the logs and writes:
 
+* ``summary.csv``: headline metric per (benchmark, slice) x model.
 * ``results_long.csv``: one row per (model, benchmark, slice, metric).
 * ``results.xlsx``: a ``summary`` sheet (models x headline metric per slice),
   one sheet per benchmark with every metric, and a ``runs`` sheet listing
@@ -37,14 +39,14 @@ logger = logging.getLogger(__name__)
 HEADLINE = {
     # As it stands, then after stripping a "The transcription is: '...'" wrapper,
     # and how often that applied (see melteval.scorers.strip_transcript_preamble).
-    "asr": ["corpus_wer", "corpus_wer_extracted", "preamble_rate"],
+    "asr": ["corpus_wer_raw", "corpus_wer_extracted", "preamble_rate"],
     "st": ["corpus_bleu"],
     # Same three for MCIF, per dataset_id: wer_<id>, wer_extracted_<id>.
     "chunked_asr": ["wer_*", "preamble_rate"],
     "chunked_st": ["bleu_*"],
     "audio_mcq": ["choice_accuracy"],
-    # A judge's grade (AIR-Bench Chat) or MCIF's official BERTScore (QA/SUM).
-    "audio_chat": ["accuracy", "*bertscore*"],
+    # A judge's grade (AIR-Bench Chat).
+    "audio_chat": ["accuracy"],
 }
 
 #: Value written for a slice that ran but has no scores yet.
@@ -142,8 +144,8 @@ def metrics_long(runs: pd.DataFrame) -> pd.DataFrame:
             rows.append({**base, "scorer": "", "metric": "", "value": PENDING, "headline": True})
             continue
         patterns = HEADLINE.get(run["task"], [])
-        # MCIF's long-track logs carry the same metric (BERTScore) from two
-        # scorers, QA and SUM; name those by scorer so neither hides the other.
+        # A log scored by more than one scorer can carry the same metric name
+        # twice; name those by scorer so neither hides the other.
         seen: dict[str, int] = {}
         for score in log.results.scores:
             for name in score.metrics:
@@ -184,7 +186,10 @@ def benchmark_table(long: pd.DataFrame, benchmark: str) -> pd.DataFrame:
 def write(runs: pd.DataFrame, long: pd.DataFrame, out: Path) -> dict[str, Path]:
     """Write the CSV and the workbook into *out*."""
     out.mkdir(parents=True, exist_ok=True)
-    written = {"results_long.csv": out / "results_long.csv", "results.xlsx": out / "results.xlsx"}
+    written = {name: out / name for name in ("summary.csv", "results_long.csv", "results.xlsx")}
+    # Transposed: one row per (benchmark, slice, metric), one column per model,
+    # so the CSV has a single header row.
+    summary_table(long).T.to_csv(written["summary.csv"])
     long.to_csv(written["results_long.csv"], index=False)
 
     with pd.ExcelWriter(written["results.xlsx"], engine="openpyxl") as xlsx:

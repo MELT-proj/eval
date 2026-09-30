@@ -17,6 +17,8 @@ export VENV_PATH="${VENV_PATH:-/path/to/venvs/melteval/bin/activate}"
 #   OUTPUT_DIR=/my/eval-logs infra/runners/submit_eval.sh <site> …
 export HF_HOME="${HF_HOME:-/path/to/hf_cache}"
 export OUTPUT_DIR="${OUTPUT_DIR:-/path/to/eval-logs}"    # where inspect writes .eval logs
+# Where scripts/evaluate.py puts each campaign (configs/eval/*.yaml: output_dir).
+export EVAL_ROOT="${EVAL_ROOT:-/path/to/eval-runs}"
 
 # --- misc --------------------------------------------------------------------
 export HF_HUB_OFFLINE="${HF_HUB_OFFLINE:-1}"

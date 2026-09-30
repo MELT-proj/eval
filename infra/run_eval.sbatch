@@ -4,7 +4,7 @@
 #SBATCH --output="logs/%x.%j.out"
 #SBATCH --job-name=melt-eval
 #
-# Runs `inspect eval` for one checkpoint against one evaluation set, inside
+# Runs `inspect eval` for one model against one evaluation set, inside
 # the venv named by VENV_PATH (set by the site file). Single GPU, single node
 # -- an eval run has no multi-node case to support.
 #
@@ -20,7 +20,14 @@
 #
 # Usage (host side, from the repo root):
 #   VENV_PATH=/path/to/venv/bin/activate OUTPUT_DIR=/path/to/eval-logs \
-#     sbatch [slurm flags] infra/run_eval.sbatch <checkpoint> <eval_set> [inspect eval args...]
+#     sbatch [slurm flags] infra/run_eval.sbatch <model> <eval_set> [inspect eval args...]
+#
+# <model> is an inspect model name (see melteval/providers/__init__.py):
+#   melt/<checkpoint>     a MELT checkpoint
+#   melt/hf/<model>       an off-the-shelf baseline, e.g. melt/hf/qwen2_audio
+#   smurf/<checkpoint>    a SMURF checkpoint
+# A bare checkpoint path also works: it is prefixed with $MELTEVAL_PROVIDER
+# (default `melt`). The matching -T prompt_style is added unless given.
 #
 # Examples:
 #   sbatch infra/run_eval.sbatch \
@@ -28,18 +35,15 @@
 #     /mnt/scratch-artemis/giuseppe/melt-data/eval-sets/asr-test-v1 \
 #     -T task_filter=asr -M batch_size=16
 #
-#   sbatch infra/run_eval.sbatch \
-#     /mnt/scratch-artemis/giuseppe/melt-data/outputs/MA-v1.2.7 \
-#     configs/hf/air-bench.yaml \
+#   sbatch infra/run_eval.sbatch melt/hf/qwen2_audio configs/hf/air-bench.yaml \
 #     -T task_filter=audio_mcq -T dataset_id=air-bench-foundation-speech
 #
-# MELTEVAL_PROVIDER picks the model family (default `melt`); it also selects
-# the matching prompt format, since the two must agree. A SMURF checkpoint is
-# a single Lightning .ckpt rather than a directory, and its stack (NeMo +
-# fbk_speechllm) does not co-install with MELT's, so it needs its own venv too:
+# A SMURF checkpoint is a single Lightning .ckpt rather than a directory, and
+# its stack (NeMo + fbk_speechllm) does not co-install with MELT's, so it needs
+# its own venv too:
 #
-#   MELTEVAL_PROVIDER=smurf VENV_PATH=/path/to/venvs/smurf-eval/bin/activate \
-#     infra/runners/submit_eval.sh artemis /path/to/model.ckpt /path/to/frozen-set \
+#   VENV_PATH=/path/to/venvs/smurf-eval/bin/activate \
+#     infra/runners/submit_eval.sh artemis smurf/<path-to-.ckpt> /path/to/frozen-set \
 #     -T instruction="Transcribe this English audio: "
 
 set -euo pipefail
@@ -47,12 +51,13 @@ set -euo pipefail
 echo "[run_eval] host-side setup for run_eval.sbatch"
 
 if [[ -z "${1:-}" || -z "${2:-}" ]]; then
-    echo "Usage: sbatch $0 <checkpoint> <eval_set> [inspect eval args...]"
+    echo "Usage: sbatch $0 <model> <eval_set> [inspect eval args...]"
+    echo "  <model> is melt/<checkpoint>, melt/hf/<model> or smurf/<checkpoint>."
     echo "  <eval_set> is a frozen-set directory or a source spec YAML."
-    echo "Example: sbatch $0 /path/to/outputs/MA-v1.2.7 /path/to/eval-sets/asr-test-v1 -T task_filter=asr"
+    echo "Example: sbatch $0 melt/<path-to-checkpoint> /path/to/eval-sets/asr-test-v1 -T task_filter=asr"
     exit 2
 fi
-CHECKPOINT="$1"
+MODEL="$1"
 # Resolved to an absolute path before it is handed to inspect. `inspect eval`
 # chdir's into the task *file's* directory while it constructs the task (see
 # chdir_python in inspect_ai/_eval/loader.py), so a relative path in a -T
@@ -62,7 +67,23 @@ CHECKPOINT="$1"
 EVAL_SET="$(realpath -m "$2")"
 shift 2
 EXTRA_ARGS=("$@")
-PROVIDER="${MELTEVAL_PROVIDER:-melt}"
+
+# Split the model name into provider and the rest, and pick the prompt family
+# (melteval.providers.model_family, in bash). A bare path is the old interface.
+case "$MODEL" in
+    melt/*|smurf/*) ;;
+    *) MODEL="${MELTEVAL_PROVIDER:-melt}/${MODEL}" ;;
+esac
+PROVIDER="${MODEL%%/*}"
+NAME="${MODEL#*/}"
+CHECKPOINT=""
+case "$PROVIDER/$NAME" in
+    melt/hf/*)   FAMILY=hf ;;
+    melt/vllm/*) FAMILY=vllm ;;
+    melt/*)      FAMILY=melt;  CHECKPOINT="$NAME" ;;
+    smurf/*)     FAMILY=smurf; CHECKPOINT="$NAME" ;;
+    *) echo "ERROR: unknown provider in model ${MODEL} (expected melt/... or smurf/...)"; exit 2 ;;
+esac
 
 VENV_PATH="${VENV_PATH:-}"
 if [[ -z "${VENV_PATH}" ]]; then
@@ -79,9 +100,14 @@ fi
 
 # A MELT checkpoint is a directory; a SMURF one is a .ckpt file (or a
 # save_pretrained directory), so accept either and let the provider judge.
-if [[ ! -e "${CHECKPOINT}" ]]; then
-    echo "ERROR: checkpoint not found: ${CHECKPOINT}"
-    exit 2
+# Made absolute for the same chdir reason as the evaluation set above.
+if [[ -n "${CHECKPOINT}" ]]; then
+    if [[ ! -e "${CHECKPOINT}" ]]; then
+        echo "ERROR: checkpoint not found: ${CHECKPOINT}"
+        exit 2
+    fi
+    CHECKPOINT="$(realpath "${CHECKPOINT}")"
+    MODEL="${PROVIDER}/${CHECKPOINT}"
 fi
 # A directory is a frozen set; a YAML file is a spec to read live.
 if [[ -d "${EVAL_SET}" ]]; then
@@ -100,15 +126,14 @@ fi
 OUTPUT_DIR="${OUTPUT_DIR:-./eval-logs}"
 mkdir -p "${OUTPUT_DIR}" logs
 
-# The prompt format has to match the checkpoint family, so it follows the
-# provider unless the caller said otherwise (e.g. to run a deliberate mismatch).
+# The prompt format has to match the model's family, so it follows the model
+# unless the caller said otherwise (e.g. to run a deliberate mismatch).
 if [[ ! " ${EXTRA_ARGS[*]:-} " == *"prompt_style="* ]]; then
-    EXTRA_ARGS+=(-T "prompt_style=${PROVIDER}")
+    EXTRA_ARGS+=(-T "prompt_style=${FAMILY}")
 fi
 
 echo "[run_eval] venv:       ${VENV_PATH}"
-echo "[run_eval] provider:   ${PROVIDER}"
-echo "[run_eval] checkpoint: ${CHECKPOINT}"
+echo "[run_eval] model:      ${MODEL} (prompt family ${FAMILY})"
 echo "[run_eval] eval set:   ${EVAL_SET} (${EVAL_SET_KIND})"
 echo "[run_eval] output dir: ${OUTPUT_DIR}"
 echo "[run_eval] extra args: ${EXTRA_ARGS[*]:-(none)}"
@@ -123,7 +148,7 @@ if [[ ! -f melteval/tasks.py ]]; then
 fi
 
 exec inspect eval melteval/tasks.py@speech \
-    --model "${PROVIDER}/${CHECKPOINT}" \
+    --model "${MODEL}" \
     --log-dir "${OUTPUT_DIR}" \
     "${EVAL_SET_ARG[@]}" \
     "${EXTRA_ARGS[@]}"

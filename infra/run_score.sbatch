@@ -12,7 +12,7 @@
 #   VENV_PATH=<venv>/bin/activate sbatch <site SBATCH_ARGS> infra/run_score.sbatch \
 #       <log>... -- <inspect score args...>
 #
-# Normally submitted by `scripts/run_matrix.py score`, which picks the venv
+# Normally submitted by `scripts/evaluate.py score`, which picks the venv
 # and arguments per kind of log. Pass `--model mockllm/model` when calling it by
 # hand: `inspect score` otherwise rebuilds the log's own model, and a local
 # provider loads its weights just to be constructed. Each log is rewritten in

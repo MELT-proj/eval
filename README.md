@@ -98,14 +98,23 @@ inspect eval melteval/tasks.py@speech --model mockllm/model \
 
 ## Running an evaluation on a cluster
 
-`infra/runners/submit_eval.sh <site> <checkpoint_dir> <frozen_set_dir> [inspect eval args...]`
-is the whole interface: swap the checkpoint, swap the frozen set, run. The
-site (`infra/sites/<site>.sh`) supplies the venv, output directory and SLURM
+**Many models × many benchmarks at once:** `scripts/evaluate.py` with a config
+listing both — see [docs/running-evaluations.md](docs/running-evaluations.md).
+What follows is one job at a time.
+
+`infra/runners/submit_eval.sh <site> <model> <eval_set> [inspect eval args...]`
+is the whole interface: swap the model, swap the evaluation set, run. The
+model is `melt/<checkpoint>`, `melt/hf/<baseline>` (e.g. `melt/hf/qwen2_audio`)
+or `smurf/<checkpoint>`; a bare checkpoint path means `melt/<path>`. The
+`melt/` or `smurf/` prefix names the provider, not a folder: the checkpoint can
+live anywhere, and an absolute path gives a double slash
+(`melt//scratch/me/runs/MA-v1.2.7`). The site
+(`infra/sites/<site>.sh`) supplies the venv, output directory and SLURM
 resources.
 
 ```bash
 infra/runners/submit_eval.sh artemis \
-  /path/to/outputs/MA-v1.2.7 \
+  melt/<path-to-checkpoint> \
   /path/to/eval-sets/asr-test-v1 \
   -T task_filter=asr -M batch_size=16
 ```
@@ -122,7 +131,7 @@ appended after the two required paths:
 | Bigger/smaller batches | `-M batch_size=32` |
 | Format from a different config than the checkpoint | `-T format_config=/path/to/training_config.yaml` |
 | Name the judge for a graded task | `--model-role grader=openai/gpt-4o` |
-| Evaluate a SMURF checkpoint instead | `MELTEVAL_PROVIDER=smurf` in the environment — see below |
+| Evaluate a SMURF checkpoint instead | pass `smurf/<ckpt>` as the model — see below |
 
 **ST specifically:** a frozen set covering more than one target language needs
 one run per language (`-T lang=de`, then a separate run with `-T lang=ar`,
@@ -134,7 +143,7 @@ A debug run before a full one — few samples, short QoS:
 
 ```bash
 MELT_QOS=gpu-debug MELT_TIME=00:15:00 infra/runners/submit_eval.sh artemis \
-  /path/to/checkpoint /path/to/frozen-set -T limit=5
+  melt/<path-to-checkpoint> /path/to/frozen-set -T limit=5
 ```
 
 `melteval freeze` itself is CPU-only and safe to run directly (no `sbatch`
@@ -149,7 +158,7 @@ time instead:
 
 ```bash
 infra/runners/submit_eval.sh artemis \
-  /path/to/checkpoint configs/hf/air-bench.yaml \
+  melt/<path-to-checkpoint> configs/hf/air-bench.yaml \
   -T task_filter=audio_mcq -T dataset_id=air-bench-foundation-speech
 ```
 
@@ -183,7 +192,7 @@ missing judge is an error rather than a fallback — bind one with
 `inspect score` both already support for naming a judge:
 
 ```bash
-infra/runners/submit_eval.sh artemis /path/to/checkpoint configs/hf/air-bench.yaml \
+infra/runners/submit_eval.sh artemis melt/<path-to-checkpoint> configs/hf/air-bench.yaml \
   -T task_filter=audio_chat -T dataset_id=air-bench-chat-speech \
   --model-role grader=openai/gpt-4o
 ```
@@ -192,7 +201,7 @@ On a cluster with no route to a judge, generate now and grade later instead:
 
 ```bash
 # on the cluster
-infra/runners/submit_eval.sh artemis /path/to/checkpoint configs/hf/air-bench.yaml \
+infra/runners/submit_eval.sh artemis melt/<path-to-checkpoint> configs/hf/air-bench.yaml \
   -T task_filter=audio_chat -T dataset_id=air-bench-chat-speech --no-score
 # later, from somewhere that can reach a judge
 inspect score path/to/log.eval --scorer melteval/scorers.py@chat_scorer \
@@ -268,12 +277,12 @@ infra/job_recap.sh artemis 20   # or: infra/job_recap.sh mn5 20
 
 ```bash
 # long: whole talks, single pass
-infra/runners/submit_eval.sh artemis /path/to/ckpt configs/hf/mcif.yaml \
+infra/runners/submit_eval.sh artemis melt/<path-to-checkpoint> configs/hf/mcif.yaml \
   -T task_filter=chunked_asr -T dataset_id=mcif-long-fixed-en \
   -M batch_size=1 --max-tokens 4096
 
 # short: chunked baseline, same talks
-infra/runners/submit_eval.sh artemis /path/to/ckpt configs/hf/mcif.yaml \
+infra/runners/submit_eval.sh artemis melt/<path-to-checkpoint> configs/hf/mcif.yaml \
   -T task_filter=chunked_asr -T dataset_id=mcif-short-fixed-en
 ```
 
@@ -285,21 +294,21 @@ and the prompt format.
 
 ```bash
 inspect eval melteval/tasks.py@asr \
-  --model smurf/path/to/epoch=0-step=3600.ckpt \
+  --model smurf/<path-to-.ckpt> \
   -T frozen_set=runs/asr-test-v1 \
   -T prompt_style=smurf \
   -T instruction="Transcribe this English audio: " \
   -M batch_size=4
 ```
 
-On a cluster, `MELTEVAL_PROVIDER=smurf` selects both (the runner passes
+On a cluster, the `smurf/` prefix selects both (the runner passes
 `-T prompt_style` to match), and `VENV_PATH=` points at the SMURF venv, since
 the two model stacks cannot be installed together:
 
 ```bash
-MELTEVAL_PROVIDER=smurf VENV_PATH=/path/to/venvs/smurf-eval/bin/activate \
+VENV_PATH=/path/to/venvs/smurf-eval/bin/activate \
   infra/runners/submit_eval.sh artemis \
-  /path/to/epoch=0-step=3600.ckpt /path/to/frozen-set \
+  smurf/<path-to-.ckpt> /path/to/frozen-set \
   -T instruction="Transcribe this English audio: "
 ```
 
@@ -353,7 +362,7 @@ official [`mcif`](https://github.com/hlt-mt/mcif) package
 ```bash
 # generate first (as above); --no-score if this environment cannot also
 # carry mcif-bench's dependencies
-infra/runners/submit_eval.sh artemis /path/to/checkpoint configs/hf/mcif.yaml \
+infra/runners/submit_eval.sh artemis melt/<path-to-checkpoint> configs/hf/mcif.yaml \
   -T task_filter=chunked_asr -T dataset_id=mcif-short-fixed-en --no-score
 
 # then, from an environment with `pip install mcif-bench` and this package
@@ -380,8 +389,8 @@ debug slice) can't be scored this way; generate the whole `dataset_id` first.
 `evaluation` module imports all three at module load, even to compute WER
 alone) — keep it in its own venv, the same reasoning as the COMET/MetricX venv
 above. Its own pin of `torchmetrics` also expects `pkg_resources`, which a
-fresh venv's `setuptools` no longer provides (removed in 81). The `mcif` extra
-installs both with that cap: `uv pip install -e ".[mcif]"` into the MCIF venv.
+fresh venv's `setuptools` may not provide anymore; `pip install "setuptools<81"`
+if `import mcif.evaluation` fails with `ModuleNotFoundError: pkg_resources`.
 
 ## Development
 

@@ -1,7 +1,7 @@
-"""In-process model provider for MELT checkpoints.
+"""MELT checkpoints, addressed as ``--model melt/<path-to-checkpoint>``.
 
-Registered as ``melt``, so a checkpoint is addressed as
-``--model melt/<path-to-checkpoint>``.
+The ``melt`` provider (:mod:`melteval.providers.router`) builds :class:`MELTAPI`
+for any name that is not ``melt/hf/...`` or ``melt/vllm/...``.
 
 What is specific to MELT is here: loading a ``MELTForCausalLM`` plus its
 processor, and turning one padded batch into strings. Resolving the audio
@@ -18,7 +18,7 @@ from __future__ import annotations
 import logging
 from typing import Any
 
-from inspect_ai.model import GenerateConfig, modelapi
+from inspect_ai.model import GenerateConfig
 
 from melteval.providers.base import (
     DEFAULT_BATCH_SIZE,
@@ -26,15 +26,12 @@ from melteval.providers.base import (
     BatchedSpeechAPI,
     _generate_kwargs,
     _Request,
-    mark_max_tokens,
-    stop_ids,
 )
 
 
 logger = logging.getLogger(__name__)
 
 
-@modelapi(name="melt")
 class MELTAPI(BatchedSpeechAPI):
     """Generate from a local MELT checkpoint."""
 
@@ -145,7 +142,6 @@ class MELTAPI(BatchedSpeechAPI):
 
         # generate() delegates with inputs_embeds, so the decoder returns only
         # the newly generated tokens -- no prompt to strip.
-        mark_max_tokens(batch, generated, stop_ids(self.processor.tokenizer, self.model))
         return [text.strip() for text in self.processor.batch_decode(generated, skip_special_tokens=True)]
 
 

@@ -41,7 +41,7 @@ from typing import Any
 
 from inspect_ai.model import GenerateConfig, modelapi
 
-from melteval.providers.base import DEFAULT_BATCH_SIZE, DEFAULT_MAX_TOKENS, BatchedSpeechAPI, _Request, mark_max_tokens
+from melteval.providers.base import DEFAULT_BATCH_SIZE, DEFAULT_MAX_TOKENS, BatchedSpeechAPI, _Request
 
 
 logger = logging.getLogger(__name__)
@@ -215,7 +215,6 @@ class SmurfAPI(BatchedSpeechAPI):
 
         # Audio is always present here, so SALM generates from ``inputs_embeds``
         # and HuggingFace returns only the new tokens -- no prompt to strip.
-        mark_max_tokens(batch, answer_ids, {self.model.text_eos_id, self.model.text_pad_id})
         return [
             self.model.tokenizer.ids_to_text(ids, remove_special_tokens=True).strip()
             for ids in answer_ids.cpu()

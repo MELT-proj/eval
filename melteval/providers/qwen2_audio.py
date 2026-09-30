@@ -1,11 +1,8 @@
-"""In-process model provider for Qwen2-Audio-7B-Instruct.
+"""Qwen2-Audio-7B-Instruct, addressed as ``--model melt/hf/qwen2_audio``.
 
-Registered as ``qwen2_audio``, so the model is addressed as
-``--model qwen2_audio/<path-or-hub-id>``. A baseline has no training run of
-ours behind it, so "the checkpoint" is simply what ``from_pretrained`` loads:
-pass the snapshot directory in the HuggingFace cache
-(``$HF_HOME/hub/models--Qwen--Qwen2-Audio-7B-Instruct/snapshots/<sha>``) so
-the revision is pinned in the log and nothing reaches for the Hub.
+The ``melt`` provider builds this class (see :mod:`melteval.providers.router`),
+loading the Hub revision pinned on the class; ``-M path=<dir>`` loads a
+local checkpoint of the same architecture instead.
 
 Same division of labour as SMURF (see docs/baseline-providers.md); what is
 not specific to this model lives in :mod:`melteval.providers.hf`:
@@ -27,8 +24,6 @@ from __future__ import annotations
 
 from typing import Any
 
-from inspect_ai.model import modelapi
-
 from melteval.providers.base import _generate_kwargs, _Request
 from melteval.providers.hf import HFSpeechChatAPI, generate, render
 
@@ -36,7 +31,6 @@ from melteval.providers.hf import HFSpeechChatAPI, generate, render
 FAMILY = "Qwen2-Audio"
 
 
-@modelapi(name="qwen2_audio")
 class Qwen2AudioAPI(HFSpeechChatAPI):
     """Generate from Qwen2-Audio-7B-Instruct (or a checkpoint of the same architecture).
 
@@ -44,6 +38,8 @@ class Qwen2AudioAPI(HFSpeechChatAPI):
     """
 
     family = FAMILY
+    repo = "Qwen/Qwen2-Audio-7B-Instruct"
+    revision = "0a095220c30b7b31434169c3086508ef3ea5bf0a"
 
     def _load_classes(self) -> tuple[Any, Any]:
         """Qwen2-Audio's model and processor classes."""
