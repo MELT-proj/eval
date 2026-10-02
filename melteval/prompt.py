@@ -23,6 +23,7 @@ rather than from a default nobody chose.
 from __future__ import annotations
 
 import random
+import re
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -381,6 +382,30 @@ def load_smurf_prompt_spec(path: str | Path) -> SmurfPromptSpec:
         audio_locator_tag=audio_tags[0] if len(audio_tags) == 1 else None,
         source=str(config_path),
     )
+
+
+#: ``{audio_token}`` as a placeholder, not as the escaped literal ``{{audio_token}}``.
+_AUDIO_TOKEN_RE = re.compile(r"(?<!\{)\{audio_token\}(?!\})\s*")
+
+
+def strip_audio_token(instruction: str) -> tuple[str, bool]:
+    """Remove the ``{audio_token}`` placeholder from a per-sample instruction.
+
+    Some benchmarks (AIR-Bench, MCIF) mark where the audio goes with a
+    placeholder, e.g. ``"{audio_token}\\n{question}"``. MELT replaces it with its
+    ``<|audio|>`` token. However, models with their own chat template (SMURF, Qwen2-Audio,
+    Qwen3-Omni) insert the audio themselves, so for them the placeholder is
+    removed, along with any whitespace after it. Otherwise
+    :func:`render_smurf_prompt` would fail.
+
+    Args:
+        instruction: The instruction template.
+
+    Returns:
+        The template without the placeholder, and whether one was removed.
+    """
+    stripped, count = _AUDIO_TOKEN_RE.subn("", instruction)
+    return (stripped.strip(), True) if count else (instruction, False)
 
 
 def render_smurf_prompt(

@@ -44,6 +44,8 @@ DEFAULT_BATCH_SIZE = 8
 DEFAULT_BATCH_WINDOW = 4
 #: How long the batch thread waits for more work before running a short batch.
 BATCH_WAIT_SECONDS = 0.25
+#: ``max_new_tokens`` when the task sets no ``max_tokens``.
+DEFAULT_MAX_TOKENS = 256
 
 
 @dataclass
@@ -58,6 +60,14 @@ class _Request:
     #: Computed from the already-decoded audio, so it costs nothing extra --
     #: by the time a request exists, `generate()` has already loaded it.
     duration: float = 0.0
+    #: Recorded on the sample's ModelOutput, so a provider can say in the log
+    #: what it did to one request (e.g. truncated its audio).
+    #: Used for Qwen2-Audio, which has a fixed 30 s window ; MELT, SMURF and 
+    #: Qwen3-Omni take long audio whole).
+    #: With ``truncate_long_audio=true``, long clips are cut, and we write down
+    #: their original length here. That way, if a sample gets a bad WER, we know
+    #: if it was cut or if the model got it wrong.
+    metadata: dict = field(default_factory=dict)
     future: Future = field(default_factory=Future)
 
 
@@ -221,9 +231,10 @@ class BatchedSpeechAPI(ModelAPI):
                             "per request, in order."
                         )
                     for request, completion in zip(batch, completions):
-                        request.future.set_result(
-                            ModelOutput.from_content(model=self.model_name, content=completion)
-                        )
+                        output = ModelOutput.from_content(model=self.model_name, content=completion)
+                        if request.metadata:
+                            output.metadata = dict(request.metadata)
+                        request.future.set_result(output)
                 except Exception as exc:  # noqa: BLE001 - every waiter must be released
                     # A failure here would otherwise hang the run: the awaiting
                     # coroutines poll a future that nobody ever completes.
@@ -263,3 +274,27 @@ def _load_audio(locator: dict):
 
     audio_locator = AudioLocator.from_dict(locator)
     return reader_for_locator(audio_locator).load_audio(audio_locator)
+
+
+def _generate_kwargs(config: GenerateConfig) -> dict[str, Any]:
+    """Translate an inspect generate config into transformers kwargs.
+
+    Shared by every provider whose model exposes transformers' ``generate()``.
+
+    Greedy by default: an eval that samples is measuring the sampler as much as
+    the model, and two runs would not be comparable.
+    """
+    kwargs: dict[str, Any] = {
+        "max_new_tokens": config.max_tokens or DEFAULT_MAX_TOKENS,
+        "use_cache": True,
+        "do_sample": config.temperature is not None and config.temperature > 0,
+    }
+    if config.temperature is not None and config.temperature > 0:
+        kwargs["temperature"] = config.temperature
+    if config.top_p is not None:
+        kwargs["top_p"] = config.top_p
+    if config.top_k is not None:
+        kwargs["top_k"] = config.top_k
+    if config.num_choices is not None and config.num_choices > 1:
+        kwargs["num_return_sequences"] = config.num_choices
+    return kwargs

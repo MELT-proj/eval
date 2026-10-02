@@ -1,0 +1,119 @@
+# Every model against every benchmark: the baseline comparison.
+#
+#   python scripts/evaluate.py plan   configs/eval/baselines-v1.yaml --site bocconi
+#   python scripts/evaluate.py run    configs/eval/baselines-v1.yaml --site bocconi --wait
+#   python scripts/evaluate.py score  configs/eval/baselines-v1.yaml --site bocconi --wait
+#
+# Format and output folder: docs/running-evaluations.md. Nothing here is
+# specific to one machine: paths that differ between machines are ${VARIABLES},
+# set by the site file (infra/sites/<site>.sh) or exported in the shell.
+
+name: baselines-v1
+
+# Everything goes here: config.yaml, submissions.jsonl, logs/, results/.
+output_dir: ${EVAL_ROOT}/baselines-v1
+
+models:
+  - name: qwen2-audio-7b-instruct
+    model: melt/hf/qwen2_audio
+    # 30 s window. A few clips in otherwise short-utterance sets run past it
+    # (9 of 2620 in LibriSpeech test-clean, up to 35 s): cut them to 30 s, as
+    # the model does out of the box, rather than fail the run. Each cut sample
+    # is marked in the log and counted in the report's `runs` sheet.
+    args: [-M, batch_size=8, -M, truncate_long_audio=true]
+    # Whole talks (minutes long) are another matter: 30 s of a talk is not a
+    # transcription of it, so MCIF long is not run for this model at all.
+    skip: [mcif-long-*]
+    # For benchmarks marked `needs_instruction` (their samples carry none of
+    # their own). No entry for a slice's task: that slice is skipped.
+    instruction:
+      # Asks for the bare transcription: with "Transcribe this audio." it
+      # prefixes many answers with "The original content of this audio is:",
+      # which is scored as-is.
+      asr: "Transcribe this audio. Output only the transcription."
+      st: "Translate this audio into English."
+
+  - name: qwen3-omni-30b-a3b-instruct
+    model: melt/hf/qwen3_omni
+    args: [-M, batch_size=4]
+    instruction:
+      asr: "Transcribe this audio."
+      st: "Translate this audio into English."
+
+  - name: smurf
+    # Always one .ckpt file in checkpoints/smurf/ (gitignored).
+    model: smurf/checkpoints/smurf/*.ckpt
+    args: [-M, batch_size=8]
+    # SMURF's trained prompt; no ST entry, so its ST slices are skipped until
+    # one is added (or pass -T prompt_config=<inference yaml> in args instead).
+    instruction:
+      asr: "Transcribe this English audio: "
+
+  - name: melt
+    # Always one run folder in checkpoints/melt/. The prompt format is read
+    # from its training_config.yaml; without one the run fails rather than guess.
+    model: melt/checkpoints/melt/*/
+    # MELT needs melt-proj, which the SMURF venv does not have.
+    venv: ${MELT_VENV_PATH}
+    args: [-M, batch_size=4]
+
+benchmarks:
+  - name: air-bench
+    spec: configs/hf/air-bench.yaml
+    # audio_chat answers are graded by `evaluate.py score` with this judge:
+    # melt/hf/<model> (loaded text-only, GPU) or an API model such as
+    # openai/gpt-4o (its key in the environment). Caveat: Qwen3-Omni is also a
+    # model under test, so it grades its own answers. And this is melteval's
+    # chat_scorer rubric, not AIR-Bench's GPT-4 1-10 protocol.
+    judge: melt/hf/qwen3_omni
+    slices:
+      - {task: audio_mcq, dataset_id: air-bench-foundation-speech}
+      - {task: audio_mcq, dataset_id: air-bench-foundation-sound}
+      - {task: audio_mcq, dataset_id: air-bench-foundation-music}
+      - {task: audio_chat, dataset_id: air-bench-chat-speech}
+      - {task: audio_chat, dataset_id: air-bench-chat-sound}
+      - {task: audio_chat, dataset_id: air-bench-chat-music}
+      - {task: audio_chat, dataset_id: air-bench-chat-mixed}
+
+  - name: mcif
+    spec: configs/hf/mcif.yaml
+    # Each dataset_id holds several task kinds; one job per kind.
+    slices:
+      - {task: chunked_asr, dataset_id: mcif-short-fixed-en}
+      - {task: chunked_st, dataset_id: mcif-short-fixed-de}
+      - {task: chunked_st, dataset_id: mcif-short-fixed-it}
+      - {task: chunked_st, dataset_id: mcif-short-fixed-zh}
+      - {task: chunked_asr, dataset_id: mcif-short-mixed-en}
+      - {task: chunked_st, dataset_id: mcif-short-mixed-de}
+      - {task: chunked_st, dataset_id: mcif-short-mixed-it}
+      - {task: chunked_st, dataset_id: mcif-short-mixed-zh}
+      # long: whole talks in one pass (README, "Running chunked-ASR MCIF eval").
+      - {task: chunked_asr, dataset_id: mcif-long-fixed-en, args: [-M, batch_size=1, --max-tokens, "4096"], time: "08:00:00"}
+      - {task: chunked_st, dataset_id: mcif-long-fixed-de, args: [-M, batch_size=1, --max-tokens, "4096"], time: "08:00:00"}
+      - {task: chunked_st, dataset_id: mcif-long-fixed-it, args: [-M, batch_size=1, --max-tokens, "4096"], time: "08:00:00"}
+      - {task: chunked_st, dataset_id: mcif-long-fixed-zh, args: [-M, batch_size=1, --max-tokens, "4096"], time: "08:00:00"}
+
+  - name: librispeech
+    spec: configs/librispeech-hf-test-clean.yaml
+    needs_instruction: true
+    slices:
+      # 2620 samples: Qwen3-Omni (batch 4) needs ~1h15, past short_gpuh200's
+      # 1h10 cap. `time` is the SLURM wall clock for this slice.
+      - {task: asr, dataset_id: librispeech-test-clean, time: "02:00:00"}
+
+  # Shar frozen sets: only where the corpora are. Their paths come from the
+  # environment; a machine without them skips these benchmarks.
+  - name: fleurs24-asr
+    frozen_set: ${FLEURS24_ASR_SET}
+    needs_instruction: true
+    slices:
+      - {task: asr}
+
+  - name: fleurs24-st-xen
+    frozen_set: ${FLEURS24_ST_XEN_SET}
+    needs_instruction: true
+    slices:
+      - {task: st, dataset_id: fleurs-de_en}
+      - {task: st, dataset_id: fleurs-es_en}
+      - {task: st, dataset_id: fleurs-fr_en}
+      - {task: st, dataset_id: fleurs-it_en}

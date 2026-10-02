@@ -25,9 +25,15 @@ forces it.
   and have nothing left for a freeze pass to pin down).
 - `melteval/readers/` — one module per source type. The only code that knows
   about corpus formats.
-- `melteval/providers/` — one module per model family (`melt`, `smurf`), over a
-  shared `base.py` that owns batching and audio resolution. The seam that lets
-  a NeMo/SMURF model be evaluated without touching anything else.
+- `melteval/providers/` — one module per model (`melt`, `smurf`, `qwen2_audio`,
+  `qwen3_omni` over `hf.py`), over a shared `base.py` that owns batching and
+  audio resolution. `router.py` registers the `melt` provider and maps a name
+  (`melt/<ckpt>`, `melt/hf/<model>`) to its class; `__init__.py` documents the
+  naming scheme. The seam that lets a NeMo/SMURF model be evaluated without
+  touching anything else.
+- `scripts/evaluate.py` + `configs/eval/` — the launcher: models × benchmarks
+  from one config, every log and the report in one output folder. See
+  [docs/running-evaluations.md](docs/running-evaluations.md).
 - `melteval/rescore.py`, `melteval/mcif_scoring.py` — post-hoc scorers for
   metrics that need a neural model (COMET/MetricX, or MCIF's own
   WER/COMET/BERTScore via the official `mcif` package) run from a separate
@@ -63,13 +69,17 @@ forces it.
   silently. This has already been shipped as a bug once
   ([training#58](https://github.com/MELT-proj/training/issues/58)).
 - **One prompt path per family, and they are not interchangeable.** MELT's
-  `speech_prompt` renders the whole sequence, chat template and `<|audio|>`
+  `melt_prompt` renders the whole sequence, chat template and `<|audio|>`
   token included. A SMURF checkpoint applies its own chat template and expands
   its own `<|audioplaceholder|>` inside `generate()`, so `smurf_prompt` renders
   the bare instruction and nothing else. Crossing them double-wraps the prompt
-  or drops the audio — fluent output, plausible score, wrong number. The task's
-  `prompt_style` selects the path and the solver checks it against the provider
-  at generation time; see [docs/smurf-provider.md](docs/smurf-provider.md).
+  or drops the audio — fluent output, plausible score, wrong number. Off-the-shelf
+  baselines (`melt/hf/<model>`) take the bare instruction too, and share the
+  `melt` provider with MELT checkpoints but not their prompt path. The task's
+  `prompt_style` (`melt`/`hf`/`smurf`) selects the path and the solver checks
+  it against the model's family (`melteval.providers.model_family`) at
+  generation time; see [docs/smurf-provider.md](docs/smurf-provider.md) and
+  [docs/running-evaluations.md](docs/running-evaluations.md).
 - **Corpus vs per-sample metrics.** Corpus WER is total errors over total
   reference words, not the mean of per-sample rates. Same for BLEU.
 - **Sample identity.** FLEURS cut IDs are not unique. Never key an eval log by

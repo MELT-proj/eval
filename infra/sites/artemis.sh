@@ -16,6 +16,8 @@ export VENV_PATH="${VENV_PATH:-/mnt/scratch-artemis/giuseppe/venvs/melteval/bin/
 # frequently-changing files that don't belong there.
 export HF_HOME="${HF_HOME:-/mnt/scratch-artemis/giuseppe/melt-data/hf_cache}"
 export OUTPUT_DIR="${OUTPUT_DIR:-/mnt/scratch-artemis/giuseppe/melt-data/eval-logs}"
+# Where scripts/evaluate.py puts each campaign (configs/eval/*.yaml: output_dir).
+export EVAL_ROOT="${EVAL_ROOT:-/mnt/scratch-artemis/giuseppe/melt-data/eval-runs}"
 export LOCAL_DATASETS_DIR="${LOCAL_DATASETS_DIR:-/mnt/scratch-nyx/giuseppe/melt/melt-data/shar}"
 
 # Where inspect_ai keeps its own state (traces, view assets). It defaults to

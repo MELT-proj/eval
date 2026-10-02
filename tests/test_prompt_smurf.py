@@ -133,6 +133,35 @@ class TestRenderSmurfPrompt:
             render_smurf_prompt("Transcribe this {lang} audio: ", lang="en")
 
 
+class TestStripAudioToken:
+    """AIR-Bench/MCIF instructions mark MELT's audio position; the bare-instruction path drops it."""
+
+    def test_air_bench_default_template(self):
+        from melteval.prompt import strip_audio_token
+
+        assert strip_audio_token("{audio_token}\nWhat is the emotion?") == ("What is the emotion?", True)
+
+    def test_placeholder_mid_text_keeps_the_surrounding_words(self):
+        from melteval.prompt import strip_audio_token
+
+        assert strip_audio_token("Listen: {audio_token}\nQ: why?") == ("Listen: Q: why?", True)
+
+    def test_escaped_braces_are_not_the_placeholder(self):
+        """Corpus text is brace-escaped on the way in; a question that literally
+        mentions {audio_token} must survive rendering as text."""
+        from melteval.prompt import strip_audio_token
+
+        template = "{audio_token}\nWhat does {{audio_token}} mean?"
+        stripped, removed = strip_audio_token(template)
+        assert removed
+        assert render_smurf_prompt(stripped) == "What does {audio_token} mean?"
+
+    def test_a_template_without_it_is_untouched(self):
+        from melteval.prompt import strip_audio_token
+
+        assert strip_audio_token("Transcribe this English audio: ") == ("Transcribe this English audio: ", False)
+
+
 class TestPromptStyleSelection:
     """`-T prompt_style=` is how a run picks its prompt path, so its mistakes
     have to be loud."""
@@ -170,12 +199,12 @@ class TestPromptStyleSelection:
 
 
 class TestAsrNormalizerInASmurfOnlyEnvironment:
-    """The WER/CER scorer's default normalizer imports ``melt.evaluation`` --
-    fine for a MELT checkpoint, but a SMURF environment has no ``melt-proj``
-    installed at all (see the module docstring), so building the ``asr`` task
-    with its default scorer crashes before generation ever starts. ``-T
-    normalizer=none`` is the way out; these pin that it stays available and
-    that it doesn't leak into the tasks it doesn't apply to.
+    """A SMURF environment has no ``melt-proj`` installed at all (see the module
+    docstring). The WER/CER normalizers used to be imported from it, so the
+    ``asr`` task with its default scorer crashed there before generation ever
+    started. They are melteval's own copy now (:mod:`melteval.normalizers`);
+    these pin that the default builds everywhere, that ``none`` stays
+    available, and that it doesn't leak into the tasks it doesn't apply to.
     """
 
     @pytest.fixture
@@ -204,14 +233,20 @@ class TestAsrNormalizerInASmurfOnlyEnvironment:
         task = asr(frozen, prompt_style="smurf", instruction="Transcribe: ", normalizer="none")
         assert task.name == "speech-asr"
 
-    @pytest.mark.skipif(HAS_MELT, reason="documents the failure this unblocks; only happens without melt-proj")
-    def test_the_default_normalizer_still_needs_melt(self, frozen):
-        """Documents the failure this unblocks, so it doesn't regress silently
-        back to `basic` becoming importable-and-wrong in this environment."""
+    def test_the_default_normalizer_builds_without_melt(self, frozen):
+        """A SMURF or baseline run scores with the same normalizer as a MELT
+        run; `none` would make their WER incomparable."""
         from melteval.tasks import asr
 
-        with pytest.raises(ModuleNotFoundError, match="melt"):
-            asr(frozen, prompt_style="smurf", instruction="Transcribe: ")
+        task = asr(frozen, prompt_style="smurf", instruction="Transcribe: ")
+        assert task.name == "speech-asr"
+
+    def test_the_task_carries_its_generation_budget(self, frozen):
+        from melteval.registry import TASK_MAX_TOKENS
+        from melteval.tasks import asr
+
+        task = asr(frozen, prompt_style="smurf", instruction="Transcribe: ")
+        assert task.config.max_tokens == TASK_MAX_TOKENS["asr"]
 
     def test_normalizer_is_rejected_for_st(self, frozen):
         from melteval.tasks import st
@@ -289,3 +324,120 @@ class TestSmurfSolverThroughRealInspect:
 
         assert log.status == "error"
         assert "No instruction for sample" in str(log.error or log.samples[0].error)
+
+
+class TestHFPromptStyle:
+    """``prompt_style=hf`` (``melt/hf/<model>``) shares SMURF's bare-instruction path but not its config file."""
+
+    def test_builds_with_an_instruction(self):
+        from melteval.tasks import _prompt_solver
+
+        assert _prompt_solver("hf", None, None, "Transcribe this audio.", None) is not None
+
+    def test_melt_and_smurf_only_arguments_are_rejected(self):
+        from melteval.tasks import _prompt_solver
+
+        with pytest.raises(ValueError, match="format_config"):
+            _prompt_solver("hf", "/some/training_config.yaml", None, None, None)
+        with pytest.raises(ValueError, match="prompt_config.*'smurf'"):
+            _prompt_solver("hf", None, None, None, "/some/asr_inference.yaml")
+
+    def test_a_shared_argument_names_every_style_it_belongs_to(self):
+        """`instruction` is both smurf's and hf's; naming only one would
+        send the user to the wrong fix."""
+        from melteval.tasks import _prompt_solver
+
+        with pytest.raises(ValueError, match="'smurf' or 'hf'"):
+            _prompt_solver("melt", None, None, "Transcribe: ", None)
+
+
+class TestModelFamily:
+    """Which prompt path a model name implies (melteval.providers)."""
+
+    @pytest.mark.parametrize(
+        ("model", "family"),
+        [
+            ("melt//abs/ckpt", "melt"),
+            ("melt/relative/ckpt", "melt"),
+            ("melt/hf/qwen2_audio", "hf"),
+            ("melt/vllm/some/model", "vllm"),
+            ("smurf//abs/model.ckpt", "smurf"),
+            ("mockllm/model", None),
+            ("openai/gpt-4o", None),
+        ],
+    )
+    def test_family_of(self, model, family):
+        from melteval.providers import family_of
+
+        assert family_of(model) == family
+
+
+class TestProviderGuard:
+    """Crossing a model with another family's solver produces fluent, wrong text."""
+
+    def _state(self, model):
+        from types import SimpleNamespace
+
+        api, _, name = model.partition("/")
+        return SimpleNamespace(model=SimpleNamespace(api=api, name=name))
+
+    @pytest.mark.parametrize(("model", "family"), [("melt//ckpt", "melt"), ("smurf//m.ckpt", "smurf")])
+    def test_instruction_prompt_rejects_the_other_families(self, model, family):
+        from melteval.solver import _INSTRUCTION_PROVIDERS, _require_provider
+
+        with pytest.raises(ValueError, match=f"prompt_style={family}"):
+            _require_provider(self._state(model), *_INSTRUCTION_PROVIDERS)
+
+    @pytest.mark.parametrize("model", ["melt/hf/qwen2_audio", "melt/hf/qwen3_omni"])
+    @pytest.mark.parametrize("expected", ["melt", "smurf"])
+    def test_other_solvers_reject_the_hf_baselines(self, expected, model):
+        """`melt/hf/...` shares the `melt` provider with MELT checkpoints, but not their prompt path."""
+        from melteval.solver import _require_provider
+
+        with pytest.raises(ValueError, match="prompt_style=hf"):
+            _require_provider(self._state(model), expected)
+
+    def test_a_matching_or_unknown_provider_passes(self):
+        from melteval.solver import _INSTRUCTION_PROVIDERS, _require_provider
+
+        _require_provider(self._state("melt/hf/qwen3_omni"), *_INSTRUCTION_PROVIDERS)
+        _require_provider(self._state("melt//ckpt"), "melt")
+        _require_provider(self._state("mockllm/model"), *_INSTRUCTION_PROVIDERS)
+
+
+class TestInstructionSolverThroughRealInspect(TestSmurfSolverThroughRealInspect):
+    """The same contract as SMURF's, run through :func:`instruction_prompt`."""
+
+    def _run(self, tmp_path, samples, **solver_kwargs):
+        from inspect_ai import Task
+        from inspect_ai import eval as inspect_eval
+
+        from melteval.solver import instruction_prompt
+
+        [log] = inspect_eval(
+            Task(dataset=samples, solver=instruction_prompt(**solver_kwargs)),
+            model="mockllm/model",
+            display="none",
+            log_dir=str(tmp_path),
+        )
+        return log
+
+    def test_the_log_records_the_instruction_and_its_source(self, tmp_path):
+        log = self._run(tmp_path, self._sample(), instruction="Transcribe this audio.")
+
+        spec = log.samples[0].store["melteval:format_spec"]
+        assert spec["instruction"] == "Transcribe this audio."
+        assert spec["instruction_source"] == "argument"
+        assert spec["apply_chat_template"] is False
+
+    def test_a_benchmark_instruction_with_the_audio_token_renders(self, tmp_path):
+        """Every AIR-Bench/MCIF sample carries `{audio_token}`; without stripping
+        it, render_smurf_prompt raised on all of them."""
+        log = self._run(tmp_path, self._sample(instruction="{audio_token}\nWhat is the emotion?"))
+
+        assert log.status == "success"
+        store = log.samples[0].store
+        assert store["melteval:prompt"] == "What is the emotion?"
+        assert store["melteval:format_spec"]["audio_token_stripped"] is True
+        # The template as the benchmark wrote it stays in the log.
+        assert store["melteval:format_spec"]["instruction"] == "{audio_token}\nWhat is the emotion?"

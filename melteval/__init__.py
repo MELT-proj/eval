@@ -9,9 +9,10 @@ executing, however deep in the package it lives. A ``@modelapi``-decorated
 class in a submodule nobody imports never runs its decorator, and ``--model
 melt/<checkpoint>`` fails with "Model API melt not recognized" despite the file
 existing right there in ``providers/``. Hence the otherwise-unused imports of
-``providers.melt`` and ``providers.smurf`` below.
+``providers.router`` (which registers ``melt``, serving both
+``melt/<checkpoint>`` and ``melt/hf/<model>``) and ``providers.smurf`` below.
 
-Nothing heavy is imported at module scope: both providers defer torch,
+Nothing heavy is imported at module scope: every provider defers torch,
 transformers and NeMo into their methods, so registering them costs nothing
 until a model is actually loaded. This matters more than it looks: the two
 model stacks do not co-install, so a SMURF environment must be able to import
@@ -22,9 +23,12 @@ from melteval.dataset import frozen_dataset
 from melteval.manifest import AudioLocator, EvalRecord
 from melteval.prompt import FormatSpec, SmurfPromptSpec, load_format_spec, load_smurf_prompt_spec
 from melteval.providers.melt import MELTAPI
+from melteval.providers.qwen2_audio import Qwen2AudioAPI
+from melteval.providers.qwen3_omni import Qwen3OmniAPI
+from melteval.providers.router import melt
 from melteval.providers.smurf import SmurfAPI
-from melteval.scorers import asr_scorer, corpus_bleu, corpus_cer, corpus_chrf, corpus_wer, st_scorer
-from melteval.solver import smurf_prompt, speech_prompt
+from melteval.scorers import asr_scorer, corpus_bleu, corpus_cer, corpus_chrf, corpus_wer_raw, st_scorer
+from melteval.solver import instruction_prompt, melt_prompt, smurf_prompt
 from melteval.tasks import asr, speech, st
 
 
@@ -32,6 +36,8 @@ __version__ = "0.1.0"
 
 __all__ = [
     "MELTAPI",
+    "Qwen2AudioAPI",
+    "Qwen3OmniAPI",
     "AudioLocator",
     "EvalRecord",
     "FormatSpec",
@@ -42,13 +48,15 @@ __all__ = [
     "corpus_bleu",
     "corpus_cer",
     "corpus_chrf",
-    "corpus_wer",
+    "corpus_wer_raw",
     "frozen_dataset",
+    "instruction_prompt",
     "load_format_spec",
     "load_smurf_prompt_spec",
+    "melt",
+    "melt_prompt",
     "smurf_prompt",
     "speech",
-    "speech_prompt",
     "st",
     "st_scorer",
 ]

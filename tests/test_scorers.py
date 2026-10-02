@@ -22,7 +22,7 @@ from inspect_ai.model import ModelName, ModelOutput
 from inspect_ai.scorer import SampleScore, Score, Target
 from inspect_ai.solver import TaskState
 
-from melteval.registry import TASK_SCORERS, default_scorer
+from melteval.registry import TASK_MAX_TOKENS, TASK_SCORERS, default_max_tokens, default_scorer
 from melteval.scorers import (
     chat_scorer,
     choice_accuracy,
@@ -32,17 +32,15 @@ from melteval.scorers import (
     chunked_chrf,
     chunked_st_scorer,
     chunked_wer_en,
+    chunked_wer_en_extracted,
     corpus_bleu,
     corpus_cer,
     corpus_chrf,
-    corpus_wer,
+    corpus_wer_raw,
     get_normalizer,
     resolve_choice,
     unresolved_rate,
 )
-
-
-pytest.importorskip("melt.evaluation")
 
 
 def _state(completion: str, sample_id: str = "k") -> TaskState:
@@ -61,7 +59,7 @@ def _run(coro):
 
 
 def _sample_score(value: dict, metadata: dict | None = None) -> SampleScore:
-    """Build a `SampleScore` with a numeric `Score.value`, as `corpus_wer`/
+    """Build a `SampleScore` with a numeric `Score.value`, as `corpus_wer_raw`/
     `corpus_cer` (and any real scorer) expect -- *not* a vehicle for text; see
     `_st_sample_score` for that."""
     return SampleScore(score=Score(value=value), sample_metadata=metadata or {})
@@ -109,12 +107,15 @@ class TestAsrScorer:
 
     def test_counts_are_raw_not_a_rate(self, score_fn):
         """A one-word substitution out of six must show up as 1/6, not 0.1667
-        pre-divided -- corpus_wer does the division, once, over the corpus.
+        pre-divided -- corpus_wer_raw does the division, once, over the corpus.
         "rug" -> "mat" is 3 character substitutions, not 1 -- CER operates on
         the whole string, not word-aligned."""
         state = _state("the cat sat on the rug")
         result = _run(score_fn(state, Target("the cat sat on the mat")))
-        assert result.value == {"wer_errors": 1, "ref_words": 6, "cer_errors": 3, "ref_chars": 22}
+        assert result.value == {
+            "wer_errors": 1, "ref_words": 6, "cer_errors": 3, "ref_chars": 22,
+            "wer_errors_extracted": 1, "cer_errors_extracted": 3, "preamble": 0,
+        }
 
     def test_both_sides_are_normalized_symmetrically(self, score_fn):
         """run_inference.py's bug: it lowercased only the reference. A
@@ -126,7 +127,9 @@ class TestAsrScorer:
     def test_empty_reference_is_excluded_not_crashed(self, score_fn):
         state = _state("some hypothesis")
         result = _run(score_fn(state, Target("   ")))
-        assert result.value == {"wer_errors": 0, "ref_words": 0, "cer_errors": 0, "ref_chars": 0}
+        assert {k: result.value[k] for k in ("wer_errors", "ref_words", "cer_errors", "ref_chars")} == {
+            "wer_errors": 0, "ref_words": 0, "cer_errors": 0, "ref_chars": 0,
+        }
 
     def test_none_normalizer_is_case_sensitive(self):
         from melteval.scorers import asr_scorer
@@ -137,13 +140,96 @@ class TestAsrScorer:
         assert result.value["wer_errors"] == 3
 
 
+class TestTranscriptPreamble:
+    """A secondary WER over the quoted transcription; the headline stays the completion as is."""
+
+    @pytest.mark.parametrize(
+        "text, expected",
+        [
+            (
+                "The original content of this audio is: 'Concord returned to its place.'",
+                "Concord returned to its place.",
+            ),
+            ('The transcription is: "the cat sat"', "the cat sat"),
+            ("The speech in the audio is transcribed as: 'it's here'.", "it's here"),
+            ("The audio states: “no”", "no"),
+        ],
+    )
+    def test_the_wrapped_transcription_is_extracted(self, text, expected):
+        from melteval.scorers import strip_transcript_preamble
+
+        assert strip_transcript_preamble(text) == (expected, True)
+
+    @pytest.mark.parametrize(
+        "text",
+        [
+            "the cat sat on the mat",
+            "He said: 'come here'",  # dialogue, not a preamble: the lead-in is not about the audio
+            "The transcription is the cat sat",  # no quoted span
+            "Note: the audio is noisy. 'the cat sat'",  # quote does not follow the colon directly
+        ],
+    )
+    def test_anything_else_is_left_alone(self, text):
+        from melteval.scorers import strip_transcript_preamble
+
+        assert strip_transcript_preamble(text) == (text, False)
+
+    def test_the_scorer_reports_both_and_flags_the_sample(self):
+        from melteval.scorers import asr_scorer
+
+        state = _state("The transcription is: 'the cat sat on the mat'")
+        result = _run(asr_scorer(normalizer="basic")(state, Target("the cat sat on the mat")))
+        assert result.value["wer_errors"] == 3  # "the transcription is" as it stands
+        assert result.value["wer_errors_extracted"] == 0
+        assert result.value["preamble"] == 1
+        assert result.metadata == {"extracted_hypothesis": "the cat sat on the mat"}
+
+    def test_through_real_inspect_both_figures_reach_the_log(self, tmp_path):
+        """The counts go through inspect's value reduction; only a real eval() exercises it."""
+        from inspect_ai import Task
+        from inspect_ai import eval as inspect_eval
+        from inspect_ai.dataset import MemoryDataset, Sample
+        from inspect_ai.model import ModelOutput
+
+        from melteval.scorers import asr_scorer
+
+        outputs = [
+            ModelOutput.from_content(model="mockllm/model", content="The transcription is: 'the cat sat'"),
+            ModelOutput.from_content(model="mockllm/model", content="the dog ran"),
+        ]
+        dataset = MemoryDataset(
+            [
+                Sample(input="a", target="the cat sat", id="a", metadata={"lang": "en"}),
+                Sample(input="b", target="the dog ran", id="b", metadata={"lang": "en"}),
+            ]
+        )
+        [log] = inspect_eval(
+            Task(dataset=dataset, scorer=asr_scorer(normalizer="basic")),
+            model="mockllm/model",
+            model_args={"custom_outputs": outputs},
+            max_connections=1,
+            display="none",
+            log_dir=str(tmp_path),
+        )
+        metrics = {n: m.value for s in log.results.scores for n, m in s.metrics.items()}
+        assert metrics["corpus_wer_raw"] == pytest.approx(3 / 6)
+        assert metrics["corpus_wer_extracted"] == 0.0
+        assert metrics["preamble_rate"] == pytest.approx(0.5)
+
+    def test_preamble_rate_is_the_share_of_flagged_samples(self):
+        from melteval.scorers import preamble_rate
+
+        scores = [_sample_score({"preamble": 1}), _sample_score({"preamble": 0}), _sample_score({"preamble": 0})]
+        assert preamble_rate()(scores) == pytest.approx(1 / 3)
+
+
 class TestCorpusWerCer:
     def test_sums_errors_over_reference_units(self):
         scores = [
             _sample_score({"wer_errors": 1, "ref_words": 10, "cer_errors": 0, "ref_chars": 0}),
             _sample_score({"wer_errors": 1, "ref_words": 2, "cer_errors": 0, "ref_chars": 0}),
         ]
-        assert corpus_wer()(scores) == pytest.approx(2 / 12)
+        assert corpus_wer_raw()(scores) == pytest.approx(2 / 12)
 
     def test_differs_from_the_mean_of_per_sample_rates(self):
         """The architectural point of this module: a short bad sample must not
@@ -153,12 +239,12 @@ class TestCorpusWerCer:
             _sample_score({"wer_errors": 0, "ref_words": 995, "cer_errors": 0, "ref_chars": 0}),
         ]
         mean_of_rates = (1.0 + 0.0) / 2
-        corpus_rate = corpus_wer()(scores)
+        corpus_rate = corpus_wer_raw()(scores)
         assert corpus_rate == pytest.approx(5 / 1000)
         assert corpus_rate != pytest.approx(mean_of_rates)
 
     def test_empty_corpus_is_zero_not_a_division_error(self):
-        assert corpus_wer()([]) == 0.0
+        assert corpus_wer_raw()([]) == 0.0
 
     def test_cer_uses_its_own_counters(self):
         scores = [_sample_score({"wer_errors": 9, "ref_words": 9, "cer_errors": 1, "ref_chars": 20})]
@@ -324,7 +410,7 @@ class TestChunkedScorers:
 
     def test_a_sample_without_grouping_metadata_is_its_own_group(self):
         """No `group_id` -- e.g. a corpus that never needed grouping -- must
-        still score, one sample at a time, exactly like `corpus_wer` would."""
+        still score, one sample at a time, exactly like `corpus_wer_raw` would."""
         scores = [
             SampleScore(
                 score=Score(value={}, metadata={"reference": "hi", "hypothesis": "hi"}),
@@ -384,7 +470,26 @@ class TestChunkedScorers:
     def test_asr_scorer_records_the_pair_like_st_scorer_does(self):
         score_fn = chunked_asr_scorer()
         result = _run(score_fn(_state("hello"), Target("hello world")))
-        assert result.metadata == {"reference": "hello world", "hypothesis": "hello"}
+        assert result.metadata == {"reference": "hello world", "hypothesis": "hello", "hypothesis_extracted": "hello"}
+        assert result.value["preamble"] == 0
+
+    def test_asr_scorer_strips_a_preamble_from_each_chunk(self):
+        score_fn = chunked_asr_scorer()
+        result = _run(score_fn(_state("The original content of this audio is: 'hello'"), Target("hello world")))
+        assert result.metadata["hypothesis_extracted"] == "hello"
+        assert result.value["preamble"] == 1
+
+    def test_extracted_wer_joins_the_stripped_chunks(self):
+        """Every chunk carries its own wrapper; stripped, the group is perfect."""
+
+        def chunk(hypothesis, extracted, order):
+            score = _grouped_score("hello world", hypothesis, "g1", order)
+            score.score.metadata["hypothesis_extracted"] = extracted
+            return score
+
+        scores = [chunk("The speech says: 'hello'", "hello", 0), chunk("The speech says: 'world'", "world", 1)]
+        assert chunked_wer_en()(scores) > 1.0
+        assert chunked_wer_en_extracted()(scores) == pytest.approx(0.0)
 
     def test_st_scorer_records_the_pair_like_st_scorer_does(self):
         score_fn = chunked_st_scorer()
@@ -437,6 +542,9 @@ class TestChunkedScorersThroughRealInspect:
         assert log.status == "success"
         metrics = log.results.scores[0].metrics
         assert metrics["chunked_wer_en"].value == pytest.approx(0.0)
+        assert metrics["chunked_wer_en_extracted"].value == pytest.approx(0.0)
+        assert metrics["preamble_rate"].value == pytest.approx(0.0)
+        assert metrics["wer_extracted_mcif-short-fixed-en"].value == pytest.approx(0.0)
 
 
 class TestRegistry:
@@ -471,6 +579,45 @@ class TestRegistry:
     def test_unknown_task_filter_raises_rather_than_guessing(self):
         with pytest.raises(ValueError, match="No default scorer"):
             default_scorer("ars")  # typo of "asr"
+
+    def test_every_task_with_a_scorer_has_a_generation_budget(self):
+        """A task missing here silently falls back to the providers' 256."""
+        assert set(TASK_MAX_TOKENS) == set(TASK_SCORERS)
+
+    def test_free_text_answers_get_more_room_than_a_transcript(self):
+        assert default_max_tokens("audio_chat") > default_max_tokens("asr")
+
+    def test_no_task_filter_leaves_the_budget_to_the_provider(self):
+        assert default_max_tokens(None) is None
+
+
+class TestMaxTokensThroughRealInspect:
+    """The task's budget is a default: ``--max-tokens`` (MCIF long's 4096) must still win.
+
+    Only a real ``inspect_ai.eval()`` merges the two, so only it can show the order.
+    """
+
+    def _run(self, tmp_path, **eval_kwargs):
+        from inspect_ai import Task
+        from inspect_ai import eval as inspect_eval
+        from inspect_ai.dataset import MemoryDataset, Sample
+        from inspect_ai.model import GenerateConfig
+        from inspect_ai.scorer import exact
+
+        task = Task(
+            dataset=MemoryDataset([Sample(input="q", target="a")]),
+            scorer=exact(),
+            config=GenerateConfig(max_tokens=default_max_tokens("audio_chat")),
+        )
+        [log] = inspect_eval(task, model="mockllm/model", display="none", log_dir=str(tmp_path), **eval_kwargs)
+        assert log.status == "success"
+        return log.plan.config.max_tokens
+
+    def test_the_task_default_applies_when_the_run_sets_none(self, tmp_path):
+        assert self._run(tmp_path) == TASK_MAX_TOKENS["audio_chat"]
+
+    def test_the_command_line_overrides_the_task_default(self, tmp_path):
+        assert self._run(tmp_path, max_tokens=4096) == 4096
 
 
 # =============================================================================

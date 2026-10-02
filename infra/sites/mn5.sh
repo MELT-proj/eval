@@ -38,6 +38,8 @@ export MELT_SIF="${MELT_SIF:-/gpfs/scratch/epor48/melt_eval_cuda126.sif}"
 # the default. LOCAL_DATASETS_DIR and HF_HOME are read-only in a run.
 export HF_HOME="${HF_HOME:-/gpfs/scratch/epor48/hf_cache}"
 export OUTPUT_DIR="${OUTPUT_DIR:-/gpfs/scratch/epor48/eval-logs}"
+# Where scripts/evaluate.py puts each campaign (configs/eval/*.yaml: output_dir).
+export EVAL_ROOT="${EVAL_ROOT:-/gpfs/scratch/epor48/eval-runs}"
 # The INDEXED copy, not plain `shar`: generation does random-access reads
 # (batched, out of shard order), and a plain Shar tree has no .idx sidecars,
 # so the reader would rescan a shard per sample and raise rather than do that

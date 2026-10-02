@@ -128,7 +128,7 @@ def _(mo):
         counts, because the log header breaks ASR down by language only and a single
         ASR log mixes four corpora. That re-aggregation is only trustworthy if it
         reproduces the header where the two *do* overlap — the pooled `OVERALL` cell
-        against `corpus_wer`/`corpus_cer`, and each ST direction against its
+        against `corpus_wer_raw`/`corpus_cer`, and each ST direction against its
         `corpus_bleu`. Anything but a rounding-level difference here means the
         extraction has drifted from the scorer, and the tables below should not be
         used until it is explained.
@@ -147,7 +147,7 @@ def _(campaign, frame, index, pd):
         _info = campaign.LogInfo(**_row)
         _header = campaign.header_metrics(_info)
         _mine = frame[frame["log_path"] == _info.path]
-        for _metric, _key in (("wer", "corpus_wer"), ("cer", "corpus_cer"), ("bleu", "corpus_bleu"), ("chrf", "corpus_chrf")):
+        for _metric, _key in (("wer", "corpus_wer_raw"), ("cer", "corpus_cer"), ("bleu", "corpus_bleu"), ("chrf", "corpus_chrf")):
             _cells = _mine[_mine["metric"] == _metric]
             if _cells.empty or _key not in _header:
                 continue

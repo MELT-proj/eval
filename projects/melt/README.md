@@ -121,7 +121,7 @@ header. The header's ASR breakdown groups on language only
 CSV needs does not exist there. Summing each cell's error and reference counts
 and dividing once is the same arithmetic the corpus metric does, and it is
 checked: `report.py` asserts the pooled cell reproduces the header's
-`corpus_wer`/`corpus_cer` exactly, and that every sample lands in exactly one
+`corpus_wer_raw`/`corpus_cer` exactly, and that every sample lands in exactly one
 cell.
 
 **ST is the exception, and deliberately so.** Its numbers come from the header.

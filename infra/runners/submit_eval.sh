@@ -2,11 +2,16 @@
 #
 # Submit an evaluation job to SLURM.
 #
-#   infra/runners/submit_eval.sh <site> <checkpoint> <eval_set> [inspect eval args...]
+#   infra/runners/submit_eval.sh <site> <model> <eval_set> [inspect eval args...]
 #
-# This is the whole interface a collaborator needs: swap the checkpoint, swap
-# the evaluation set, run. Everything else (venv, output dir, GPU/QoS) comes
-# from the site file.
+# This is the whole interface a collaborator needs: swap the model, swap the
+# evaluation set, run. Everything else (venv, output dir, GPU/QoS) comes from
+# the site file. To run many models x benchmarks at once, use
+# scripts/evaluate.py, which calls this once per job.
+#
+# <model> is melt/<checkpoint>, melt/hf/<model> (an off-the-shelf baseline,
+# e.g. melt/hf/qwen2_audio) or smurf/<checkpoint>; a bare checkpoint path means
+# melt/<path> (or $MELTEVAL_PROVIDER/<path>). See melteval/providers/__init__.py.
 #
 # <eval_set> is either a frozen-set directory or a source spec YAML read live
 # (HuggingFace benchmarks, which need no freeze pass). Both go in the same
@@ -15,29 +20,33 @@
 # Examples:
 #   # ASR only, batch size 16
 #   infra/runners/submit_eval.sh artemis \
-#     /mnt/scratch-artemis/giuseppe/melt-data/outputs/MA-v1.2.7 \
+#     melt//mnt/scratch-artemis/giuseppe/melt-data/outputs/MA-v1.2.7 \
 #     /mnt/scratch-artemis/giuseppe/melt-data/eval-sets/asr-test-v1 \
 #     -T task_filter=asr -M batch_size=16
 #
 #   # A different checkpoint against the same set -- only one arg changes
 #   infra/runners/submit_eval.sh artemis \
-#     /mnt/scratch-artemis/giuseppe/melt-data/outputs/SFT-v1.3.0 \
+#     melt//mnt/scratch-artemis/giuseppe/melt-data/outputs/SFT-v1.3.0 \
 #     /mnt/scratch-artemis/giuseppe/melt-data/eval-sets/asr-test-v1
 #
 #   # A short debug run: 5 samples, the debug QoS
 #   MELT_QOS=gpu-debug infra/runners/submit_eval.sh artemis \
-#     /path/to/checkpoint /path/to/frozen-set -T limit=5
+#     melt/<path-to-checkpoint> /path/to/frozen-set -T limit=5
 #
 #   # A HuggingFace benchmark, straight from its spec -- no freeze step
 #   infra/runners/submit_eval.sh artemis \
-#     /path/to/checkpoint configs/hf/air-bench.yaml \
+#     melt/<path-to-checkpoint> configs/hf/air-bench.yaml \
 #     -T task_filter=audio_mcq -T dataset_id=air-bench-foundation-speech
 #
 #   # A SMURF checkpoint: its own provider, its own venv, a .ckpt not a dir
-#   MELTEVAL_PROVIDER=smurf VENV_PATH=/path/to/venvs/smurf-eval/bin/activate \
+#   VENV_PATH=/path/to/venvs/smurf-eval/bin/activate \
 #     infra/runners/submit_eval.sh artemis \
-#     /path/to/checkpoints/epoch=0-step=3600.ckpt /path/to/frozen-set \
+#     smurf/<path-to-.ckpt> /path/to/frozen-set \
 #     -T instruction="Transcribe this English audio: "
+#
+#   # An off-the-shelf baseline, at the revision pinned in melteval/providers/qwen2_audio.py
+#   infra/runners/submit_eval.sh artemis melt/hf/qwen2_audio /path/to/frozen-set \
+#     -T task_filter=asr -T instruction='"Transcribe this audio."' --log-format json
 #
 # <site> selects infra/sites/<site>.sh, which exports VENV_PATH/OUTPUT_DIR/
 # LOCAL_DATASETS_DIR and defines the SBATCH_ARGS array (partition/QoS/time).
@@ -48,9 +57,9 @@ set -euo pipefail
 
 die() { echo "ERROR: $*" >&2; exit 1; }
 
-SITE="${1:?usage: $0 <site> <checkpoint> <eval_set> [inspect eval args...]}"; shift
+SITE="${1:?usage: $0 <site> <model> <eval_set> [inspect eval args...]}"; shift
 [[ -f melteval/tasks.py ]] || die "run this from the melt-eval repo root (melteval/tasks.py not found here)"
-[[ $# -ge 2 ]] || die "usage: $0 <site> <checkpoint> <eval_set> [inspect eval args...]"
+[[ $# -ge 2 ]] || die "usage: $0 <site> <model> <eval_set> [inspect eval args...]"
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 SITE_FILE="${SCRIPT_DIR}/../sites/${SITE}.sh"
@@ -59,6 +68,15 @@ SITE_FILE="${SCRIPT_DIR}/../sites/${SITE}.sh"
 source "$SITE_FILE"
 
 mkdir -p logs   # SLURM won't create the --output dir; a missing dir kills the job silently.
+# A caller can put the job's stdout somewhere else (scripts/evaluate.py puts it
+# next to the job's inspect log).
+if [[ -n "${MELT_SLURM_OUT:-}" ]]; then
+    mkdir -p "$(dirname "${MELT_SLURM_OUT}")"
+    SBATCH_ARGS+=(--output="${MELT_SLURM_OUT}")
+fi
 
 echo "[submit_eval] site=${SITE} sbatch ${SBATCH_ARGS[*]} infra/run_eval.sbatch $*"
+# A caller can tag the job (scripts/evaluate.py tags each one with its
+# model and slice) so it can tell what is already queued or running.
+[[ -n "${MELT_JOB_TAG:-}" ]] && SBATCH_ARGS+=(--comment="${MELT_JOB_TAG}")
 sbatch "${SBATCH_ARGS[@]}" infra/run_eval.sbatch "$@"

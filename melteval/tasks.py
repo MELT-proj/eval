@@ -12,13 +12,14 @@ see :mod:`melteval.registry`.
 from __future__ import annotations
 
 from inspect_ai import Task, task
+from inspect_ai.model import GenerateConfig
 from inspect_ai.scorer import Scorer
 from inspect_ai.solver import Solver
 
 from melteval.dataset import frozen_dataset, spec_dataset
-from melteval.registry import default_scorer
+from melteval.registry import default_max_tokens, default_scorer
 from melteval.scorers import asr_scorer
-from melteval.solver import smurf_prompt, speech_prompt
+from melteval.solver import instruction_prompt, melt_prompt, smurf_prompt
 
 
 #: Model family whose prompt format a run uses, and the solver that builds it.
@@ -26,7 +27,11 @@ from melteval.solver import smurf_prompt, speech_prompt
 #: the model is loaded, and this repo's rule is that the format is chosen in a
 #: place somebody can read, not derived. Mismatches are caught at generation
 #: time by :func:`melteval.solver._require_provider`.
-PROMPT_STYLES = ("melt", "smurf")
+SOLVERS = {
+    "melt": (melt_prompt, {"format_config", "tokenizer"}),
+    "smurf": (smurf_prompt, {"instruction", "prompt_config"}),
+    "hf": (instruction_prompt, {"instruction"}),
+}
 
 
 @task
@@ -68,21 +73,24 @@ def speech(
         dataset_id: Restrict to one corpus.
         limit: Take at most this many samples, in manifest order.
         prompt_style: Which model family's prompt format to build — ``melt``
-            (default) or ``smurf``. Must match the ``--model`` provider.
+            (default, ``--model melt/<checkpoint>``), ``hf``
+            (``--model melt/hf/<model>``) or ``smurf`` (``--model
+            smurf/<checkpoint>``). Must match the model; see
+            :mod:`melteval.providers`.
         format_config: ``melt`` only. Training config to take the prompt format
             from. Defaults to the checkpoint being evaluated.
         tokenizer: ``melt`` only. Where to load the chat template from.
             Defaults to the checkpoint being evaluated.
-        instruction: ``smurf`` only. Fixed instruction text for samples that do
-            not carry their own.
+        instruction: ``smurf`` and ``hf``. Fixed instruction text for
+            samples that do not carry their own.
         prompt_config: ``smurf`` only. SMURF data/inference config to read the
             instruction (``tags.context``) from.
         normalizer: ``task_filter="asr"`` only. Text normalizer for the WER/CER
-            scorer -- ``"basic"`` (default) and ``"english"`` both import
-            ``melt.evaluation``, which is not installed in a SMURF-only
-            environment (see "Environment" in docs/smurf-provider.md); pass
-            ``"none"`` there to score raw strings instead. See
-            :func:`melteval.scorers.get_normalizer`.
+            scorer -- ``"basic"`` (default), ``"english"`` or ``"none"``. The
+            first two are melteval's copy of the training package's
+            normalizers (see :mod:`melteval.normalizers`), so they give the
+            same result in every environment, with or without ``melt-proj``.
+            See :func:`melteval.scorers.get_normalizer`.
         scorer: Scorer to apply. Defaults to the task's registered scorer, or
             ``exact()`` (a plumbing check, not a real metric) when
             *task_filter* is unset. Mutually exclusive with *normalizer*.
@@ -148,6 +156,7 @@ def speech(
             prompt_config=prompt_config,
         ),
         scorer=resolved_scorer,
+        config=GenerateConfig(max_tokens=default_max_tokens(task_filter)),
         name=name,
     )
 
@@ -170,8 +179,10 @@ def _prompt_solver(
         ValueError: If *prompt_style* is unknown, or an argument belongs to a
             different style.
     """
-    if prompt_style not in PROMPT_STYLES:
-        raise ValueError(f"Unknown prompt_style {prompt_style!r}; expected one of {PROMPT_STYLES}.")
+    if prompt_style not in SOLVERS:
+        raise ValueError(f"Unknown prompt_style {prompt_style!r}; expected one of {tuple(SOLVERS)}.")
+
+    solver_fn, valid_kwargs = SOLVERS[prompt_style]
 
     given = {
         "format_config": format_config,
@@ -179,25 +190,20 @@ def _prompt_solver(
         "instruction": instruction,
         "prompt_config": prompt_config,
     }
-    belongs_to = {
-        "format_config": "melt",
-        "tokenizer": "melt",
-        "instruction": "smurf",
-        "prompt_config": "smurf",
-    }
+
     misplaced = [
-        name for name, value in given.items() if value is not None and belongs_to[name] != prompt_style
+        name for name, value in given.items() if value is not None and name not in valid_kwargs
     ]
+
     if misplaced:
+        owners = [style for style, (_, kwargs) in SOLVERS.items() if misplaced[0] in kwargs]
         raise ValueError(
             f"{', '.join(sorted(misplaced))} {'belongs' if len(misplaced) == 1 else 'belong'} to "
-            f"prompt_style={belongs_to[misplaced[0]]!r}, but this task is running "
+            f"prompt_style={' or '.join(repr(o) for o in owners)}, but this task is running "
             f"prompt_style={prompt_style!r}."
         )
 
-    if prompt_style == "smurf":
-        return smurf_prompt(instruction=instruction, prompt_config=prompt_config)
-    return speech_prompt(format_config=format_config, tokenizer=tokenizer)
+    return solver_fn(**{name: given[name] for name in valid_kwargs if given[name] is not None})
 
 
 @task

@@ -1,7 +1,7 @@
-"""In-process model provider for MELT checkpoints.
+"""MELT checkpoints, addressed as ``--model melt/<path-to-checkpoint>``.
 
-Registered as ``melt``, so a checkpoint is addressed as
-``--model melt/<path-to-checkpoint>``.
+The ``melt`` provider (:mod:`melteval.providers.router`) builds :class:`MELTAPI`
+for any name that is not ``melt/hf/...`` or ``melt/vllm/...``.
 
 What is specific to MELT is here: loading a ``MELTForCausalLM`` plus its
 processor, and turning one padded batch into strings. Resolving the audio
@@ -18,15 +18,20 @@ from __future__ import annotations
 import logging
 from typing import Any
 
-from inspect_ai.model import GenerateConfig, modelapi
+from inspect_ai.model import GenerateConfig
 
-from melteval.providers.base import DEFAULT_BATCH_SIZE, DEFAULT_BATCH_WINDOW, BatchedSpeechAPI, _Request
+from melteval.providers.base import (
+    DEFAULT_BATCH_SIZE,
+    DEFAULT_BATCH_WINDOW,
+    BatchedSpeechAPI,
+    _generate_kwargs,
+    _Request,
+)
 
 
 logger = logging.getLogger(__name__)
 
 
-@modelapi(name="melt")
 class MELTAPI(BatchedSpeechAPI):
     """Generate from a local MELT checkpoint."""
 
@@ -159,25 +164,3 @@ def _batched_audio(batch: list[_Request]) -> list[list[Any]] | None:
     if not any(r.audio is not None for r in batch):
         return None
     return [[r.audio] if r.audio is not None else [] for r in batch]
-
-
-def _generate_kwargs(config: GenerateConfig) -> dict[str, Any]:
-    """Translate an inspect generate config into transformers kwargs.
-
-    Greedy by default: an eval that samples is measuring the sampler as much as
-    the model, and two runs would not be comparable.
-    """
-    kwargs: dict[str, Any] = {
-        "max_new_tokens": config.max_tokens or 256,
-        "use_cache": True,
-        "do_sample": config.temperature is not None and config.temperature > 0,
-    }
-    if config.temperature is not None and config.temperature > 0:
-        kwargs["temperature"] = config.temperature
-    if config.top_p is not None:
-        kwargs["top_p"] = config.top_p
-    if config.top_k is not None:
-        kwargs["top_k"] = config.top_k
-    if config.num_choices is not None and config.num_choices > 1:
-        kwargs["num_return_sequences"] = config.num_choices
-    return kwargs
