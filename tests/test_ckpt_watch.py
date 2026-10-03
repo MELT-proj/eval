@@ -145,3 +145,37 @@ class TestStepConfig:
     def test_the_template_is_not_mutated(self, tmp_path):
         cw.step_config(self.template, 1, Path("/c/step=1.ckpt"), tmp_path)
         assert self.template["models"][0]["name"] == "smurf"
+
+
+class TestBaselines:
+    template = {"name": "smurf", "models": [{"name": "smurf"}], "benchmarks": [{"name": "mcif"}]}
+    models = [{"name": "qwen", "model": "melt/hf/qwen"}, {"name": "melt", "model": "melt/x"}]
+
+    def test_selected_models_run_on_the_templates_benchmarks(self, tmp_path):
+        config = cw.baselines_config(self.template, self.models, ["qwen"], tmp_path)
+        assert config["models"] == [self.models[0]]
+        assert config["benchmarks"] == self.template["benchmarks"]
+        assert config["output_dir"] == str(tmp_path)
+
+    def test_an_unknown_model_is_an_error(self, tmp_path):
+        import pytest
+
+        with pytest.raises(ValueError, match="nope"):
+            cw.baselines_config(self.template, self.models, ["nope"], tmp_path)
+
+    def test_ledger_round_trip_and_old_ledgers(self, tmp_path):
+        state = _state(step_100="done")
+        state.baselines = cw.Baselines("done", 5.0, "ok")
+        cw.save_state(state, tmp_path / "s.json")
+        assert cw.load_state(tmp_path / "s.json").baselines == state.baselines
+        # A ledger written before baselines existed still loads.
+        (tmp_path / "old.json").write_text('{"entries": {}}', encoding="utf-8")
+        assert cw.load_state(tmp_path / "old.json").baselines.status == ""
+
+    def test_baselines_are_not_taken_for_checkpoints(self, tmp_path):
+        path = tmp_path / "results_long.csv"
+        with path.open("w", newline="", encoding="utf-8") as f:
+            w = csv.writer(f)
+            w.writerow(["model", "benchmark", "slice", "metric", "value"])
+            w.writerow(["qwen2-audio-7b-instruct", "mcif", "s", "wer", "0.1"])
+        assert cw.read_metrics(path, "mcif/s/wer") == {}

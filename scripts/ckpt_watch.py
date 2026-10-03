@@ -57,10 +57,20 @@ class Retention:
 
 
 @dataclass
+class Baselines:
+    """Ledger line of the fixed baselines: they are evaluated once, not once per checkpoint."""
+
+    status: str = ""  #: Empty until submitted, then ``submitted``, ``done`` or ``failed``.
+    submitted_at: float = 0.0
+    note: str = ""
+
+
+@dataclass
 class State:
-    """The ledger: every checkpoint seen, by step."""
+    """The ledger: every checkpoint seen, by step, and the baselines."""
 
     entries: dict[int, Entry] = field(default_factory=dict)
+    baselines: Baselines = field(default_factory=Baselines)
 
     @property
     def next_seq(self) -> int:
@@ -119,13 +129,33 @@ def step_config(template: dict, step: int, path: Path, output_dir: Path) -> dict
     return config
 
 
+def baselines_config(template: dict, models: list[dict], names: list[str], output_dir: Path) -> dict:
+    """The ``scripts/evaluate.py`` config that evaluates the fixed baselines.
+
+    Models are the entries of *models* called *names*; benchmarks are the
+    template's, so baselines and checkpoints are scored on the same slices.
+    They share *output_dir*, so the report gets one extra column per baseline.
+    """
+    by_name = {m["name"]: m for m in models}
+    missing = [n for n in names if n not in by_name]
+    if missing:
+        raise ValueError(f"baseline model(s) not in the baselines config: {', '.join(missing)}")
+    config = {k: v for k, v in template.items() if k not in ("models", "benchmarks")}
+    config["output_dir"] = str(output_dir)
+    config["models"] = [by_name[n] for n in names]
+    config["benchmarks"] = template["benchmarks"]
+    return config
+
 
 def load_state(path: Path) -> State:
     """Read the ledger; an absent file is an empty ledger."""
     if not path.exists():
         return State()
     raw = json.loads(path.read_text(encoding="utf-8"))
-    return State({int(step): Entry(**entry) for step, entry in raw["entries"].items()})
+    return State(
+        {int(step): Entry(**entry) for step, entry in raw["entries"].items()},
+        Baselines(**raw.get("baselines", {})),
+    )
 
 
 def save_state(state: State, path: Path) -> None:
@@ -133,7 +163,13 @@ def save_state(state: State, path: Path) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     tmp = path.with_suffix(".tmp")
     tmp.write_text(
-        json.dumps({"entries": {str(s): asdict(e) for s, e in sorted(state.entries.items())}}, indent=1),
+        json.dumps(
+            {
+                "entries": {str(s): asdict(e) for s, e in sorted(state.entries.items())},
+                "baselines": asdict(state.baselines),
+            },
+            indent=1,
+        ),
         encoding="utf-8",
     )
     os.replace(tmp, path)

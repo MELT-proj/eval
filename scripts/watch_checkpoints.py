@@ -4,6 +4,7 @@
     python scripts/watch_checkpoints.py status  CONFIG                             # the ledger, as a table
     python scripts/watch_checkpoints.py enqueue CONFIG STEP                        # evaluate this one whatever every_n says
     python scripts/watch_checkpoints.py candidates CONFIG                          # what could be deleted (never deletes)
+    python scripts/watch_checkpoints.py rerun-baselines CONFIG                     # evaluate the baselines again
 """
 
 from __future__ import annotations
@@ -69,6 +70,9 @@ class Watch:
         self.max_in_flight = int(raw.get("max_in_flight", 2))
         self.output_dir = Path(expand(raw["output_dir"])).expanduser().resolve()
         self.template = yaml.safe_load((REPO_ROOT / raw["eval_config"]).read_text(encoding="utf-8"))
+        # Optional: fixed models evaluated once, on the same benchmarks, into the same report.
+        self.baselines_config = raw.get("baselines_config")
+        self.baselines_models = list(raw.get("baselines_models") or [])
         r = raw.get("retention") or {}
         best = r.get("keep_best") or {}
         self.retention = cw.Retention(
@@ -103,6 +107,19 @@ class Watch:
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text(yaml.safe_dump(config, sort_keys=False), encoding="utf-8")
         return path
+
+
+    def baselines_path(self) -> Path:
+        """Write the evaluate.py config for the baselines; return its path."""
+        source = yaml.safe_load((REPO_ROOT / self.baselines_config).read_text(encoding="utf-8"))
+        config = cw.baselines_config(self.template, source["models"], self.baselines_models, self.output_dir)
+        path = self.output_dir / "configs" / "baselines.yaml"
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(yaml.safe_dump(config, sort_keys=False), encoding="utf-8")
+        return path
+
+    def has_baselines(self) -> bool:
+        return bool(self.baselines_config and self.baselines_models)
 
 
 def now() -> str:
@@ -156,6 +173,49 @@ def submit(watch: Watch) -> None:
         in_flight += code == 0
 
 
+def submit_baselines(watch: Watch) -> None:
+    """Start the baselines' jobs, once. A finished slice is never rerun; a failed one waits for ``rerun-baselines``."""
+    base = watch.state.baselines
+    if not watch.has_baselines() or base.status:
+        return
+    command = [
+        sys.executable, str(REPO_ROOT / "scripts" / "evaluate.py"), "run", str(watch.baselines_path()),
+        "--site", watch.site,
+    ]  # fmt: skip
+    log(f"baselines ({', '.join(watch.baselines_models)}): submitting")
+    code = subprocess.run(command, cwd=REPO_ROOT, check=False).returncode
+    base.status, base.note = ("submitted", "") if code == 0 else (cw.FAILED, f"evaluate.py run exited {code}")
+    base.submitted_at = time.time()
+
+
+def settle(states: list[str], submitted_at: float) -> str | None:
+    """``done``/``failed`` once the jobs of a submission have ended, ``None`` while they are still going."""
+    if all(s == "done" for s in states):
+        return cw.DONE
+    if "queued" not in states and ("missing" not in states or time.time() - submitted_at > SUBMIT_GRACE):
+        return cw.FAILED
+    return None
+
+
+def refresh_baselines(watch: Watch, evaluate) -> bool:
+    """Like ``refresh``, for the baselines; return whether they finished."""
+    base = watch.state.baselines
+    if base.status != "submitted":
+        return False
+    jobs, _ = evaluate.plan(evaluate.load_config(watch.baselines_path(), None))
+    queued = evaluate.queued_tags()
+    states = [evaluate.job_state(job, queued)[0] for job in jobs]
+    outcome = settle(states, base.submitted_at) if jobs else cw.FAILED
+    if outcome == cw.FAILED:
+        base.note = f"jobs failed: {', '.join(sorted(set(states) - {'done'})) or 'none planned'} (see slurm-*.out)"
+        log(f"baselines: FAILED ({base.note})")
+    elif outcome == cw.DONE:
+        log("baselines: evaluation done")
+    if outcome:
+        base.status = outcome
+    return outcome == cw.DONE
+
+
 def refresh(watch: Watch, evaluate) -> bool:
     """Look at the jobs of submitted checkpoints; return whether any finished (the report needs rebuilding)."""
     changed = False
@@ -167,18 +227,19 @@ def refresh(watch: Watch, evaluate) -> bool:
         states = [evaluate.job_state(job, queued)[0] for job in jobs]
         if not jobs:
             entry.status, entry.note = cw.FAILED, "no job could be planned (see evaluate.py plan)"
-        elif all(s == "done" for s in states):
-            entry.status, changed = cw.DONE, True
-            log(f"step {entry.step}: evaluation done")
-        elif "queued" not in states and ("missing" not in states or time.time() - entry.submitted_at > SUBMIT_GRACE):
-            # Nothing is queued or running and something has no successful log. A
-            # job that just left the queue may not have its log yet, hence the
-            # grace period for the ones with no log at all.
-            entry.status = cw.FAILED
-            entry.note = (
-                f"jobs failed: {', '.join(sorted(set(states) - {'done'}))} (see slurm-*.out in the slice folders)"
-            )
-            log(f"step {entry.step}: FAILED ({entry.note})")
+        else:
+            outcome = settle(states, entry.submitted_at)
+            if outcome == cw.DONE:
+                entry.status, changed = cw.DONE, True
+                log(f"step {entry.step}: evaluation done")
+            elif outcome == cw.FAILED:
+                # A job that just left the queue may not have its log yet, hence the
+                # grace period (in settle) for the ones with no log at all.
+                entry.status = cw.FAILED
+                entry.note = (
+                    f"jobs failed: {', '.join(sorted(set(states) - {'done'}))} (see slurm-*.out in the slice folders)"
+                )
+                log(f"step {entry.step}: FAILED ({entry.note})")
     return changed
 
 
@@ -197,7 +258,10 @@ def report(watch: Watch) -> None:
 def cycle(watch: Watch, evaluate) -> None:
     """One pass: discover new checkpoints, look at running jobs, submit what is waiting."""
     discover(watch)
-    if refresh(watch, evaluate):
+    submit_baselines(watch)
+    # Both run: `or` would skip the baselines' check whenever a checkpoint finished.
+    finished = [refresh(watch, evaluate), refresh_baselines(watch, evaluate)]
+    if any(finished):
         report(watch)
     submit(watch)
     watch.save()
@@ -227,6 +291,9 @@ def cmd_status(watch: Watch, args) -> None:
         value = f"{metrics[step]:.4f}" if step in metrics else "-"
         verdict = "" if entry.status == cw.DELETED else (keep.get(step) or "candidate")
         print(f"{step:>8}  {entry.status:<10} {value:>10}  {verdict}  {entry.note}")
+    if watch.has_baselines():
+        base = watch.state.baselines
+        print(f"\nbaselines ({', '.join(watch.baselines_models)}): {base.status or 'pending'}  {base.note}")
     print(f"\n{len(keep)} kept, {len(delete)} deletion candidate(s). Ledger: {watch.state_path}")
 
 
@@ -244,6 +311,13 @@ def cmd_enqueue(watch: Watch, args) -> None:
         entry.status, entry.note = cw.SELECTED, ""
     watch.save()
     print(f"step {args.step}: {entry.status}; the loop will pick it up.")
+
+
+def cmd_rerun_baselines(watch: Watch, args) -> None:
+    """Evaluate the baselines again: slices that already have a successful log are left alone."""
+    watch.state.baselines = cw.Baselines()
+    watch.save()
+    print("baselines: pending; the loop will submit what has no successful log.")
 
 
 def cmd_candidates(watch: Watch, args) -> None:
@@ -280,7 +354,7 @@ def cmd_candidates(watch: Watch, args) -> None:
 def main(argv: list[str] | None = None) -> None:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     sub = parser.add_subparsers(dest="command", required=True)
-    for name in ("run", "status", "enqueue", "candidates"):
+    for name in ("run", "status", "enqueue", "candidates", "rerun-baselines"):
         p = sub.add_parser(name)
         p.add_argument("config", type=Path)
         if name == "run":
@@ -289,9 +363,14 @@ def main(argv: list[str] | None = None) -> None:
         if name == "enqueue":
             p.add_argument("step", type=int)
     args = parser.parse_args(argv)
-    {"run": cmd_run, "status": cmd_status, "enqueue": cmd_enqueue, "candidates": cmd_candidates}[args.command](
-        Watch(args.config), args
-    )
+    commands = {
+        "run": cmd_run,
+        "status": cmd_status,
+        "enqueue": cmd_enqueue,
+        "candidates": cmd_candidates,
+        "rerun-baselines": cmd_rerun_baselines,
+    }
+    commands[args.command](Watch(args.config), args)
 
 
 if __name__ == "__main__":
