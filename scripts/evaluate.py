@@ -246,7 +246,18 @@ def plan(
                     # -T values are parsed as YAML; a JSON string is a quoted YAML string.
                     args += ["-T", f"instruction={json.dumps(instruction)}"]
 
+                # Optional per-model MCQ prompt template ({question}, {options}), e.g. DeSTA2.5's.
+                mcq_instruction = model_cfg.get("mcq_instruction")
+                if mcq_instruction and task == "audio_mcq" and family == "hf":
+                    args += ["-T", f"mcq_instruction={json.dumps(mcq_instruction)}"]
+
                 args += [str(a) for a in model_cfg.get("args", [])]
+                # Optional per-task system prompts (`system:` map, `default` as fallback), e.g. DeSTA2.5's.
+                # Passed as a model argument so inspect records it in the log.
+                system = model_cfg.get("system") or {}
+                system_prompt = system.get(task, system.get("default"))
+                if system_prompt is not None:
+                    args += ["-M", f"system_prompt={json.dumps(system_prompt)}"]
                 args += [str(a) for a in slice_cfg.get("args", [])]
                 if task in JUDGE_TASKS:
                     args.append("--no-score")

@@ -132,6 +132,17 @@ if [[ ! " ${EXTRA_ARGS[*]:-} " == *"prompt_style="* ]]; then
     EXTRA_ARGS+=(-T "prompt_style=${FAMILY}")
 fi
 
+# Qwen2-Audio and DeSTA2.5 fail single clips past 30 s (AudioTooLongError): tolerate
+# up to FAIL_ON_ERROR of samples instead of aborting. MELT/SMURF stay strict.
+if [[ "${FAMILY}" == "hf" && ! " ${EXTRA_ARGS[*]:-} " == *"fail-on-error"* ]]; then
+    EXTRA_ARGS+=(--fail-on-error "${FAIL_ON_ERROR:-0.05}")
+fi
+
+# Keep colour in the SLURM .out (rich drops it for files); view with `less -R`, NO_COLOR=1 disables.
+if [[ -z "${NO_COLOR:-}" ]]; then
+    export FORCE_COLOR="${FORCE_COLOR:-1}"
+fi
+
 echo "[run_eval] venv:       ${VENV_PATH}"
 echo "[run_eval] model:      ${MODEL} (prompt family ${FAMILY})"
 echo "[run_eval] eval set:   ${EVAL_SET} (${EVAL_SET_KIND})"

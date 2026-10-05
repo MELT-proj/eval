@@ -422,6 +422,43 @@ class TestInstructionSolverThroughRealInspect(TestSmurfSolverThroughRealInspect)
         )
         return log
 
+    def _mcq_sample(self, question="What is {x}?"):
+        from inspect_ai.dataset import MemoryDataset, Sample
+
+        meta = {
+            "task": "audio_mcq",
+            "instruction": "{audio_token}\nignored\nA. Male\nB. Female\nAnswer with the letter.",
+            "question": question,
+            "audio": {"kind": "file", "path": "/tmp/a.wav"},
+        }
+        return MemoryDataset(
+            samples=[Sample(input="p", target="Male", choices=["Male", "Female"], id="s-0", metadata=meta)]
+        )
+
+    def test_mcq_instruction_replaces_the_options_layout_and_escapes_the_question(self, tmp_path):
+        log = self._run(
+            tmp_path, self._mcq_sample(), mcq_instruction="{question}\nThe answer could be: {options}"
+        )
+
+        [message] = log.samples[0].messages[:1]
+        text = "".join(c.text for c in message.content if getattr(c, "type", None) == "text")
+        assert text == 'What is {x}?\nThe answer could be: "Male" or "Female"'
+        assert log.samples[0].store["melteval:format_spec"]["instruction_source"] == "mcq_instruction"
+
+    def test_mcq_instruction_leaves_a_sample_without_options_alone(self, tmp_path):
+        log = self._run(
+            tmp_path, self._sample(instruction="Answer."), mcq_instruction="{question} {options}"
+        )
+
+        [message] = log.samples[0].messages[:1]
+        text = "".join(c.text for c in message.content if getattr(c, "type", None) == "text")
+        assert text == "Answer."
+
+    def test_mcq_instruction_without_the_question_in_the_sample_is_refused(self, tmp_path):
+        log = self._run(tmp_path, self._mcq_sample(question=""), mcq_instruction="{question}{options}")
+
+        assert log.status == "error" or "question" in str(log.samples[0].error)
+
     def test_the_log_records_the_instruction_and_its_source(self, tmp_path):
         log = self._run(tmp_path, self._sample(), instruction="Transcribe this audio.")
 

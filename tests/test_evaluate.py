@@ -38,6 +38,13 @@ def _config(tmp_path, **overrides):
                 "instruction": {"asr": "Transcribe this audio."},
                 "skip": ["mcif-long-*"],
             },
+            {
+                "name": "desta",
+                "model": "melt/hf/desta25",
+                "instruction": {"asr": "Transcribe this audio."},
+                "system": {"default": "Focus.", "asr": "Focus. Respond directly."},
+                "mcq_instruction": "{question} {options}",
+            },
             {"name": "melt", "model": f"melt/{tmp_path}/runs/*/"},
             {"name": "smurf", "model": f"smurf/{tmp_path}/smurf.ckpt", "instruction": {"asr": "Transcribe: "}},
             {"name": "unset", "model": "melt/${MELTEVAL_TEST_UNSET_CKPT}"},
@@ -92,7 +99,7 @@ class TestResolveModel:
     @pytest.mark.parametrize(
         ("model", "why"),
         [
-            ("melt/hf/whisper", "unknown baseline"),
+            ("melt/hf/nonexistent", "unknown baseline"),
             ("melt/vllm/some/model", "not implemented"),
             ("qwen2_audio//snapshots/abc", "not a melt/"),
             ("melt/${MELTEVAL_TEST_UNSET_CKPT}", "not set"),
@@ -107,6 +114,10 @@ class TestPlan:
     def test_one_job_per_model_and_slice_that_can_run(self, tmp_path):
         jobs, skipped = _jobs(tmp_path)
         assert sorted(jobs) == [
+            ("desta", "asr-librispeech-test-clean"),
+            ("desta", "audio_chat-air-bench-chat-speech"),
+            ("desta", "audio_mcq-air-bench-foundation-speech"),
+            ("desta", "chunked_asr-mcif-long-fixed-en"),
             ("melt", "asr-librispeech-test-clean"),
             ("melt", "audio_chat-air-bench-chat-speech"),
             ("melt", "audio_mcq-air-bench-foundation-speech"),
@@ -132,6 +143,21 @@ class TestPlan:
         assert not any(
             a.startswith("instruction=") for a in jobs["qwen", "audio_mcq-air-bench-foundation-speech"].args
         )
+
+    def test_a_system_prompt_is_a_model_argument_per_task_with_a_default(self, tmp_path):
+        """Only a model entry with `system:` gets one; a task not listed falls back to `default`."""
+        jobs, _ = _jobs(tmp_path)
+        assert 'system_prompt="Focus. Respond directly."' in jobs["desta", "asr-librispeech-test-clean"].args
+        assert 'system_prompt="Focus."' in jobs["desta", "audio_mcq-air-bench-foundation-speech"].args
+        for key in (("qwen", "asr-librispeech-test-clean"), ("melt", "asr-librispeech-test-clean")):
+            assert not any(a.startswith("system_prompt=") for a in jobs[key].args)
+
+    def test_an_mcq_instruction_goes_only_to_the_multiple_choice_slices_of_its_model(self, tmp_path):
+        jobs, _ = _jobs(tmp_path)
+        mcq = jobs["desta", "audio_mcq-air-bench-foundation-speech"]
+        assert 'mcq_instruction="{question} {options}"' in mcq.args
+        for key in (("desta", "asr-librispeech-test-clean"), ("qwen", "audio_mcq-air-bench-foundation-speech")):
+            assert not any(a.startswith("mcq_instruction=") for a in jobs[key].args)
 
     def test_judge_tasks_are_generated_unscored(self, tmp_path):
         jobs, _ = _jobs(tmp_path)
@@ -268,28 +294,21 @@ class TestReport:
         assert written["results_long.csv"].exists()
         assert "model-a" in written["summary.csv"].read_text()
 
-    def test_truncated_samples_are_counted_for_a_run_that_could_truncate(self, tmp_path, report):
-        """truncate_long_audio is an explicit choice; the runs sheet says how often it bit."""
-        from inspect_ai import Task
-        from inspect_ai import eval as inspect_eval
-        from inspect_ai.dataset import MemoryDataset, Sample
-        from inspect_ai.model import ModelOutput
+    def test_skipped_samples_are_counted_for_a_local_hf_run_only(self, monkeypatch, report):
+        """A clip past the model's window fails on its own; the runs sheet says how many."""
+        from types import SimpleNamespace as NS
 
-        cut = ModelOutput.from_content(model="mockllm/model", content="x")
-        cut.metadata = {"audio_truncated_from_seconds": 31.6}
-        whole = ModelOutput.from_content(model="mockllm/model", content="y")
-        inspect_eval(
-            Task(dataset=MemoryDataset([Sample(input="q", target="x", id=f"s-{i}") for i in range(2)])),
-            model="mockllm/model",
-            model_args={"custom_outputs": [cut, whole], "truncate_long_audio": True},
-            display="none",
-            log_dir=str(tmp_path),
-            max_connections=1,
-            metadata={"melteval_model": "m", "melteval_benchmark": "b", "melteval_slice": "s", "melteval_task": "asr"},
-        )
+        samples = [
+            NS(error=NS(message="Qwen2-Audio: audio of 31.6 s exceeds its 30 s window; sample not evaluated")),
+            NS(error=NS(message="CUDA out of memory")),
+            NS(error=None),
+        ]
+        monkeypatch.setattr(report, "read_eval_log_samples", lambda *a, **k: iter(samples))
 
-        [count] = report.read_runs([tmp_path])["truncated_samples"]
-        assert count == 1
+        hf = NS(eval=NS(model="melt/hf/qwen2_audio"))
+        other = NS(eval=NS(model="openai/gpt-4o"))
+        assert report._count_skipped("log.eval", hf) == 1
+        assert report._count_skipped("log.eval", other) is None
 
 
 class TestWaitForRoom:

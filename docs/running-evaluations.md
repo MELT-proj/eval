@@ -16,6 +16,8 @@ who runs it:
 | `melt/<checkpoint>`   | a MELT checkpoint, MELT's`generate()`         | `melt`                          |
 | `melt/hf/qwen2_audio` | Qwen2-Audio-7B-Instruct, transformers           | `hf`                            |
 | `melt/hf/qwen3_omni`  | Qwen3-Omni-30B-A3B-Instruct, transformers       | `hf`                            |
+| `melt/hf/whisper`     | Whisper large-v3 (ignores the instruction)      | `hf`                            |
+| `melt/hf/desta25`     | DeSTA2.5-Audio,`desta` package (own venv)     | `hf`                            |
 | `smurf/<checkpoint>`  | a SMURF (NeMo) checkpoint, SALM's`generate()` | `smurf`                         |
 | `melt/vllm/<model>`   | reserved, not implemented                       | —                                |
 
@@ -59,6 +61,12 @@ benchmarks:
   model on one slice:, i.one `inspect eval`, one log.
 - `instruction` is only used for `hf` and `smurf` models. MELT reads its prompt
   from the checkpoint's `training_config.yaml`.
+- `system` (optional, a model entry): a system prompt per task, with `default`
+  for any task not listed. Passed to the slice's job as `-M system_prompt=...`.
+- `mcq_instruction` (optional, a model entry, `hf` models): replaces the
+  instruction of `audio_mcq` samples with a template using `{question}` and
+  `{options}` (`"a", "b" or "c"`). Passed as `-T mcq_instruction=...`. Only
+  DeSTA2.5 sets it, to follow its authors' layout.
 - A slice may add `args` (e.g. `[--max-tokens, "4096"]`) and `time` (the SLURM
   wall clock).
 
@@ -102,7 +110,7 @@ scripts/evaluate.py run
   └─ per job:  infra/runners/submit_eval.sh <site> <model> <eval_set> <args>   (SLURM)
                or bash infra/run_eval.sbatch  <model> <eval_set> <args>         (--local)
                  └─ inspect eval melteval/tasks.py@speech --model <model> -T prompt_style=<family> ...
-                      └─ melteval/providers/router.py → MELTAPI | Qwen2AudioAPI | Qwen3OmniAPI
+                      └─ melteval/providers/router.py → MELTAPI | Qwen2AudioAPI | Qwen3OmniAPI | WhisperAPI | Desta25API
                          (smurf/... → SmurfAPI)
 ```
 

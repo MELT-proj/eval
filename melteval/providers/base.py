@@ -25,13 +25,13 @@ from concurrent.futures import Future
 from dataclasses import dataclass, field
 from queue import Empty, Queue
 from threading import Lock, Thread
-from typing import Any
 
 import anyio
 from inspect_ai.model import ChatMessage, GenerateConfig, ModelAPI, ModelOutput
 from inspect_ai.tool import ToolChoice, ToolInfo
 
 from melteval.dataset import AUDIO_DATA_KEY
+from melteval.logcolor import log_skipped_sample
 
 
 logger = logging.getLogger(__name__)
@@ -53,7 +53,7 @@ class _Request:
     """One sample waiting to be generated."""
 
     text: str
-    audio: Any | None
+    audio: object | None
     sample_rate: int
     config: GenerateConfig
     #: Audio length in seconds, the sort key for length-bucketed batching.
@@ -61,14 +61,18 @@ class _Request:
     #: by the time a request exists, `generate()` has already loaded it.
     duration: float = 0.0
     #: Recorded on the sample's ModelOutput, so a provider can say in the log
-    #: what it did to one request (e.g. truncated its audio).
-    #: Used for Qwen2-Audio, which has a fixed 30 s window ; MELT, SMURF and 
-    #: Qwen3-Omni take long audio whole).
-    #: With ``truncate_long_audio=true``, long clips are cut, and we write down
-    #: their original length here. That way, if a sample gets a bad WER, we know
-    #: if it was cut or if the model got it wrong.
+    #: what it did to one request.
     metadata: dict = field(default_factory=dict)
     future: Future = field(default_factory=Future)
+
+
+class AudioTooLongError(ValueError):
+    """One sample's audio is longer than the model takes in one piece.
+
+    Raised from ``generate()`` before the request is queued, so only that
+    sample fails (an inspect sample error) and the batch it would have joined
+    is untouched.
+    """
 
 
 class BatchedSpeechAPI(ModelAPI):
@@ -142,6 +146,7 @@ class BatchedSpeechAPI(ModelAPI):
 
         Raises:
             ValueError: If the message carries no text.
+            AudioTooLongError: If the model cannot take this sample's audio.
         """
         text, locator = _extract(input)
         if not text:
@@ -158,6 +163,10 @@ class BatchedSpeechAPI(ModelAPI):
         request = _Request(
             text=text, audio=audio, sample_rate=sample_rate, config=config, duration=duration
         )
+        reason = self._reject(request)
+        if reason is not None:
+            log_skipped_sample(logger, reason)
+            raise AudioTooLongError(reason)
         self._ensure_worker()
         self._queue.put(request)
 
@@ -165,6 +174,13 @@ class BatchedSpeechAPI(ModelAPI):
             if request.future.done():
                 return request.future.result()
             await anyio.sleep(0.05)
+
+    def _reject(self, request: _Request) -> str | None:
+        """Why this request cannot be served, or ``None`` if it can (default: always).
+
+        A reason is raised as :class:`AudioTooLongError` for this sample alone.
+        """
+        return None
 
     def _generate_batch(self, batch: list[_Request]) -> list[str]:
         """Run one padded batch through the model.
@@ -276,7 +292,7 @@ def _load_audio(locator: dict):
     return reader_for_locator(audio_locator).load_audio(audio_locator)
 
 
-def _generate_kwargs(config: GenerateConfig) -> dict[str, Any]:
+def _generate_kwargs(config: GenerateConfig) -> dict[str, object]:
     """Translate an inspect generate config into transformers kwargs.
 
     Shared by every provider whose model exposes transformers' ``generate()``.
@@ -284,7 +300,7 @@ def _generate_kwargs(config: GenerateConfig) -> dict[str, Any]:
     Greedy by default: an eval that samples is measuring the sampler as much as
     the model, and two runs would not be comparable.
     """
-    kwargs: dict[str, Any] = {
+    kwargs: dict[str, object] = {
         "max_new_tokens": config.max_tokens or DEFAULT_MAX_TOKENS,
         "use_cache": True,
         "do_sample": config.temperature is not None and config.temperature > 0,

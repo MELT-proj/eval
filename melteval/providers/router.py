@@ -22,17 +22,21 @@ from typing import Any
 
 from inspect_ai.model import GenerateConfig, ModelAPI, modelapi
 
-from melteval.providers.hf import HFSpeechChatAPI
+from melteval.providers.base import BatchedSpeechAPI
+from melteval.providers.desta25 import Desta25API
 from melteval.providers.melt import MELTAPI
 from melteval.providers.qwen2_audio import Qwen2AudioAPI
 from melteval.providers.qwen3_omni import Qwen3OmniAPI
+from melteval.providers.whisper import WhisperAPI
 
 
 #: The off-the-shelf models ``melt/hf/<key>`` can name. Each class carries its
 #: Hub ``repo`` and pinned ``revision``.
-HF_MODELS: dict[str, type[HFSpeechChatAPI]] = {
+HF_MODELS: dict[str, type[BatchedSpeechAPI]] = {
     "qwen2_audio": Qwen2AudioAPI,
     "qwen3_omni": Qwen3OmniAPI,
+    "whisper": WhisperAPI,
+    "desta25": Desta25API,
 }
 
 

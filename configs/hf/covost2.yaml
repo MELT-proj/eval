@@ -1,0 +1,89 @@
+# CoVoST2 X->en (https://huggingface.co/datasets/fixie-ai/covost2), test split.
+#
+# Read live, like air-bench.yaml and mcif.yaml: the revision below already pins the corpus, and the parquet carries the audio, so there is nothing for a
+# freeze pass to add.
+#
+#   inspect eval melteval/tasks.py@st --model melt/hf/<model> \
+#     -T spec=configs/hf/covost2.yaml -T dataset_id=covost2-fr_en
+#
+# Always pass `-T dataset_id=...`: one run per direction, as in
+# st-eval-campaign-v1.yaml (the local Shar copy of the same corpus, full test
+# splits). BLEU's tokenizer is chosen per target language, and `dataset_id` is
+# what keeps directions apart in the report.
+#
+# Columns (fixie-ai/covost2): `translation` is the English reference,
+# `sentence` the source-language transcript (kept as `source_text` for
+# `melteval rescore`'s COMET triples), `id` the Common Voice clip id.
+#
+# **Subsampled on purpose.** The test splits hold 8.9k-14.8k clips per
+# direction (13511 de, 13221 es, 14760 fr, 8951 it). `max_samples: 1000` keeps a seeded random subset.
+#
+# On compute nodes HF_HUB_OFFLINE=1, so each direction's `test` split has to be in HF_HOME before a job starts (~0.7 GB for fr_en). See README.md,
+# "Evaluating a HuggingFace benchmark".
+name: covost2
+seed: 0
+
+input_cfg:
+  - type: hf_dataset
+    repo: fixie-ai/covost2
+    name: de_en
+    split: test
+    revision: 17c8c81e331e7a6929118121771a58c7ef7331d8
+    text_column: translation
+    source_text_column: sentence
+    id_column: id
+    max_samples: 1000
+    seed: 0
+    tags:
+      task: st
+      src_lang: de
+      tgt_lang: en
+      dataset_id: covost2-de_en
+
+  - type: hf_dataset
+    repo: fixie-ai/covost2
+    name: es_en
+    split: test
+    revision: 17c8c81e331e7a6929118121771a58c7ef7331d8
+    text_column: translation
+    source_text_column: sentence
+    id_column: id
+    max_samples: 1000
+    seed: 0
+    tags:
+      task: st
+      src_lang: es
+      tgt_lang: en
+      dataset_id: covost2-es_en
+
+  - type: hf_dataset
+    repo: fixie-ai/covost2
+    name: fr_en
+    split: test
+    revision: 17c8c81e331e7a6929118121771a58c7ef7331d8
+    text_column: translation
+    source_text_column: sentence
+    id_column: id
+    max_samples: 1000
+    seed: 0
+    tags:
+      task: st
+      src_lang: fr
+      tgt_lang: en
+      dataset_id: covost2-fr_en
+
+  - type: hf_dataset
+    repo: fixie-ai/covost2
+    name: it_en
+    split: test
+    revision: 17c8c81e331e7a6929118121771a58c7ef7331d8
+    text_column: translation
+    source_text_column: sentence
+    id_column: id
+    max_samples: 1000
+    seed: 0
+    tags:
+      task: st
+      src_lang: it
+      tgt_lang: en
+      dataset_id: covost2-it_en
