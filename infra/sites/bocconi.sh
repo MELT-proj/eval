@@ -19,6 +19,8 @@ export VENV_PATH="${VENV_PATH:-$HOME/repos/eval/.venv/bin/activate}"
 #   uv venv --python 3.12 $HOME/repos/eval/.venv-melt
 #   VIRTUAL_ENV=$HOME/repos/eval/.venv-melt uv pip install --prerelease=allow -e ".[shar,hf,metrics]"
 export MELT_VENV_PATH="${MELT_VENV_PATH:-$HOME/repos/eval/.venv-melt/bin/activate}"
+# DeSTA2.5-Audio needs the `desta` package in its own venv (docs/baseline-providers.md).
+export DESTA_VENV_PATH="${DESTA_VENV_PATH:-$HOME/repos/eval/.venv-desta/bin/activate}"
 
 # --- storage (host paths) -------------------------------------------------
 # The HF cache lives on BeeGFS (/scratch -> /mnt/beegfsnew/scratch), not under

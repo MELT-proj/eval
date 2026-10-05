@@ -257,6 +257,10 @@ class TestInstructionsAndChoices:
         record = HFReader().freeze(self._cfg(), 0).records[0]
         assert "{audio_token}" in record.instruction
 
+    def test_the_bare_question_is_kept_for_a_model_that_lays_out_the_options_itself(self, patched_qa_load):
+        record = HFReader().freeze(self._cfg(), 0).records[0]
+        assert record.extra == {"question": "What is the speaker's gender?"}
+
     def test_blank_choice_columns_are_dropped(self, patched_qa_load):
         record = HFReader().freeze(self._cfg(), 0).records[0]
         assert record.choices == ["Male", "Female"]

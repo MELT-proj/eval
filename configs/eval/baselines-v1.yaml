@@ -16,20 +16,14 @@ output_dir: ${EVAL_ROOT}/baselines-v1
 models:
   - name: qwen2-audio-7b-instruct
     model: melt/hf/qwen2_audio
-    # 30 s window. A few clips in otherwise short-utterance sets run past it
-    # (9 of 2620 in LibriSpeech test-clean, up to 35 s): cut them to 30 s, as
-    # the model does out of the box, rather than fail the run. Each cut sample
-    # is marked in the log and counted in the report's `runs` sheet.
-    args: [-M, batch_size=8, -M, truncate_long_audio=true]
-    # Whole talks (minutes long) are another matter: 30 s of a talk is not a
-    # transcription of it, so MCIF long is not run for this model at all.
-    skip: [mcif-long-*]
-    # For benchmarks marked `needs_instruction` (their samples carry none of
-    # their own). No entry for a slice's task: that slice is skipped.
+    # 30 s window: the few longer clips are skipped as error samples, not fatal.
+    args: [-M, batch_size=8]
+    # Skipped: most clips run past the 30 s window (MCIF long, AIR-Bench music).
+    skip: [mcif-long-*, air-bench-foundation-music]
+    # For benchmarks marked `needs_instruction` (their samples carry none of # their own). No entry for a slice's task: that slice is skipped.
     instruction:
       # Asks for the bare transcription: with "Transcribe this audio." it
-      # prefixes many answers with "The original content of this audio is:",
-      # which is scored as-is.
+      # prefixes many answers with "The original content of this audio is:", # which is scored as-is.
       asr: "Transcribe this audio. Output only the transcription."
       st: "Translate this audio into English."
 
@@ -40,12 +34,44 @@ models:
       asr: "Transcribe this audio."
       st: "Translate this audio into English."
 
+  # Whisper takes no instruction: it transcribes, or (task=translate) translates into English, and the language is auto-detected. The `instruction` below is ignored by the provider
+  - name: whisper-large-v3
+    model: melt/hf/whisper
+    args: [-M, batch_size=8]
+    skip: [air-bench-*, mcif-*]
+    instruction:
+      asr: "Transcribe this audio."
+
+  - name: whisper-large-v3-translate
+    model: melt/hf/whisper
+    args: [-M, batch_size=8, -M, task=translate]
+    skip: [air-bench-*, mcif-*]
+    instruction:
+      st: "Translate this audio into English."
+
+  - name: desta2.5-audio
+    model: melt/hf/desta25
+    venv: ${DESTA_VENV_PATH}
+    args: [-M, batch_size=8]
+    # Same 30 s window as Qwen2-Audio, so the same slices are skipped (see there).
+    skip: [mcif-long-*, air-bench-foundation-music]
+    instruction:
+      asr: "Transcribe this audio. Output only the transcription."
+      st: "Translate this audio into English."
+    # System prompts per task as the DeSTA2.5 authors recommend (see docs/baseline-providers.md).
+    # MCQ user turn follows their evaluation_tips.md.
+    mcq_instruction: "{question}\nThe answer could be: {options}"
+    system:
+      default: "Focus on the audio clips and instruction."
+      asr: "Focus on the audio clips and instruction. Respond directly without any other words"
+      chunked_asr: "Focus on the audio clips and instruction. Respond directly without any other words"
+      audio_mcq: "Focus on the audio clips and instruction. Choose one of the options without any explanation."
+
   - name: smurf
     # Always one .ckpt file in checkpoints/smurf/ (gitignored).
     model: smurf/checkpoints/smurf/*.ckpt
     args: [-M, batch_size=8]
-    # SMURF's trained prompt; no ST entry, so its ST slices are skipped until
-    # one is added (or pass -T prompt_config=<inference yaml> in args instead).
+    # SMURF's trained prompt; no ST entry, so ST slices are skipped.
     instruction:
       asr: "Transcribe this English audio: "
 
@@ -60,11 +86,7 @@ models:
 benchmarks:
   - name: air-bench
     spec: configs/hf/air-bench.yaml
-    # audio_chat answers are graded by `evaluate.py score` with this judge:
-    # melt/hf/<model> (loaded text-only, GPU) or an API model such as
-    # openai/gpt-4o (its key in the environment). Caveat: Qwen3-Omni is also a
-    # model under test, so it grades its own answers. And this is melteval's
-    # chat_scorer rubric, not AIR-Bench's GPT-4 1-10 protocol.
+    # Judge for audio_chat (melteval's rubric, not AIR-Bench's); Qwen3-Omni also grades itself.
     judge: melt/hf/qwen3_omni
     slices:
       - {task: audio_mcq, dataset_id: air-bench-foundation-speech}
@@ -97,9 +119,18 @@ benchmarks:
     spec: configs/librispeech-hf-test-clean.yaml
     needs_instruction: true
     slices:
-      # 2620 samples: Qwen3-Omni (batch 4) needs ~1h15, past short_gpuh200's
-      # 1h10 cap. `time` is the SLURM wall clock for this slice.
+      # `time`: SLURM wall clock; Qwen3-Omni needs ~1h15 here, past the 1h10 default cap.
       - {task: asr, dataset_id: librispeech-test-clean, time: "02:00:00"}
+
+  # X->en ST from HF (fixie-ai/covost2, see configs/hf/covost2.yaml); what whisper-large-v3-translate runs on.
+  - name: covost2
+    spec: configs/hf/covost2.yaml
+    needs_instruction: true
+    slices:
+      - {task: st, dataset_id: covost2-de_en}
+      - {task: st, dataset_id: covost2-es_en}
+      - {task: st, dataset_id: covost2-fr_en}
+      - {task: st, dataset_id: covost2-it_en}
 
   # Shar frozen sets: only where the corpora are. Their paths come from the
   # environment; a machine without them skips these benchmarks.

@@ -22,11 +22,13 @@ this package without MELT's dependencies present, and vice versa.
 from melteval.dataset import frozen_dataset
 from melteval.manifest import AudioLocator, EvalRecord
 from melteval.prompt import FormatSpec, SmurfPromptSpec, load_format_spec, load_smurf_prompt_spec
+from melteval.providers.desta25 import Desta25API
 from melteval.providers.melt import MELTAPI
 from melteval.providers.qwen2_audio import Qwen2AudioAPI
 from melteval.providers.qwen3_omni import Qwen3OmniAPI
 from melteval.providers.router import melt
 from melteval.providers.smurf import SmurfAPI
+from melteval.providers.whisper import WhisperAPI
 from melteval.scorers import asr_scorer, corpus_bleu, corpus_cer, corpus_chrf, corpus_wer_raw, st_scorer
 from melteval.solver import instruction_prompt, melt_prompt, smurf_prompt
 from melteval.tasks import asr, speech, st
@@ -35,6 +37,7 @@ from melteval.tasks import asr, speech, st
 __version__ = "0.1.0"
 
 __all__ = [
+    "Desta25API",
     "MELTAPI",
     "Qwen2AudioAPI",
     "Qwen3OmniAPI",
@@ -43,6 +46,7 @@ __all__ = [
     "FormatSpec",
     "SmurfAPI",
     "SmurfPromptSpec",
+    "WhisperAPI",
     "asr",
     "asr_scorer",
     "corpus_bleu",

@@ -157,6 +157,18 @@ def escape_literal(text: str) -> str:
     return text.replace("{", "{{").replace("}", "}}")
 
 
+def quoted_options(choices: list[str]) -> str:
+    """Join *choices* as ``"a", "b" or "c"``: quoted, commas, ``or`` before the last.
+
+    The listing DeSTA2.5-Audio's authors use after "The answer could be:"
+    (``docs/evaluation_tips.md``). Not brace-escaped.
+    """
+    quoted = [f'"{choice}"' for choice in choices]
+    if len(quoted) < 2:
+        return "".join(quoted)
+    return ", ".join(quoted[:-1]) + " or " + quoted[-1]
+
+
 def select_template(task: str, sample_key: str, spec: FormatSpec) -> str:
     """Pick the prompt template for one sample.
 
