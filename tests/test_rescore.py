@@ -130,3 +130,57 @@ class TestWriteTriples:
         out = tmp_path / "triples.jsonl"
         write_triples([{"sample_id": "k", "src": "أهلاً", "mt": "hello", "ref": "hi"}], out)
         assert "أهلاً" in out.read_text(encoding="utf-8")
+
+
+class TestCometScorerThroughRealInspect:
+    """``comet_scorer`` under a real ``inspect_ai.eval()``: the triples must survive inspect's score
+    reduction (they live in ``Score.metadata``) and reach COMET once, as one corpus."""
+
+    def test_comet_scores_the_corpus_and_reports_what_it_could_not_score(self, tmp_path, monkeypatch):
+        import sys
+        import types
+
+        from inspect_ai import Task
+        from inspect_ai import eval as inspect_eval
+        from inspect_ai.dataset import MemoryDataset, Sample
+
+        from melteval.rescore import comet_scorer
+
+        seen = []
+        fake = types.ModuleType("comet")
+        fake.download_model = lambda name: f"/models/{name}"
+
+        class _Model:
+            def predict(self, samples, batch_size, gpus):
+                seen.append(samples)
+                return types.SimpleNamespace(system_score=0.75)
+
+        fake.load_from_checkpoint = lambda path: _Model()
+        monkeypatch.setitem(sys.modules, "comet", fake)
+
+        dataset = MemoryDataset(
+            [
+                Sample(input="x", target="I go.", id="a", metadata={"source_text": "Ich gehe."}),
+                Sample(input="x", target="Good day.", id="b", metadata={"source_text": "Guten Tag."}),
+                # ga in FLEURS: no source transcript, so COMET cannot score it.
+                Sample(input="x", target="Hello.", id="c", metadata={}),
+            ]
+        )
+        outputs = [ModelOutput.from_content(model="mockllm/model", content=c) for c in ("I go.", "Good day.", "Hi.")]
+        [log] = inspect_eval(
+            Task(dataset=dataset, scorer=comet_scorer()),
+            model="mockllm/model",
+            model_args={"custom_outputs": outputs},
+            display="none",
+            log_dir=str(tmp_path),
+        )
+
+        assert log.status == "success"
+        metrics = log.results.scores[0].metrics
+        assert metrics["comet"].value == pytest.approx(0.75)
+        assert metrics["comet_coverage"].value == pytest.approx(2 / 3)
+        [samples] = seen
+        assert sorted(samples, key=lambda t: t["src"]) == [
+            {"src": "Guten Tag.", "mt": "Good day.", "ref": "Good day."},
+            {"src": "Ich gehe.", "mt": "I go.", "ref": "I go."},
+        ]

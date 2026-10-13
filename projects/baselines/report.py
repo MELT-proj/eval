@@ -6,7 +6,8 @@
 ``<output_dir>/results``. Reads the logs and writes:
 
 * ``summary.csv``: headline metric per (benchmark, slice) x model.
-* ``results_long.csv``: one row per (model, benchmark, slice, metric).
+* ``results_long.csv``: one row per (model, benchmark, slice, metric), with the
+  checkpoint's ID (``<run folder>/<file>``) and full path (empty for a model that is not a watched checkpoint).
 * ``results.xlsx``: a ``summary`` sheet (models x headline metric per slice),
   one sheet per benchmark with every metric, and a ``runs`` sheet listing
   which log each number came from.  It includes, for a local HF
@@ -29,25 +30,28 @@ import logging
 from pathlib import Path
 
 import pandas as pd
-from inspect_ai.log import read_eval_log, read_eval_log_samples
+from inspect_ai.log import read_eval_log, read_eval_log_samples # type: ignore
 
 
 logger = logging.getLogger(__name__)
 
 #: Metric(s) shown on the summary sheet for each task, as fnmatch patterns
-#: (the chunked scorers name theirs after the dataset_id). Every metric the log
-#: carries still goes to the per-benchmark sheets and the long CSV.
+#: (chunked scorers name theirs after the dataset_id). Every metric in the log
+#: still goes to the per-benchmark sheets and the long CSV.
 HEADLINE = {
-    # As it stands, then after stripping a "The transcription is: '...'" wrapper,
-    # and how often that applied (see melteval.scorers.strip_transcript_preamble).
-    "asr": ["corpus_wer_raw", "corpus_wer_extracted", "preamble_rate"],
-    "st": ["corpus_bleu"],
-    # Same three for MCIF, per dataset_id: wer_<id>, wer_extracted_<id>.
+    # raw WER, WER after stripping a "The transcription is: '...'" wrapper
+    # (melteval.scorers.strip_transcript_preamble), and how often it applied.
+    # Multilingual sets (VoxPopuli, FLEURS) are reported per language too.
+    "asr": ["corpus_wer_raw", "corpus_wer_extracted", "preamble_rate", "wer_*", "cer_*"],
+    # comet: post-hoc, melteval/rescore.py.
+    "st": ["corpus_bleu", "comet"],
+    # Same three as asr, per dataset_id (wer_<id>, wer_extracted_<id>).
     "chunked_asr": ["wer_*", "preamble_rate"],
-    "chunked_st": ["bleu_*"],
+    # official_trans_comet: post-hoc, melteval/mcif_scoring.py.
+    "chunked_st": ["bleu_*", "official_trans_comet"],
     "audio_mcq": ["choice_accuracy", "unresolved_rate"],
-    # A judge's grade (AIR-Bench Chat).
-    "audio_chat": ["accuracy"],
+    # Judge grade (AIR-Bench Chat) or official BERTScore (MCIF QA).
+    "audio_chat": ["accuracy", "official_bertscore"],
 }
 
 #: Value written for a slice that ran but has no scores yet.
@@ -87,11 +91,16 @@ def read_runs(roots: list[str | Path]) -> pd.DataFrame:
                 "task": task,
                 "dataset_id": dataset_id,
                 "provider_model": log.eval.model,
+                # Full path of a watched checkpoint (scripts/ckpt_watch.py); empty otherwise.
+                "checkpoint": meta.get("melteval_checkpoint", ""),
+                "checkpoint_id": checkpoint_id(meta.get("melteval_checkpoint", "")),
                 "created": log.eval.created,
                 # `created` has one-second resolution; the file's mtime breaks ties.
                 "_mtime": path.stat().st_mtime_ns,
                 "samples": (log.results.completed_samples if log.results else None),
                 "scored": bool(log.results and log.results.scores),
+                # Post-hoc scorers the slice declared (scripts/evaluate.py) but the log lacks.
+                "missing_scorers": _missing_post_scorers(log, meta),
                 "skipped_samples": _count_skipped(path, log),
                 "log_path": str(path),
                 "_log": log,
@@ -104,13 +113,29 @@ def read_runs(roots: list[str | Path]) -> pd.DataFrame:
     runs = runs.sort_values(["created", "_mtime"])
     for run in runs[runs["skipped_samples"].fillna(0) > 0].to_dict("records"):
         logger.warning(
-            "%s × %s/%s: %d sample(s) were not evaluated (audio past the model's window; see the runs sheet)",
+            "%s x %s/%s: %d sample(s) were not evaluated (audio past the model's window; see the runs sheet)",
             run["model"], run["benchmark"], run["slice"], run["skipped_samples"],
         )
     duplicated = runs.duplicated(["model", "benchmark", "slice"], keep="last")
     for path in runs.loc[duplicated, "log_path"]:
         logger.warning("superseded by a newer log for the same slice: %s", path)
     return runs[~duplicated].reset_index(drop=True)
+
+
+def checkpoint_id(path: str) -> str:
+    """Short ID of a checkpoint: ``<run folder>/<file stem>`` (``checkpoints`` is skipped), empty for no path."""
+    if not path:
+        return ""
+    p = Path(path)
+    run = p.parent.parent.name if p.parent.name == "checkpoints" else p.parent.name
+    return f"{run}/{p.stem}"
+
+
+def _missing_post_scorers(log, meta: dict) -> list[str]:
+    """Post-hoc scorers named in ``melteval_post_scorers`` that have not scored *log* yet."""
+    wanted = [s.split("@")[-1] for s in str(meta.get("melteval_post_scorers") or "").split(",") if s]
+    have = {score.name.split("/")[-1] for score in (log.results.scores if log.results else [])}
+    return [s for s in wanted if s not in have]
 
 
 def _count_skipped(path: Path, log) -> int | None:
@@ -139,11 +164,13 @@ def metrics_long(runs: pd.DataFrame) -> pd.DataFrame:
     """Every metric of every run, one row each; unscored runs get one ``pending`` row."""
     rows = []
     for run in runs.to_dict("records"):
-        base = {k: run[k] for k in ("model", "benchmark", "slice", "task", "dataset_id")}
+        base = {k: run[k] for k in ("model", "checkpoint_id", "checkpoint", "benchmark", "slice", "task", "dataset_id")}
         log = run["_log"]
         if not run["scored"]:
             rows.append({**base, "scorer": "", "metric": "", "value": PENDING, "headline": True})
             continue
+        for scorer in run["missing_scorers"]:
+            rows.append({**base, "scorer": scorer, "metric": scorer, "value": PENDING, "headline": True})
         patterns = HEADLINE.get(run["task"], [])
         # A log scored by more than one scorer can carry the same metric name
         # twice; name those by scorer so neither hides the other.
@@ -176,12 +203,13 @@ def summary_table(long: pd.DataFrame) -> pd.DataFrame:
 
 
 def benchmark_table(long: pd.DataFrame, benchmark: str) -> pd.DataFrame:
-    """Models × (slice, metric) for one benchmark, every metric."""
+    """Models (with their checkpoint ID, if any) × (slice, metric) for one benchmark, every metric."""
     part = long[long["benchmark"] == benchmark].copy()
     part["metric"] = part["metric"].replace("", "score")
-    return part.pivot_table(index="model", columns=["slice", "metric"], values="value", aggfunc="first").sort_index(
-        axis=1
+    table = part.pivot_table(
+        index=["model", "checkpoint_id"], columns=["slice", "metric"], values="value", aggfunc="first"
     )
+    return table.sort_index(axis=1)
 
 
 def write(runs: pd.DataFrame, long: pd.DataFrame, out: Path) -> dict[str, Path]:

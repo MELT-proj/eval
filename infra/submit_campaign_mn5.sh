@@ -21,7 +21,7 @@
 # acc_ehpc allows 366 submitted per user, so submit one run at a time.
 #
 # The units come from the frozen set's own manifest, not from a list here: a
-# corpus added to configs/*.yaml shows up in the campaign by rebuilding the
+# corpus added to configs/shar/*.yaml shows up in the campaign by rebuilding the
 # frozen set, with nothing to keep in sync.
 #
 # For a quicker, cheaper pass -- capped samples per unit, tuned for the

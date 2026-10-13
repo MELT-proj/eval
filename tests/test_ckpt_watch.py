@@ -71,6 +71,33 @@ class TestState:
     def test_missing_file_is_an_empty_ledger(self, tmp_path):
         assert cw.load_state(tmp_path / "none.json").entries == {}
 
+    def test_an_entry_from_before_run_names_keeps_its_old_name(self, tmp_path):
+        """A watcher already running must find its logs where it left them, so its names cannot change."""
+        (tmp_path / "old.json").write_text(
+            '{"entries": {"4000": {"step": 4000, "path": "/c/step=4000.ckpt", "seq": 0, "status": "done"}}}',
+            encoding="utf-8",
+        )
+        entry = cw.load_state(tmp_path / "old.json").entries[4000]
+        assert cw.name_of(entry) == "step-0004000"
+        entry.name = cw.model_name(4000, "run5")
+        assert cw.name_of(entry) == "run5-step-0004000"
+
+
+class TestNames:
+    def test_the_run_is_the_folder_or_its_parent_when_that_is_checkpoints(self, tmp_path):
+        (tmp_path / "run_5_asr" / "checkpoints").mkdir(parents=True)
+        (tmp_path / "early" / "150M").mkdir(parents=True)
+        assert cw.run_name(tmp_path / "run_5_asr" / "checkpoints") == "run_5_asr"
+        assert cw.run_name(tmp_path / "early" / "150M") == "150M"
+
+    def test_the_metric_still_finds_the_step_under_a_run_name(self, tmp_path):
+        path = tmp_path / "results_long.csv"
+        with path.open("w", newline="", encoding="utf-8") as f:
+            w = csv.writer(f)
+            w.writerow(["model", "benchmark", "slice", "metric", "value"])
+            w.writerow(["run5-step-0003000", "lib", "asr-x", "wer", "0.4"])
+        assert cw.read_metrics(path, "lib/asr-x/wer") == {3000: 0.4}
+
 
 class TestMetrics:
     def test_reads_the_metric_by_step_and_ignores_pending(self, tmp_path):
@@ -134,9 +161,10 @@ class TestStepConfig:
     }
 
     def test_only_name_and_checkpoint_change(self, tmp_path):
-        config = cw.step_config(self.template, 4000, Path("/c/step=4000.ckpt"), tmp_path)
+        config = cw.step_config(self.template, 4000, Path("/c/step=4000.ckpt"), tmp_path, "run5-step-0004000")
         assert config["models"] == [
-            {"name": "step-0004000", "model": "smurf//c/step=4000.ckpt", "args": ["-M", "batch_size=8"],
+            {"name": "run5-step-0004000", "model": "smurf//c/step=4000.ckpt",
+             "args": ["-M", "batch_size=8", "--metadata", "melteval_checkpoint=/c/step=4000.ckpt"],
              "instruction": {"asr": "T"}}
         ]  # fmt: skip
         assert config["output_dir"] == str(tmp_path)
@@ -179,3 +207,49 @@ class TestBaselines:
             w.writerow(["model", "benchmark", "slice", "metric", "value"])
             w.writerow(["qwen2-audio-7b-instruct", "mcif", "s", "wer", "0.1"])
         assert cw.read_metrics(path, "mcif/s/wer") == {}
+
+
+class TestScorePending:
+    """The watcher's post-hoc scoring step (``score_pending`` in scripts/watch_checkpoints.py)."""
+
+    @staticmethod
+    def _watcher():
+        spec = importlib.util.spec_from_file_location("watch_checkpoints", ROOT / "scripts" / "watch_checkpoints.py")
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+        return module
+
+    def _run(self, monkeypatch, pending, queued=(), tries=0):
+        from types import SimpleNamespace as NS
+
+        wc = self._watcher()
+        entry = cw.Entry(4000, "/c/step=4000.ckpt", 0, cw.DONE, name="run5-step-0004000", score_tries=tries)
+        watch = NS(
+            state=cw.State({4000: entry}), site="mollete", has_baselines=lambda: False,
+            config_for=lambda e: Path("/out/configs/x.yaml"),
+        )  # fmt: skip
+        evaluate = NS(
+            queued_tags=lambda: set(queued), plan=lambda config: ([], []), load_config=lambda path, out: {},
+            pending_scores=lambda jobs: [NS(tag=t) for t in pending],
+        )  # fmt: skip
+        calls = []
+        monkeypatch.setattr(wc.subprocess, "run", lambda command, **kw: calls.append(command))
+        changed = wc.score_pending(watch, evaluate)
+        return entry, changed, calls
+
+    def test_nothing_left_marks_it_scored_and_rebuilds_the_report(self, monkeypatch):
+        entry, changed, calls = self._run(monkeypatch, pending=[])
+        assert entry.scored and changed and calls == []
+
+    def test_pending_scores_are_submitted_once_and_counted(self, monkeypatch):
+        entry, changed, calls = self._run(monkeypatch, pending=["t"])
+        assert not entry.scored and not changed
+        assert [c[2:4] for c in calls] == [["score", "/out/configs/x.yaml"]] and entry.score_tries == 1
+
+    def test_a_queued_scoring_job_is_waited_for(self, monkeypatch):
+        entry, _, calls = self._run(monkeypatch, pending=["t"], queued=["t"])
+        assert calls == [] and entry.score_tries == 0
+
+    def test_a_scorer_that_keeps_failing_is_left_for_a_person(self, monkeypatch):
+        entry, _, calls = self._run(monkeypatch, pending=["t"], tries=cw.MAX_SCORE_TRIES)
+        assert calls == [] and "still missing" in entry.note

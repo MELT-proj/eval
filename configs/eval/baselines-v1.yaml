@@ -13,6 +13,13 @@ name: baselines-v1
 # Everything goes here: config.yaml, submissions.jsonl, logs/, results/.
 output_dir: ${EVAL_ROOT}/baselines-v1
 
+# Only read on a site that packs slices (MELT_PACK_GPUS, e.g. JUPITER): one
+# whole-node job per model (and per set of model arguments), one worker per GPU.
+# Elsewhere every slice is still its own job. See configs/eval/smurf-v1.yaml.
+pack:
+  time: "06:00:00"
+  max_slices: 20
+
 models:
   - name: qwen2-audio-7b-instruct
     model: melt/hf/qwen2_audio
@@ -25,14 +32,14 @@ models:
       # Asks for the bare transcription: with "Transcribe this audio." it
       # prefixes many answers with "The original content of this audio is:", # which is scored as-is.
       asr: "Transcribe this audio. Output only the transcription."
-      st: "Translate this audio into English."
+      st: "Translate this audio into {tgt_lang}."
 
   - name: qwen3-omni-30b-a3b-instruct
     model: melt/hf/qwen3_omni
     args: [-M, batch_size=4]
     instruction:
       asr: "Transcribe this audio."
-      st: "Translate this audio into English."
+      st: "Translate this audio into {tgt_lang}."
 
   # Whisper takes no instruction: it transcribes, or (task=translate) translates into English, and the language is auto-detected. The `instruction` below is ignored by the provider
   - name: whisper-large-v3
@@ -45,9 +52,10 @@ models:
   - name: whisper-large-v3-translate
     model: melt/hf/whisper
     args: [-M, batch_size=8, -M, task=translate]
-    skip: [air-bench-*, mcif-*]
+    # Whisper only translates into English: no en->X.
+    skip: [air-bench-*, mcif-*, fleurs-en_*]
     instruction:
-      st: "Translate this audio into English."
+      st: "Translate this audio into {tgt_lang}."
 
   - name: desta2.5-audio
     model: melt/hf/desta25
@@ -57,7 +65,7 @@ models:
     skip: [mcif-long-*, air-bench-foundation-music]
     instruction:
       asr: "Transcribe this audio. Output only the transcription."
-      st: "Translate this audio into English."
+      st: "Translate this audio into {tgt_lang}."
     # System prompts per task as the DeSTA2.5 authors recommend (see docs/baseline-providers.md).
     # MCQ user turn follows their evaluation_tips.md.
     mcq_instruction: "{question}\nThe answer could be: {options}"
@@ -70,10 +78,12 @@ models:
   - name: smurf
     # Always one .ckpt file in checkpoints/smurf/ (gitignored).
     model: smurf/checkpoints/smurf/*.ckpt
-    args: [-M, batch_size=8]
-    # SMURF's trained prompt; no ST entry, so ST slices are skipped.
+    # Same as configs/eval/smurf-v1.yaml (see the comments there): load on the host,
+    # zero-shot instructions with the sample's languages.
+    args: [-M, batch_size=8, -M, map_location=cpu]
     instruction:
-      asr: "Transcribe this English audio: "
+      asr: "Transcribe this {lang} audio: "
+      st: "Translate this {src_lang} audio into {tgt_lang}: "
 
   - name: melt
     # Always one run folder in checkpoints/melt/. The prompt format is read
@@ -99,11 +109,21 @@ benchmarks:
 
   - name: mcif
     spec: configs/hf/mcif.yaml
+    # Venv of the post-hoc scorers (mcif-bench: BERTScore, COMET), run by `evaluate.py score`.
+    post_venv: ${METRICS_VENV_PATH}
     # Each dataset_id holds several task kinds; one job per kind.
     slices:
       - {task: chunked_asr, dataset_id: mcif-short-fixed-en}
-      - {task: chunked_st, dataset_id: mcif-short-fixed-de}
-      - {task: chunked_st, dataset_id: mcif-short-fixed-it}
+      # COMET-22 DA after mwerSegmenter re-segmentation, MCIF's own pipeline
+      # (needs $MWERSEGMENTER_ROOT: an x86 binary, so this scores on mollete, not on JUPITER).
+      - {task: chunked_st, dataset_id: mcif-short-fixed-de, post_scorers: [melteval/mcif_scoring.py@mcif_official_trans_scorer]}
+      - {task: chunked_st, dataset_id: mcif-short-fixed-it, post_scorers: [melteval/mcif_scoring.py@mcif_official_trans_scorer]}
+      # SQA, short fixed prompt: 220 questions per language on English audio
+      # (de/it: question and reference in that language). Scored after
+      # generation with MCIF's official BERTScore; no judge model.
+      - {task: audio_chat, dataset_id: mcif-short-fixed-en, post_scorers: [melteval/mcif_scoring.py@mcif_official_qa_scorer]}
+      - {task: audio_chat, dataset_id: mcif-short-fixed-de, post_scorers: [melteval/mcif_scoring.py@mcif_official_qa_scorer]}
+      - {task: audio_chat, dataset_id: mcif-short-fixed-it, post_scorers: [melteval/mcif_scoring.py@mcif_official_qa_scorer]}
       - {task: chunked_st, dataset_id: mcif-short-fixed-zh}
       - {task: chunked_asr, dataset_id: mcif-short-mixed-en}
       - {task: chunked_st, dataset_id: mcif-short-mixed-de}
@@ -116,11 +136,17 @@ benchmarks:
       - {task: chunked_st, dataset_id: mcif-long-fixed-zh, args: [-M, batch_size=1, --max-tokens, "4096"], time: "08:00:00"}
 
   - name: librispeech
-    spec: configs/librispeech-hf-test-clean.yaml
+    spec: configs/hf/librispeech-hf-test-clean.yaml
     needs_instruction: true
     slices:
       # `time`: SLURM wall clock; Qwen3-Omni needs ~1h15 here, past the 1h10 default cap.
       - {task: asr, dataset_id: librispeech-test-clean, time: "02:00:00"}
+
+  - name: librispeech-other
+    spec: configs/hf/librispeech-hf-test-other.yaml
+    needs_instruction: true
+    slices:
+      - {task: asr, dataset_id: librispeech-test-other, time: "02:00:00"}
 
   # X->en ST from HF (fixie-ai/covost2, see configs/hf/covost2.yaml); what whisper-large-v3-translate runs on.
   - name: covost2
@@ -134,6 +160,44 @@ benchmarks:
 
   # Shar frozen sets: only where the corpora are. Their paths come from the
   # environment; a machine without them skips these benchmarks.
+  # configs/shar/fleurs24-st-enx-test.yaml: English audio into each EU language
+  # (one slice per target). COMET-22 DA post-hoc, from the English source.
+  - name: fleurs24-st-enx
+    frozen_set: ${FLEURS24_ST_ENX_SET}
+    needs_instruction: true
+    post_venv: ${METRICS_VENV_PATH}
+    slices:
+      - {task: st, dataset_id: fleurs-en_bg, post_scorers: [melteval/rescore.py@comet_scorer]}
+      - {task: st, dataset_id: fleurs-en_cs, post_scorers: [melteval/rescore.py@comet_scorer]}
+      - {task: st, dataset_id: fleurs-en_da, post_scorers: [melteval/rescore.py@comet_scorer]}
+      - {task: st, dataset_id: fleurs-en_de, post_scorers: [melteval/rescore.py@comet_scorer]}
+      - {task: st, dataset_id: fleurs-en_el, post_scorers: [melteval/rescore.py@comet_scorer]}
+      - {task: st, dataset_id: fleurs-en_es, post_scorers: [melteval/rescore.py@comet_scorer]}
+      - {task: st, dataset_id: fleurs-en_et, post_scorers: [melteval/rescore.py@comet_scorer]}
+      - {task: st, dataset_id: fleurs-en_fi, post_scorers: [melteval/rescore.py@comet_scorer]}
+      - {task: st, dataset_id: fleurs-en_fr, post_scorers: [melteval/rescore.py@comet_scorer]}
+      - {task: st, dataset_id: fleurs-en_ga, post_scorers: [melteval/rescore.py@comet_scorer]}
+      - {task: st, dataset_id: fleurs-en_hr, post_scorers: [melteval/rescore.py@comet_scorer]}
+      - {task: st, dataset_id: fleurs-en_hu, post_scorers: [melteval/rescore.py@comet_scorer]}
+      - {task: st, dataset_id: fleurs-en_it, post_scorers: [melteval/rescore.py@comet_scorer]}
+      - {task: st, dataset_id: fleurs-en_lt, post_scorers: [melteval/rescore.py@comet_scorer]}
+      - {task: st, dataset_id: fleurs-en_lv, post_scorers: [melteval/rescore.py@comet_scorer]}
+      - {task: st, dataset_id: fleurs-en_mt, post_scorers: [melteval/rescore.py@comet_scorer]}
+      - {task: st, dataset_id: fleurs-en_nl, post_scorers: [melteval/rescore.py@comet_scorer]}
+      - {task: st, dataset_id: fleurs-en_pl, post_scorers: [melteval/rescore.py@comet_scorer]}
+      - {task: st, dataset_id: fleurs-en_pt, post_scorers: [melteval/rescore.py@comet_scorer]}
+      - {task: st, dataset_id: fleurs-en_ro, post_scorers: [melteval/rescore.py@comet_scorer]}
+      - {task: st, dataset_id: fleurs-en_sk, post_scorers: [melteval/rescore.py@comet_scorer]}
+      - {task: st, dataset_id: fleurs-en_sl, post_scorers: [melteval/rescore.py@comet_scorer]}
+      - {task: st, dataset_id: fleurs-en_sv, post_scorers: [melteval/rescore.py@comet_scorer]}
+
+  # configs/shar/voxpopuli-test.yaml: 16 languages, reference field per language.
+  - name: voxpopuli
+    frozen_set: ${VOXPOPULI_SET}
+    needs_instruction: true
+    slices:
+      - {task: asr}
+
   - name: fleurs24-asr
     frozen_set: ${FLEURS24_ASR_SET}
     needs_instruction: true
@@ -143,8 +207,10 @@ benchmarks:
   - name: fleurs24-st-xen
     frozen_set: ${FLEURS24_ST_XEN_SET}
     needs_instruction: true
+    # COMET-22 DA (melteval/rescore.py), scored after generation in the metrics venv.
+    post_venv: ${METRICS_VENV_PATH}
     slices:
-      - {task: st, dataset_id: fleurs-de_en}
-      - {task: st, dataset_id: fleurs-es_en}
-      - {task: st, dataset_id: fleurs-fr_en}
-      - {task: st, dataset_id: fleurs-it_en}
+      - {task: st, dataset_id: fleurs-de_en, post_scorers: [melteval/rescore.py@comet_scorer]}
+      - {task: st, dataset_id: fleurs-es_en, post_scorers: [melteval/rescore.py@comet_scorer]}
+      - {task: st, dataset_id: fleurs-fr_en, post_scorers: [melteval/rescore.py@comet_scorer]}
+      - {task: st, dataset_id: fleurs-it_en, post_scorers: [melteval/rescore.py@comet_scorer]}

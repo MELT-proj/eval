@@ -22,6 +22,10 @@ STEP_RE = re.compile(r"step=(\d+)")
 #: Ledger statuses. ``skipped`` was seen but not chosen by ``every_n``.
 SELECTED, SKIPPED, SUBMITTED, DONE, FAILED, DELETED = "selected", "skipped", "submitted", "done", "failed", "deleted"
 
+#: Post-hoc scoring is submitted at most this many times per checkpoint: a
+#: scorer that keeps failing is left for a person, not resubmitted every pass.
+MAX_SCORE_TRIES = 3
+
 
 @dataclass
 class Checkpoint:
@@ -43,6 +47,11 @@ class Entry:
     first_seen: str = ""
     submitted_at: float = 0.0  #: Unix time of the last submission.
     note: str = ""
+    #: Its row in the report, fixed when first seen. Empty in ledgers written
+    #: before run names existed: those keep ``step-<N>`` (:func:`name_of`).
+    name: str = ""
+    scored: bool = False  #: Every post-hoc scorer (BERTScore, COMET) has run on its logs.
+    score_tries: int = 0  #: Scoring submissions so far; capped by :data:`MAX_SCORE_TRIES`.
 
 
 @dataclass
@@ -63,6 +72,8 @@ class Baselines:
     status: str = ""  #: Empty until submitted, then ``submitted``, ``done`` or ``failed``.
     submitted_at: float = 0.0
     note: str = ""
+    scored: bool = False
+    score_tries: int = 0
 
 
 @dataclass
@@ -110,21 +121,42 @@ def is_selected(seq: int, every_n: int) -> bool:
     return seq % max(every_n, 1) == 0
 
 
-def model_name(step: int) -> str:
-    """Name of a checkpoint's row in the report (zero-padded so it sorts by step)."""
-    return f"step-{step:07d}"
+def run_name(ckpt_dir: str | Path) -> str:
+    """The training run a checkpoint folder belongs to: its name, or its parent's if it is ``checkpoints``."""
+    path = Path(ckpt_dir).expanduser().resolve()
+    return path.parent.name if path.name == "checkpoints" else path.name
 
 
-def step_config(template: dict, step: int, path: Path, output_dir: Path) -> dict:
+def model_name(step: int, run: str | None = None) -> str:
+    """Name of a checkpoint's row in the report: ``<run>-step-<N>``, zero-padded so it sorts by step."""
+    return f"{run}-step-{step:07d}" if run else f"step-{step:07d}"
+
+
+def name_of(entry: Entry) -> str:
+    """The report name of a ledger entry (``step-<N>`` for one recorded before run names existed)."""
+    return entry.name or model_name(entry.step)
+
+
+def step_config(template: dict, step: int, path: Path, output_dir: Path, name: str | None = None) -> dict:
     """The ``scripts/evaluate.py`` config that evaluates one checkpoint.
 
     The template's first model is the prototype (its ``args``, ``instruction``
-    and ``venv`` carry over); only its name and checkpoint change. Every step
-    shares *output_dir*, so the report has one column per checkpoint.
+    and ``venv`` carry over); its name and checkpoint change, and its logs are
+    tagged with the checkpoint's full path (``melteval_checkpoint``), which a
+    short name cannot carry. Every step shares *output_dir*, so the report has
+    one column per checkpoint.
     """
+    proto = template["models"][0]
     config = {k: v for k, v in template.items() if k not in ("models", "benchmarks")}
     config["output_dir"] = str(output_dir)
-    config["models"] = [{**template["models"][0], "name": model_name(step), "model": f"smurf/{path}"}]
+    config["models"] = [
+        {
+            **proto,
+            "name": name or model_name(step),
+            "model": f"smurf/{path}",
+            "args": [*proto.get("args", []), "--metadata", f"melteval_checkpoint={path}"],
+        }
+    ]
     config["benchmarks"] = template["benchmarks"]
     return config
 

@@ -1,0 +1,114 @@
+# VoxPopuli ASR test set: the `test` split of the 16 VoxPopuli languages with
+# transcripts, from the SMURF "azeros" tree on JUPITER
+# (/e/data1/smurf4eu-data/speech/azeros/voxpopuli/<lang>/test).
+#
+# Freezing: azeros has no `.idx` files and the reader needs random access to
+# audio, so index a copy first and freeze from it:
+#
+#   python scripts/index_shar.py $AZEROS_DIR $AZEROS_INDEXED_DIR \
+#       voxpopuli/{en,de,fr,es,pl,it,ro,hu,cs,nl,fi,hr,sk,sl,et,lt}/test
+#   melteval freeze configs/shar/voxpopuli-test.yaml -o <frozen>/voxpopuli-test
+#   export VOXPOPULI_SET=<frozen>/voxpopuli-test
+#
+# Reference field. Each cut has `supervisions[0].text` ("text") and
+# `custom.pnc_text` ("pnc_text"); the right one depends on the language
+# (checked on JUPITER 2026-10-10, one shard per language):
+#
+# * en, de, fr, es, it -> pnc_text. "text" is normalised (lowercase, no
+#   punctuation, numbers as words: "deux mille huit"); pnc_text is cased,
+#   punctuated, with digits ("2008"), and present on every cut.
+# * the other 11 -> text. It is already cased and punctuated, while pnc_text is
+#   missing on some cuts (hr: 334 of 666) and would silently fall back to text
+#   there, mixing two sources in one language.
+#
+# This is important because the scorer ignores case and punctuation but not digits 
+# vs words ("2008" vs "deux mille huit" is an error), and models write digits.
+# Why the two groups differ is unknown (the 11 are not from speechllm's reader;
+# ask whoever built the azeros tree). To inspect a language:
+#   zcat $AZEROS_DIR/voxpopuli/<lang>/test/cuts.000000.jsonl.gz | head -1
+#
+# et (51 cuts) and lt (42) give noisy WER. Cut ids repeat across the 11
+# re-exported languages, so samples are never keyed by corpus id.
+name: voxpopuli-test
+seed: 0
+
+input_cfg:
+  - type: lhotse_shar
+    shar_path: ${AZEROS_INDEXED_DIR}/voxpopuli/en/test
+    text_field: custom.pnc_text
+    tags: {task: asr, lang: en, dataset_id: voxpopuli}
+
+  - type: lhotse_shar
+    shar_path: ${AZEROS_INDEXED_DIR}/voxpopuli/de/test
+    text_field: custom.pnc_text
+    tags: {task: asr, lang: de, dataset_id: voxpopuli}
+
+  - type: lhotse_shar
+    shar_path: ${AZEROS_INDEXED_DIR}/voxpopuli/fr/test
+    text_field: custom.pnc_text
+    tags: {task: asr, lang: fr, dataset_id: voxpopuli}
+
+  - type: lhotse_shar
+    shar_path: ${AZEROS_INDEXED_DIR}/voxpopuli/es/test
+    text_field: custom.pnc_text
+    tags: {task: asr, lang: es, dataset_id: voxpopuli}
+
+  - type: lhotse_shar
+    shar_path: ${AZEROS_INDEXED_DIR}/voxpopuli/it/test
+    text_field: custom.pnc_text
+    tags: {task: asr, lang: it, dataset_id: voxpopuli}
+
+  - type: lhotse_shar
+    shar_path: ${AZEROS_INDEXED_DIR}/voxpopuli/pl/test
+    text_field: text
+    tags: {task: asr, lang: pl, dataset_id: voxpopuli}
+
+  - type: lhotse_shar
+    shar_path: ${AZEROS_INDEXED_DIR}/voxpopuli/ro/test
+    text_field: text
+    tags: {task: asr, lang: ro, dataset_id: voxpopuli}
+
+  - type: lhotse_shar
+    shar_path: ${AZEROS_INDEXED_DIR}/voxpopuli/hu/test
+    text_field: text
+    tags: {task: asr, lang: hu, dataset_id: voxpopuli}
+
+  - type: lhotse_shar
+    shar_path: ${AZEROS_INDEXED_DIR}/voxpopuli/cs/test
+    text_field: text
+    tags: {task: asr, lang: cs, dataset_id: voxpopuli}
+
+  - type: lhotse_shar
+    shar_path: ${AZEROS_INDEXED_DIR}/voxpopuli/nl/test
+    text_field: text
+    tags: {task: asr, lang: nl, dataset_id: voxpopuli}
+
+  - type: lhotse_shar
+    shar_path: ${AZEROS_INDEXED_DIR}/voxpopuli/fi/test
+    text_field: text
+    tags: {task: asr, lang: fi, dataset_id: voxpopuli}
+
+  - type: lhotse_shar
+    shar_path: ${AZEROS_INDEXED_DIR}/voxpopuli/hr/test
+    text_field: text
+    tags: {task: asr, lang: hr, dataset_id: voxpopuli}
+
+  - type: lhotse_shar
+    shar_path: ${AZEROS_INDEXED_DIR}/voxpopuli/sk/test
+    text_field: text
+    tags: {task: asr, lang: sk, dataset_id: voxpopuli}
+
+  - type: lhotse_shar
+    shar_path: ${AZEROS_INDEXED_DIR}/voxpopuli/sl/test
+    text_field: text
+    tags: {task: asr, lang: sl, dataset_id: voxpopuli}
+
+  - type: lhotse_shar
+    shar_path: ${AZEROS_INDEXED_DIR}/voxpopuli/et/test
+    text_field: text
+    tags: {task: asr, lang: et, dataset_id: voxpopuli}
+
+  - type: lhotse_shar
+    shar_path: ${AZEROS_INDEXED_DIR}/voxpopuli/lt/test
+    text_field: text
+    tags: {task: asr, lang: lt, dataset_id: voxpopuli}

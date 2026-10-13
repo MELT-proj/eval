@@ -189,7 +189,7 @@ def select_template(task: str, sample_key: str, spec: FormatSpec) -> str:
         ValueError: If the task has no template pool, or the selection strategy
             is unknown.
     """
-    from melt.training.data.audio.lhotse.helpers import TASK_TEMPLATES, resolve_custom_template
+    from melt.training.data.audio.lhotse.helpers import TASK_TEMPLATES, resolve_custom_template # type: ignore
 
     if spec.prompt_template_selection == "custom":
         return resolve_custom_template(spec.prompt_template, task)
@@ -244,7 +244,7 @@ def render_user_prompt(
             Deliberately as strict as training: a code training would reject
             must not quietly produce a different prompt here.
     """
-    from melt.training.data.audio.lhotse.helpers import (
+    from melt.training.data.audio.lhotse.helpers import ( # type: ignore
         LANGUAGE_ISO_TO_NAME,
         _resolve_language_name_safe,
     )
@@ -487,23 +487,31 @@ def render_smurf_prompt(
         ) from exc
 
 
+#: Copy of ``LANGUAGE_ISO_TO_NAME`` (training package, ``melt-proj``) for
+#: environments without it, limited to the codes the benchmarks use (EU-24 plus
+#: ru/uk), so ``{lang}`` renders the same name with or without melt-proj.
+SMURF_LANGUAGE_NAMES: dict[str, str] = {
+    "bg": "Bulgarian", "cs": "Czech", "da": "Danish", "de": "German", "el": "Greek", "en": "English",
+    "es": "Spanish", "et": "Estonian", "fi": "Finnish", "fr": "French", "ga": "Irish", "hr": "Croatian",
+    "hu": "Hungarian", "it": "Italian", "lt": "Lithuanian", "lv": "Latvian", "mt": "Maltese", "nl": "Dutch",
+    "pl": "Polish", "pt": "Portuguese", "ro": "Romanian", "ru": "Russian", "sk": "Slovak", "sl": "Slovenian",
+    "sv": "Swedish", "uk": "Ukrainian",
+}  # fmt: skip
+
+
 def _language_name(code: str, key: str) -> str:
     """Resolve an ISO code to the language name the training code uses.
 
+    The training package's table wins when it is importable; otherwise
+    :data:`SMURF_LANGUAGE_NAMES` stands in for it.
+
     Raises:
-        ValueError: If the table is unavailable or the code is not in it. The
-            table lives in the training package, which a SMURF-only
-            environment has no reason to install -- hence the suggestion to use
-            the ``_code`` placeholder or a literal instruction instead.
+        ValueError: If the code is in neither table.
     """
     try:
-        from melt.training.data.audio.lhotse.helpers import LANGUAGE_ISO_TO_NAME
-    except ImportError as exc:
-        raise ValueError(
-            f"The instruction uses {{{key}}}, which needs the training package's language table "
-            f"(melt-proj is not importable: {exc}). In a SMURF-only environment use "
-            f"{{{key}_code}} for the ISO code, or write the language into the instruction."
-        ) from exc
+        from melt.training.data.audio.lhotse.helpers import LANGUAGE_ISO_TO_NAME # type: ignore
+    except ImportError:
+        LANGUAGE_ISO_TO_NAME = SMURF_LANGUAGE_NAMES  # noqa: N806 - same name as the table it stands in for
 
     name = LANGUAGE_ISO_TO_NAME.get((code or "").lower())
     if name is None:

@@ -1,5 +1,7 @@
 """Tests for the SMURF prompt handling in the melteval package."""
 
+import sys
+
 import pytest
 
 from melteval.prompt import load_smurf_prompt_spec, render_smurf_prompt
@@ -116,21 +118,32 @@ class TestRenderSmurfPrompt:
         with pytest.raises(ValueError, match="Unknown placeholder"):
             render_smurf_prompt("Transcribe {speaker}: ", task="asr", lang="en")
 
-    @pytest.mark.skipif(not HAS_MELT, reason="needs the training package's language table")
     def test_language_name_matches_the_one_melt_prompts_use(self):
         assert render_smurf_prompt("Transcribe this {lang} audio: ", lang="en") == (
             "Transcribe this English audio: "
         )
 
-    @pytest.mark.skipif(not HAS_MELT, reason="needs the training package's language table")
     def test_unsupported_language_code_is_an_error(self):
         with pytest.raises(ValueError, match="Unsupported language ISO code"):
             render_smurf_prompt("Transcribe this {lang} audio: ", lang="zz")
 
-    @pytest.mark.skipif(HAS_MELT, reason="table available, so the fallback path is not reachable")
-    def test_language_name_without_the_table_says_what_to_do_instead(self):
-        with pytest.raises(ValueError, match="lang_code"):
-            render_smurf_prompt("Transcribe this {lang} audio: ", lang="en")
+    def test_without_the_training_package_the_fallback_table_names_the_language(self, monkeypatch):
+        """A SMURF-only venv has no melt-proj; ``{lang}`` must still render, not fail."""
+        monkeypatch.setitem(sys.modules, "melt.training.data.audio.lhotse.helpers", None)
+        assert render_smurf_prompt("Transcribe this {lang} audio: ", lang="pl") == "Transcribe this Polish audio: "
+        assert render_smurf_prompt("Translate this {src_lang} audio into English: ", src_lang="de") == (
+            "Translate this German audio into English: "
+        )
+        with pytest.raises(ValueError, match="Unsupported language ISO code"):
+            render_smurf_prompt("Transcribe this {lang} audio: ", lang="zz")
+
+    @pytest.mark.skipif(not HAS_MELT, reason="needs the training package's language table to compare against")
+    def test_the_fallback_table_agrees_with_the_training_package(self):
+        from melt.training.data.audio.lhotse.helpers import LANGUAGE_ISO_TO_NAME
+
+        from melteval.prompt import SMURF_LANGUAGE_NAMES
+
+        assert {code: LANGUAGE_ISO_TO_NAME[code] for code in SMURF_LANGUAGE_NAMES} == SMURF_LANGUAGE_NAMES
 
 
 class TestStripAudioToken:

@@ -48,10 +48,13 @@ Neither happens for ASR, which needs only ``jiwer``.
 
 from __future__ import annotations
 
+import contextlib
 import gzip
+import os
+import tempfile
 
-from inspect_ai.scorer import Metric, SampleScore, Score, Scorer, Target, Value, metric, scorer
-from inspect_ai.solver import TaskState
+from inspect_ai.scorer import Metric, SampleScore, Score, Scorer, Target, Value, metric, scorer # type: ignore
+from inspect_ai.solver import TaskState # type: ignore
 
 from melteval.readers.mcif import download_reference_gz
 
@@ -106,20 +109,39 @@ def _read_official_reference(repo: str, revision: str, track: str, lang: str):
     """Download the exact reference file that generated *scores* and parse it
     with the official reader, so grouping/qa_type/source-transcript extraction
     all match the paper's own pipeline byte for byte."""
-    from mcif.evaluation import read_reference
+    from mcif.evaluation import read_reference # type: ignore
 
     ref_gz = download_reference_gz(repo, revision, track, lang)
     with gzip.open(ref_gz, "rb") as fh:
         return read_reference(fh, track, lang, modality="audio")
 
 
-def _reraise_missing_completion(exc: KeyError, macro_task: str) -> None:
-    raise ValueError(
+def _missing_completion_error(exc: KeyError, macro_task: str) -> ValueError:
+    return ValueError(
         f"Missing completion for sample id {exc}, needed by a {macro_task} reference group. "
         "Official scoring needs every member of every group present in the log -- a partial "
         "run (`-T limit=`, a debug slice) cannot be scored this way; generate the whole "
         "dataset_id first."
-    ) from exc
+    )
+
+
+@contextlib.contextmanager
+def _private_cwd():
+    """Run the enclosed code from a fresh temporary directory.
+
+    ``mwerSegmenter`` writes its output to a fixed ``__segments`` file in the
+    *current* directory, and ``mcif.evaluation.MwerSegmenter`` reads it back
+    from there. Two scoring jobs started from the same directory (the repo
+    root, under ``infra/run_score.sbatch``) would read each other's
+    segmentation and report a wrong COMET with no error.
+    """
+    previous = os.getcwd()
+    with tempfile.TemporaryDirectory(prefix="mcif-mwer-") as tmp:
+        os.chdir(tmp)
+        try:
+            yield
+        finally:
+            os.chdir(previous)
 
 
 @metric
@@ -138,12 +160,12 @@ def official_asr_wer() -> Metric:
                 f"No ASR reference for track={track!r} lang={lang!r}. ASR is only defined "
                 "for the English target -- score this log with official_trans_comet instead."
             )
-        from mcif.evaluation import score_asr
+        from mcif.evaluation import score_asr # type: ignore
 
         try:
             return score_asr(_hypo_dict(scores), ref_dict, lang)
         except KeyError as exc:
-            _reraise_missing_completion(exc, "ASR")
+            raise _missing_completion_error(exc, "ASR") from exc
 
     return calculate
 
@@ -166,12 +188,13 @@ def official_trans_comet() -> Metric:
                 "defined for non-English targets -- score an English log with "
                 "official_asr_wer instead."
             )
-        from mcif.evaluation import score_st
+        from mcif.evaluation import score_st # type: ignore
 
         try:
-            return score_st(_hypo_dict(scores), ref_dict, lang)
+            with _private_cwd():
+                return score_st(_hypo_dict(scores), ref_dict, lang)
         except KeyError as exc:
-            _reraise_missing_completion(exc, "TRANS")
+            raise _missing_completion_error(exc, "TRANS") from exc
 
     return calculate
 
@@ -193,15 +216,15 @@ def official_bertscore(macro_task: str) -> Metric:
             )
         try:
             if macro_task == "QA":
-                from mcif.evaluation import score_sqa
+                from mcif.evaluation import score_sqa # type: ignore
 
                 score, _ = score_sqa(_hypo_dict(scores), ref_dict, lang, breakdown_qa_types=False)
             else:
-                from mcif.evaluation import score_ssum
+                from mcif.evaluation import score_ssum # type: ignore
 
                 score = score_ssum(_hypo_dict(scores), ref_dict, lang)
         except KeyError as exc:
-            _reraise_missing_completion(exc, macro_task)
+            raise _missing_completion_error(exc, macro_task) from exc
         return score
 
     return calculate

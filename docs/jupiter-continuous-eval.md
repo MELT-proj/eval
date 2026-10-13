@@ -2,6 +2,8 @@
 
 The watcher is a thin loop over `scripts/evaluate.py`: for each checkpoint it writes one config and calls `evaluate.py run --site jupiter`, so jobs are submitted with the settings in [infra/sites/jupiter.sh](../infra/sites/jupiter.sh). Jobs, logs and reports are the ones described in [running-evaluations.md](running-evaluations.md).
 
+JUPITER only hands out whole nodes (4 GH200), so the slices are not submitted one 1-GPU job each but in **packs**: one SLURM job per node, one worker per GPU, the checkpoint loaded once per worker. A SMURF checkpoint (55 slices, eval suite v1) is 3 packs of at most 20 slices (`pack:` in [configs/eval/smurf-v1.yaml](../configs/eval/smurf-v1.yaml)) instead of 55 jobs, and the checkpoint is loaded 12 times instead of 55. The site file turns this on (`MELT_PACK_GPUS=4`). Details: [running-evaluations.md, "Packs"](running-evaluations.md#packs-whole-node-sites-jupiter).
+
 | Part                                            | What                                              |
 | ----------------------------------------------- | ------------------------------------------------- |
 | [1. Set up](#1-set-up-once)                      | session, code, environment, downloads, smoke test |
@@ -44,6 +46,16 @@ python -c "import torch, nemo, fbk_speechllm, inspect_ai, melteval; print('ok')"
 
 From here on, every command assumes this venv is active (run the `source .../activate` line again after each login).
 
+**Metrics venv.** MCIF's official scorers (BERTScore for SQA, COMET for MCIF ST) and COMET for FLEURS run *after* generation, from a venv of their own (`$METRICS_VENV_PATH` in [infra/sites/jupiter.sh](../infra/sites/jupiter.sh)): `mcif-bench` and `unbabel-comet` pin their own `transformers`.
+
+```bash
+uv venv --python 3.12 $PROJECT/$USER/venvs/metrics-eval
+VIRTUAL_ENV=$PROJECT/$USER/venvs/metrics-eval uv pip install -e . mcif-bench "setuptools<81" "transformers<5"
+$PROJECT/$USER/venvs/metrics-eval/bin/python -c "from mcif.evaluation import score_sqa; import comet, melteval; print('ok')"
+```
+
+**Freezing needs the training package.** `melteval freeze` over a Shar source takes its reference rules from `melt-proj`, which the SMURF venv does not have. Freeze from a venv with `melt-eval[shar]` (the one that froze `fleurs24-st-xen-test`).
+
 ### 1.4. Downloads
 
 The running nodes have no internet and jobs run with `HF_HUB_OFFLINE=1`, so anything missing from the cache fails the job. Download it here, into `$HF_HOME` (`$SCRATCH/$USER/hf_cache`).
@@ -52,11 +64,11 @@ The running nodes have no internet and jobs run with `HF_HUB_OFFLINE=1`, so anyt
 | - | ------------------------------------------- | ---------------------------------------------- |
 | 1 | `utter-project/EuroLLM-9B-Instruct-2512`  | the SMURF's LLM                                |
 | 2 | `nvidia/canary-1b-v2`                     | the SMURF's audio encoder (`pretrained_asr`) |
-| 3 | AIR-Bench data (`pbcong/AIR-bench`)       | `air-bench`                                  |
-| 4 | MCIF audio and references (`FBK-MT/MCIF`) | `mcif`                                       |
-| 5 | LibriSpeech test-clean                      | `librispeech`                                |
-| 6 | `Qwen/Qwen2-Audio-7B-Instruct`            | baseline (2.3)                                 |
-| 7 | `Qwen/Qwen3-Omni-30B-A3B-Instruct`        | baseline (2.3), about 60 GB                    |
+| 3 | MCIF audio and references (`FBK-MT/MCIF`) | `mcif`                                       |
+| 4 | LibriSpeech test-clean and test-other       | `librispeech`, `librispeech-other`           |
+| 5 | `Qwen/Qwen2-Audio-7B-Instruct`            | baseline (2.3)                                 |
+| 6 | `Qwen/Qwen3-Omni-30B-A3B-Instruct`        | baseline (2.3), about 60 GB                    |
+| 7 | `roberta-large`, `bert-base-multilingual-cased`, `Unbabel/wmt22-comet-da`, `xlm-roberta-large` | BERTScore (MCIF SQA: `roberta-large` for en, the multilingual BERT for de/it) and COMET, post-hoc (2.5) |
 
 ```bash
 cd $PROJECT/$USER/eval
@@ -67,21 +79,26 @@ huggingface-cli download utter-project/EuroLLM-9B-Instruct-2512
 huggingface-cli download nvidia/canary-1b-v2
 ls $HF_HOME/hub/models--nvidia--canary-1b-v2/snapshots/*/    # must contain canary-1b-v2.nemo
 
-# 3, 5. AIR-Bench and LibriSpeech
-python scripts/evaluate.py prefetch configs/eval/smurf.yaml --benchmarks air-bench librispeech
+# 4. LibriSpeech
+python scripts/evaluate.py prefetch configs/eval/smurf-v1.yaml --benchmarks librispeech librispeech-other
 
-# 6-7. The baselines' models
+# 7. Post-hoc metric models (the short names are the ones bert-score and COMET ask for)
+huggingface-cli download roberta-large
+huggingface-cli download bert-base-multilingual-cased
+huggingface-cli download Unbabel/wmt22-comet-da
+huggingface-cli download xlm-roberta-large
+
+# 5-6. The baselines' models
 huggingface-cli download Qwen/Qwen2-Audio-7B-Instruct
 huggingface-cli download Qwen/Qwen3-Omni-30B-A3B-Instruct
 
-# 4. MCIF, audio included
+# 3. MCIF, audio included
 python - <<'EOF'
 from melteval.dataset import spec_dataset
 from melteval.readers.base import reader_for_locator
 from melteval.manifest import AudioLocator
-for dataset_id, task in [("mcif-short-fixed-en", "chunked_asr"), ("mcif-short-fixed-de", "chunked_st"),
-                         ("mcif-short-fixed-it", "chunked_st"), ("mcif-short-fixed-zh", "chunked_st")]:
-    ds = spec_dataset("configs/hf/mcif.yaml", dataset_id=dataset_id, task=task)
+for dataset_id in ["mcif-short-fixed-en", "mcif-short-fixed-de", "mcif-short-fixed-it"]:
+    ds = spec_dataset("configs/hf/mcif.yaml", dataset_id=dataset_id)   # ASR/ST chunks and SQA questions
     for s in ds.samples:
         loc = AudioLocator.from_dict(s.metadata["audio"]); reader_for_locator(loc).load_audio(loc)
     print(dataset_id, len(ds.samples), "ok")      # one "ok" line per dataset
@@ -92,12 +109,27 @@ export HF_HUB_OFFLINE=1
 
 ### 1.5. Local datasets
 
-Showcased here for FLEUR, but this should be done for each local dataset.
+Three frozen sets, built once, from a venv with `melt-eval[shar]` (see 1.3).
+
+| Set | Recipe | Variable | Source | Expected `dropped_no_reference` |
+| --- | ------ | -------- | ------ | ------------------------------- |
+| FLEURS ST EU→en | [configs/shar/fleurs24-st-xen-test.yaml](../configs/shar/fleurs24-st-xen-test.yaml) | `FLEURS24_ST_XEN_SET` | `$LOCAL_DATASETS_DIR/fleurs` | 0 |
+| FLEURS ST en→EU | [configs/shar/fleurs24-st-enx-test.yaml](../configs/shar/fleurs24-st-enx-test.yaml) | `FLEURS24_ST_ENX_SET` | `$LOCAL_DATASETS_DIR/fleurs/en_us` | >0, on purpose: a target lacks some English sentences (nl: 251 of 350 kept) |
+| VoxPopuli, 16 languages | [configs/shar/voxpopuli-test.yaml](../configs/shar/voxpopuli-test.yaml) | `VOXPOPULI_SET` | `$AZEROS_INDEXED_DIR/voxpopuli` | 0 |
+
+VoxPopuli comes from the azeros tree (plain Shar, i.e., `cuts.*.jsonl.gz`, no `.idx`), so this conversion needs to be performed first:
 
 ```bash
-export LOCAL_DATASETS_DIR=<indexed path>
-melteval freeze configs/fleurs24-asr-test.yaml -o $PROJECT/$USER/frozen/fleurs24-asr-test
-export FLEURS24_ASR_SET=$PROJECT/$USER/frozen/fleurs24-asr-test
+F=$PROJECT/$USER/frozen
+python scripts/index_shar.py $AZEROS_DIR $AZEROS_INDEXED_DIR \
+    voxpopuli/{en,de,fr,es,pl,it,ro,hu,cs,nl,fi,hr,sk,sl,et,lt}/test
+
+melteval freeze configs/shar/fleurs24-st-xen-test.yaml -o $F/fleurs24-st-xen-test
+melteval freeze configs/shar/fleurs24-st-enx-test.yaml -o $F/fleurs24-st-enx-test
+melteval freeze configs/shar/voxpopuli-test.yaml  -o $F/voxpopuli-test
+
+export FLEURS24_ST_XEN_SET=$F/fleurs24-st-xen-test \
+       FLEURS24_ST_ENX_SET=$F/fleurs24-st-enx-test VOXPOPULI_SET=$F/voxpopuli-test
 ```
 
 ### 1.6. Smoke test
@@ -114,34 +146,32 @@ ln -s /e/project1/e-ext-2025e01-100/speech_stream/eurollm_speech_config_run/chec
 **2. Check that everything resolves.** Runs nothing:
 
 ```bash
-python scripts/evaluate.py plan configs/eval/smurf.yaml --site jupiter -v
+python scripts/evaluate.py plan configs/eval/smurf-v1.yaml --site jupiter -v
 pytest tests/test_ckpt_watch.py -q
 ```
 
-The `skip` lines say what is missing. librispeech, air-bench and mcif should show as `missing` (pending), not skipped.
+The `skip` lines say what is missing. librispeech, librispeech-other and mcif should show as `missing` (pending), not skipped; fleurs24-* and voxpopuli are skipped until their variables are exported (1.5). The last lines list the packs `run` would submit: which slices go together, on 4 GPUs each.
 
 **3. Run 5 samples per benchmark.**
 
 ```bash
-python scripts/evaluate.py run configs/eval/smurf.yaml --site jupiter --limit 5 --wait
+python scripts/evaluate.py run configs/eval/smurf-v1.yaml --site jupiter --limit 5 --wait
 ```
 
-Output goes to `$EVAL_ROOT/smurf/smoke-limit5/`. If a job fails, read the `slurm-*.out` in its slice folder. While it runs, from another shell:
+This submits a few packs (one whole-node job each), not one job per slice. Output goes to `$EVAL_ROOT/smurf/smoke-limit5/`. Where to look:
 
-```bash
-squeue --me -o "%.10i %.25j %.8T %.10M %.10l %R"
-watch -n 30 'squeue --me -o "%.10i %.25j %.8T %.10M %R"'     # same, refreshing
-sacct -j <id> --format=JobID,Elapsed,State                    # how long a job took
-```
+- `packs/<id>-slurm-<jobid>.out`: the pack's own output, which slice each GPU started and finished (`[pack gpu2] done ...` / `FAILED ...`).
+- `logs/<model>/<benchmark>/<slice>/pack-<jobid>-gpu<N>.out`: that slice's inspect output, including the traceback if it failed.
+- `packs/<id>.json`: the manifest, which slices the pack holds.
 
 ## 2. Run the watcher
 
-`scripts/watch_checkpoints.py` polls the training run's checkpoint folder. For each new `step=N.ckpt` it waits until the file has been untouched for `settle_minutes`, decides whether `every_n` selects it, and if so submits the evaluation as SLURM jobs. When the jobs finish it rebuilds the report, one column per checkpoint. It never deletes a checkpoint.
+`scripts/watch_checkpoints.py` polls the training run's checkpoint folder. For each new `step=N.ckpt` it waits until the file has been untouched for `settle_minutes`, decides whether `every_n` selects it, and if so submits the evaluation as SLURM jobs (whole-node packs on JUPITER, see above). When the jobs finish it rebuilds the report, one column per checkpoint. It never deletes a checkpoint.
 
 ```
 new step=N.ckpt ─► written? (untouched for settle_minutes)
-                 ─► every_n picks it? ─► configs/step-N.yaml ─► evaluate.py run --site ... ─► SLURM
-results/summary.csv (one column per checkpoint) ◄─ report ◄─ done ◄─ jobs finished
+                 ─► every_n picks it? ─► configs/<run>-step-N.yaml ─► evaluate.py run --site ... ─► SLURM (packs: 1 job per node, 1 worker per GPU)
+results/summary.csv (one column per checkpoint) ◄─ report ◄─ scored ◄─ evaluate.py score ◄─ done ◄─ jobs finished
 candidates ─► list what retention does not keep; you delete
 ```
 
@@ -168,7 +198,7 @@ Iif `tmux attach` says `no sessions`, the process is gone. Start it again: it re
 
 `baselines_models` in the watch config lists fixed models that are evaluated **once**, on the same benchmarks as the checkpoints, into the same `output_dir`. Their logs stay in `logs/` and the report gets one extra column per baseline. They do not count in `max_in_flight` or retention.
 
-- Download their weights first (1.4, rows 6-7).
+- Download their weights first (1.4, rows 5-6).
 - A `failed` baseline is not retried by itself. After fixing the cause: `python scripts/watch_checkpoints.py rerun-baselines configs/watch/smurf.yaml` (slices that already succeeded are left alone).
 - To run without baselines,comment out these two keys in [configs/watch/smurf.yaml](../configs/watch/smurf.yaml) and restart the watcher:
 
@@ -179,9 +209,34 @@ Iif `tmux attach` says `no sessions`, the process is gone. Start it again: it re
 
   Logs already written stay in `logs/` and keep showing in the report.
 
-### 2.4. Some things to take into account
+### 2.4. Report names
+
+Each checkpoint is a row named `<run>-step-<N>` (zero-padded, so a run's checkpoints sort by step). `<run>` is `run_name:` in the watch config, or else the name of `ckpt_dir` (of its parent when the folder is called `checkpoints`). The full path of the checkpoint is in every log (`melteval_checkpoint`) and in the `checkpoint` column of the `runs` sheet. Checkpoints already in a ledger from before this keep their old `step-<N>` name, so a running watcher keeps finding its logs.
+
+### 2.5. Post-hoc scoring
+
+Some metrics need a model of their own and are computed after generation, by `evaluate.py score`, from the metrics venv, in a SLURM job:
+
+| Slices | Scorer | Metric in the report |
+| ------ | ------ | -------------------- |
+| MCIF SQA (`audio_chat`, en/de/it) | `mcif_scoring.py@mcif_official_qa_scorer` | `official_bertscore` |
+| MCIF ST (`chunked_st`, de/it) | `mcif_scoring.py@mcif_official_trans_scorer` | `official_trans_comet` (needs mwerSegmenter) |
+| FLEURS ST, both directions | `rescore.py@comet_scorer` | `comet`, and `comet_coverage` (share of samples COMET could score) |
+
+They are declared per slice in [configs/eval/smurf-v1.yaml](../configs/eval/smurf-v1.yaml) (`post_scorers:`, with `post_venv:` on the benchmark). The watcher runs them by itself: once a checkpoint's generation is `done`, each pass calls `evaluate.py score`, which submits what is missing and skips what is already queued, and the checkpoint becomes `scored` when nothing is left. Until then the report shows `pending` for those metrics. A missing score never makes a checkpoint `failed`; after 3 submissions that did not complete it, the watcher stops trying and `status` says so.
+
+By hand, for any config:
+
+```bash
+python scripts/evaluate.py score $EVAL_ROOT/smurf-run/configs/<run>-step-0004000.yaml --site jupiter --wait
+```
+
+The official MCIF scorers need every sample of a `dataset_id` in the log: they cannot score a `--limit` run.
+
+### 2.6. Some things to take into account
 
 - **Ledger**: delete an entry (or use `enqueue`) to redo a step.
+- **Packs and time limits**: if a pack hits its wall clock, the slices it did not finish are `missing` and the next `run` (the watcher's next pass) puts them in a new pack. If that keeps happening, raise `pack: time` or lower `pack: max_slices` in `configs/eval/smurf-v1.yaml`.
 - **`every_n`** counts checkpoints in the order they were discovered (the 1st, then every n-th). Use `enqueue` for the last checkpoint of a run.
 - **Retention** keeps: the newest checkpoint (training resumes from it), the last `keep_last`, the `keep_best.k` best by `metric` (`benchmark/slice/metric`, as in `results/results_long.csv`), every multiple of `keep_every`, and anything not finished evaluating or failed. The rest is only listed by `candidates`; the script never deletes.
 
@@ -194,7 +249,7 @@ python scripts/watch_checkpoints.py status configs/watch/smurf.yaml   # step, st
 squeue --me
 ```
 
-`status` shows `done`, `skipped` (not picked by `every_n`), `failed` (see the `slurm-*.out` of the slice folder) or still running. The `metric` column is the one `retention.keep_best.metric` points at.
+`status` shows `done`, `skipped` (not picked by `every_n`), `failed` (see the `pack-*.out` of the slice folder) or still running, and whether a `done` checkpoint is `scored` (2.5). The `metric` column is the one `retention.keep_best.metric` points at.
 
 ### 3.2. Results
 
@@ -206,7 +261,9 @@ Everything is under `$EVAL_ROOT/smurf-run/`:
 | `results/results_long.csv`                | every metric, one row each (the names`keep_best.metric` uses)                 |
 | `results/results.xlsx`                    | summary, one sheet per benchmark, and`runs` (which log each number came from) |
 | `logs/<model>/<benchmark>/<slice>/*.json` | inspect logs: every sample, prompt, answer and score                            |
-| `logs/.../slurm-<jobid>.out`              | stdout of each job                                                              |
+| `logs/.../pack-<jobid>-gpu<N>.out`        | inspect output of each slice run in a pack (`slurm-<jobid>.out` without packs)  |
+| `packs/<id>.json`, `packs/<id>-slurm-<jobid>.out` | each pack's slices, and which GPU ran which (start/done/FAILED)        |
+| `logs/.../score-slurm-<jobid>.out`        | stdout of each post-hoc scoring job (2.5)                                       |
 
 ```bash
 cd $EVAL_ROOT/smurf-run
@@ -228,7 +285,7 @@ python scripts/watch_checkpoints.py enqueue configs/watch/smurf.yaml 8000     # 
 
 This does not run anything by itself: it marks the step as pending in the ledger, and the **watcher must be running** to submit it on its next pass. It also works to retry a `failed` step once the cause is fixed.
 
-**See which checkpoints can be deleted.** Checkpoints are large, and retention decides which ones to keep (see 2.3). To list the rest:
+**See which checkpoints can be deleted.** Checkpoints are large, and retention decides which ones to keep (see 2.6). To list the rest:
 
 ```bash
 python scripts/watch_checkpoints.py candidates configs/watch/smurf.yaml
