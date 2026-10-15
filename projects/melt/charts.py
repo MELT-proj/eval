@@ -48,7 +48,7 @@ SUNSET: list[str] = [
 
 #: Continuous version of the same ramp, pale sky → dark plum, for heatmaps.
 #: Dark reads as "worse" for an error rate, which is why WER heatmaps use it
-#: as-is and score-like metrics (BLEU, chrF) use the reversed form.
+#: as-is and score-like metrics (BLEU, chrF++) use the reversed form.
 SUNSET_CMAP = LinearSegmentedColormap.from_list(
     "sunset", ["#FDF3DE", "#F6BE55", "#F0913F", "#C0453C", "#5B1E3B"]
 )
