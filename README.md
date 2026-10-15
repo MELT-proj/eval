@@ -381,13 +381,13 @@ sha256sum $SACREBLEU/models/flores200sacrebleuspm              # compare with th
 
 The model is not committed. `infra/sites/artemis.sh` exports `SACREBLEU` with the
 usual `${VAR:-default}` pattern; the container launchers pass it into the image
-(`--env`) and bind it. **MN5 has no internet and the model is not staged there**
-(`infra/sites/mn5.sh` says how: copy it over `mn5transfer` to
-`<dir>/models/flores200sacrebleuspm` on `/gpfs` and export `SACREBLEU`). Until
-then, ST runs there opt out explicitly:
+(`--env`) and bind it. **MN5 has no internet; the model was copied there once over `mn5transfer`**
+to `/gpfs/scratch/epor48/sacrebleu/models/` (sha256 verified on arrival) and
+`infra/sites/mn5.sh` exports `SACREBLEU`. A site that lacks the model opts out
+explicitly:
 
 ```bash
-infra/runners/submit_eval.sh mn5 melt/<ckpt> <frozen-set> -T task_filter=st -T spbleu=false
+infra/runners/submit_eval.sh <site> melt/<ckpt> <frozen-set> -T task_filter=st -T spbleu=false
 ```
 
 `-T spbleu=false` selects `st_scorer_no_spbleu`: BLEU and chrF++ as usual and no

@@ -49,13 +49,13 @@ export EVAL_ROOT="${EVAL_ROOT:-/gpfs/scratch/epor48/eval-runs}"
 export LOCAL_DATASETS_DIR="${LOCAL_DATASETS_DIR:-/gpfs/projects/epor48/melt-data/shar-indexed}"
 
 # --- spBLEU ----------------------------------------------------------------------
-# NOT staged on MN5 yet, so SACREBLEU is deliberately not exported here. Until it
-# is, ST runs must opt out explicitly with `-T spbleu=false` (the run then has no
-# spBLEU keys; `melteval st-metrics` computes them from the log elsewhere).
-# To stage: fetch the model on a machine with internet (README.md, "spBLEU"),
-# `rsync` it through the `mn5transfer` alias to <dir>/models/flores200sacrebleuspm
-# on /gpfs, then `export SACREBLEU="${SACREBLEU:-<dir>}"` here. The container
-# scripts pass SACREBLEU into the image and bind it.
+# sacrebleu's cache, holding models/flores200sacrebleuspm (the SentencePiece model
+# behind spBLEU). Staged 2026-10-15 from nyx, sha256 14bb8dfb...b555a (README.md,
+# "Staging the spBLEU model"):
+#   ssh mn5transfer 'mkdir -p /gpfs/scratch/epor48/sacrebleu/models'
+#   rsync -av <model> mn5transfer:/gpfs/scratch/epor48/sacrebleu/models/
+# The container scripts pass SACREBLEU into the image and bind it.
+export SACREBLEU="${SACREBLEU:-/gpfs/scratch/epor48/sacrebleu}"
 
 # --- code sync (see training/infra/sync_repo.sh for the pattern) -------------
 export REMOTE_SSH=mn5
