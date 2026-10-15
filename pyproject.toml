@@ -57,9 +57,13 @@ hf = [
 ]
 # Lexical metrics. sacrebleu is pinned: BLEU is not comparable across versions
 # or tokenizer configurations, so the number and its signature must be stable.
+# sentencepiece is what sacrebleu's flores200/flores101 tokenizers (spBLEU) load
+# their model with; pinned alongside it for the same reason. The model file
+# itself is not a package and is staged separately (README, "spBLEU").
 metrics = [
     "jiwer>=4.0",
     "sacrebleu==2.5.1",
+    "sentencepiece==0.2.2",
 ]
 dev = [
     "pytest",

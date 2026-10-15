@@ -20,6 +20,7 @@ from melteval.dataset import frozen_dataset, spec_dataset
 from melteval.registry import default_max_tokens, default_scorer
 from melteval.scorers import asr_scorer
 from melteval.solver import instruction_prompt, melt_prompt, smurf_prompt
+from melteval.spm import require_spm_model
 
 
 #: Model family whose prompt format a run uses, and the solver that builds it.
@@ -50,6 +51,7 @@ def speech(
     prompt_config: str | None = None,
     normalizer: str | None = None,
     scorer: Scorer | None = None,
+    spbleu: bool = True,
     solver: Solver | None = None,
 ) -> Task:
     """Generate from audio and score the result.
@@ -94,6 +96,18 @@ def speech(
         scorer: Scorer to apply. Defaults to the task's registered scorer, or
             ``exact()`` (a plumbing check, not a real metric) when
             *task_filter* is unset. Mutually exclusive with *normalizer*.
+        spbleu: ``task_filter="st"`` only. Whether the default ST scorer
+            computes spBLEU. ``True`` (default) first checks, here, before any
+            generation, that the SentencePiece model sacrebleu's ``flores200``
+            tokenizer needs is staged and loads, and stops if not
+            (:func:`melteval.spm.require_spm_model`); nothing is ever
+            downloaded. ``False`` (``-T spbleu=false``) is the explicit opt-out
+            for runs that cannot have the model yet (MN5 until it is staged,
+            or ``--no-score`` generation there): the scorer then has no
+            spBLEU metric, so the log lacks those keys rather than carrying a
+            substitute -- recompute them later with ``melteval st-metrics``.
+            With an explicit *scorer* the check is not made (it cannot know what
+            a custom scorer needs) and ``spbleu=False`` is an error.
         solver: Override the solver. Defaults to the one *prompt_style* selects.
 
     Returns:
@@ -102,7 +116,11 @@ def speech(
     Raises:
         ValueError: If neither or both of *frozen_set* and *spec* are given;
             if *normalizer* is given together with an explicit *scorer*, or
-            with a *task_filter* other than ``"asr"``.
+            with a *task_filter* other than ``"asr"``; if ``spbleu=False`` is
+            given with a *task_filter* other than ``"st"`` or with an explicit
+            *scorer*.
+        melteval.spm.SPMModelError: If ``task_filter="st"`` with the default
+            scorer and the SentencePiece model is missing or does not load.
     """
     if bool(frozen_set) == bool(spec):
         raise ValueError(
@@ -121,12 +139,22 @@ def speech(
                 f"normalizer configures the WER/CER scorer and only applies to task_filter='asr', "
                 f"got task_filter={task_filter!r}."
             )
+    if not spbleu and (task_filter != "st" or scorer is not None):
+        raise ValueError(
+            "spbleu=False selects the default ST scorer without spBLEU and only applies to "
+            f"task_filter='st' with no explicit scorer, got task_filter={task_filter!r}, "
+            f"scorer={'given' if scorer is not None else None}."
+        )
     if scorer is not None:
         resolved_scorer = scorer
     elif normalizer is not None:
         resolved_scorer = asr_scorer(normalizer=normalizer)
     else:
-        resolved_scorer = default_scorer(task_filter)
+        if task_filter == "st" and spbleu:
+            # Fail now, not after the generation: sacrebleu would otherwise be first
+            # asked for the model in the end-of-run scoring step.
+            require_spm_model()
+        resolved_scorer = default_scorer(task_filter, spbleu=spbleu)
 
     filters = {"task": task_filter, "lang": lang, "dataset_id": dataset_id, "limit": limit}
     dataset = (
@@ -215,13 +243,19 @@ def asr(frozen_set: str | None = None, **kwargs) -> Task:
 
 @task
 def st(frozen_set: str | None = None, **kwargs) -> Task:
-    """:func:`speech` restricted to ``task_filter="st"`` with BLEU/chrF scoring.
+    """:func:`speech` restricted to ``task_filter="st"`` with BLEU/spBLEU/chrF++ scoring.
 
     A frozen set covering more than one target language must also be given
     ``lang=`` (one run per target language). BLEU's tokenizer is chosen per
     target language, and mixing languages in one ``corpus_bleu`` call has no
     single correct tokenizer for the mix — the scorer raises rather than
     silently pick one and produce a number that looks precise but is not.
+    (That is the reason a ``--no-score`` run is the way to generate a
+    multi-target set; ``melteval st-metrics`` scores the log per direction
+    afterwards. spBLEU and chrF++ do not have this restriction.)
+
+    Building the task checks that the SentencePiece model spBLEU needs is
+    staged -- see :func:`speech`'s ``spbleu`` argument for the opt-out.
     """
     kwargs.setdefault("task_filter", "st")
     return speech(frozen_set, **kwargs)
@@ -245,7 +279,7 @@ def chunked_asr(frozen_set: str | None = None, **kwargs) -> Task:
 def chunked_st(frozen_set: str | None = None, **kwargs) -> Task:
     """:func:`speech` restricted to ``task_filter="chunked_st"``.
 
-    Same grouping as :func:`chunked_asr`, BLEU/chrF instead of WER/CER; see
+    Same grouping as :func:`chunked_asr`, BLEU/chrF++ instead of WER/CER; see
     :func:`melteval.scorers.chunked_st_scorer`.
     """
     kwargs.setdefault("task_filter", "chunked_st")
