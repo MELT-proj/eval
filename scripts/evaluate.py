@@ -161,9 +161,9 @@ def write_instruction(output_dir: Path, instruction: str) -> Path:
 
 
 def slice_name(slice_cfg: dict) -> str:
-    """A slice's folder name: its task, plus its dataset_id if any."""
-    dataset_id = slice_cfg.get("dataset_id")
-    return f"{slice_cfg['task']}-{dataset_id}" if dataset_id else slice_cfg["task"]
+    """A slice's folder name: its task, plus its dataset_id and lang if any."""
+    parts = [slice_cfg["task"], slice_cfg.get("dataset_id"), slice_cfg.get("lang")]
+    return "-".join(p for p in parts if p)
 
 
 @dataclass
@@ -242,9 +242,15 @@ def plan(
                     skipped.append(f"{label}: excluded by the model's skip list")
                     continue
 
+                lang = slice_cfg.get("lang")
+                if lang and lang not in (model_cfg.get("languages") or [lang]):
+                    skipped.append(f"{label}: language {lang!r} is not in the model's languages list")
+                    continue
                 args = ["-T", f"task_filter={task}"]
                 if dataset_id:
                     args += ["-T", f"dataset_id={dataset_id}"]
+                if lang:
+                    args += ["-T", f"lang={lang}"]
                 # A benchmark whose samples carry no instruction of their own
                 # needs one from the model entry -- except for MELT, whose
                 # prompt comes from the checkpoint's training config.
