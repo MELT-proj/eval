@@ -150,6 +150,16 @@ def load_config(path: Path, out: str | None) -> dict:
     return config
 
 
+def write_instruction(output_dir: Path, instruction: str) -> Path:
+    """Write *instruction* to ``<output_dir>/instructions/<hash>.txt`` and return the path."""
+    import hashlib
+
+    path = output_dir / "instructions" / f"{hashlib.sha256(instruction.encode()).hexdigest()[:12]}.txt"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(instruction, encoding="utf-8")
+    return path
+
+
 def slice_name(slice_cfg: dict) -> str:
     """A slice's folder name: its task, plus its dataset_id if any."""
     dataset_id = slice_cfg.get("dataset_id")
@@ -240,11 +250,20 @@ def plan(
                 # prompt comes from the checkpoint's training config.
                 if bench.get("needs_instruction") and family in ("hf", "smurf"):
                     instruction = (model_cfg.get("instruction") or {}).get(task)
+                    if isinstance(instruction, dict):
+                        # One literal instruction per dataset_id, for a model whose environment
+                        # cannot render {lang} placeholders (no language table there).
+                        instruction = instruction.get(dataset_id)
                     if instruction is None:
                         skipped.append(f"{label}: no instruction for task {task!r} in the model entry")
                         continue
                     # -T values are parsed as YAML; a JSON string is a quoted YAML string.
-                    args += ["-T", f"instruction={json.dumps(instruction)}"]
+                    if "," in instruction or ": " in instruction:
+                        # inspect splits every -T value at commas (and YAML reads ": " as a
+                        # mapping), so such an instruction travels in a file.
+                        args += ["-T", f"instruction_file={write_instruction(config['_output_dir'], instruction)}"]
+                    else:
+                        args += ["-T", f"instruction={json.dumps(instruction)}"]
 
                 args += [str(a) for a in model_cfg.get("args", [])]
                 args += [str(a) for a in slice_cfg.get("args", [])]
