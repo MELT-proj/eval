@@ -348,9 +348,13 @@ def wait_for_room() -> None:
         return
     announced = False
     while True:
-        queued = subprocess.run(
-            ["squeue", "-h", "-u", os.environ.get("USER", "")], capture_output=True, text=True, check=False
-        ).stdout.count("\n")
+        # MAX_QUEUED_OWN=1 counts only this runner's jobs (tagged melteval:), for a user whose
+        # other jobs sit in a different QOS and do not count against the cap.
+        own_only = os.environ.get("MAX_QUEUED_OWN") == "1"
+        out = subprocess.run(
+            ["squeue", "-h", "-u", os.environ.get("USER", ""), "-o", "%k"], capture_output=True, text=True, check=False
+        ).stdout
+        queued = sum(1 for line in out.splitlines() if not own_only or line.startswith("melteval:"))
         if queued < int(limit):
             return
         if not announced:
