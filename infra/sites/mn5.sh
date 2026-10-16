@@ -30,7 +30,11 @@ export VENV_PATH="${VENV_PATH:-/gpfs/scratch/epor48/venvs/melteval/bin/activate}
 # the container path works today -- build infra/Singularity.def elsewhere
 # (it needs internet) and copy the .sif here. Overridable per-run:
 #   MELT_SIF=/path/to/other.sif sbatch infra/run_eval_container_mn5.sbatch …
-export MELT_SIF="${MELT_SIF:-/gpfs/scratch/epor48/melt_eval_cuda126.sif}"
+# Default is the image rebuilt with sentencepiece and httpx<1 (sha256 6a5db58d...7fa1);
+# proven 2026-10-16 by an ST smoke run (job 47377055). It is referenced by its own
+# name rather than by re-pointing melt_eval_cuda126.sif, which queued jobs may be
+# reading.
+export MELT_SIF="${MELT_SIF:-/gpfs/scratch/epor48/melt_eval_cuda126_spbleu.sif}"
 
 # --- storage (host paths) -----------------------------------------------------
 # The project is shared by several accounts; a directory here belongs to
