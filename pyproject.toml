@@ -24,6 +24,11 @@ dependencies = [
     # substitute it). Without this, `import melteval` (and the `melteval`
     # entry point) crashes at `inspect_ai.agent._acp.event_mapping`.
     "agent-client-protocol==0.12.1",
+    # inspect_ai imports `httpcore` directly, but httpx 1.0 pre-releases depend on
+    # `httpcore2` instead. The image build resolves with --prerelease=allow (for
+    # lhotse), picked httpx 1.0.dev6, and `import melteval` died with
+    # "No module named 'httpcore'" (2026-10-15). Stay on the 0.x line.
+    "httpx<1",
     "omegaconf>=2.3",
     "pyyaml>=6.0",
     "numpy>=1.24",
@@ -57,9 +62,13 @@ hf = [
 ]
 # Lexical metrics. sacrebleu is pinned: BLEU is not comparable across versions
 # or tokenizer configurations, so the number and its signature must be stable.
+# sentencepiece is what sacrebleu's flores200/flores101 tokenizers (spBLEU) load
+# their model with; pinned alongside it for the same reason. The model file
+# itself is not a package and is staged separately (README, "spBLEU").
 metrics = [
     "jiwer>=4.0",
     "sacrebleu==2.5.1",
+    "sentencepiece==0.2.2",
 ]
 dev = [
     "pytest",

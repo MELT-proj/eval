@@ -72,12 +72,24 @@ echo "[retry_eval_container_mn5] image:   ${MELT_SIF}"
 echo "[retry_eval_container_mn5] repo:    ${SUBMIT_DIR}"
 echo "[retry_eval_container_mn5] logs:    ${LOGS[*]}"
 
+# sacrebleu's cache, holding the SentencePiece model spBLEU needs (README.md,
+# "spBLEU"). Passed in explicitly and bound, rather than left to the host
+# environment leaking through, because the ST task stops before generating when
+# the model is missing -- so the variable and the path must demonstrably arrive.
+SACREBLEU_ARGS=()
+if [[ -n "${SACREBLEU:-}" ]]; then
+    [[ -d "${SACREBLEU}" ]] || { echo "ERROR: SACREBLEU is not a directory: ${SACREBLEU}"; exit 2; }
+    SACREBLEU_ARGS=(--bind "${SACREBLEU}" --env "SACREBLEU=${SACREBLEU}")
+fi
+echo "[retry_eval_container_mn5] sacrebleu:   ${SACREBLEU:-(unset: ~/.sacrebleu in the container)}"
+
 # Same binds as run_eval_container_mn5.sbatch, and for the same reasons: host
 # /gpfs paths stay valid inside the container, and the checkout wins over the
 # melteval baked into the image.
 exec "${SINGULARITY_BIN}" exec --nv \
     --bind /gpfs \
     --bind "${SUBMIT_DIR}" \
+    ${SACREBLEU_ARGS[@]+"${SACREBLEU_ARGS[@]}"} \
     --pwd "${SUBMIT_DIR}" \
     "${MELT_SIF}" \
     bash -lc '

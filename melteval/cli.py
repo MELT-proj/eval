@@ -39,6 +39,35 @@ def main(argv: list[str] | None = None) -> int:
     rescore_parser.add_argument("-o", "--out", required=True, help="Output JSONL path.")
     rescore_parser.set_defaults(func=_cmd_rescore)
 
+    st_metrics_parser = subparsers.add_parser(
+        "st-metrics",
+        help="BLEU, spBLEU, chrF and chrF++ from finished ST eval logs, per direction -- "
+        "works on --no-score logs too. CPU only.",
+    )
+    st_metrics_parser.add_argument("logs", nargs="+", help="One or more .eval logs.")
+    st_metrics_parser.add_argument(
+        "--group-by",
+        default="dataset_id",
+        choices=("dataset_id", "src_lang", "tgt_lang", "none"),
+        help="Group samples by this metadata field (default dataset_id, i.e. one row per direction; "
+        "tgt_lang for a log without it). `none` pools everything.",
+    )
+    st_metrics_parser.add_argument(
+        "--lowercase",
+        action="store_true",
+        help="Score lowercased text (sacrebleu lowercase=True, signatures read case:lc).",
+    )
+    st_metrics_parser.add_argument(
+        "--spm",
+        default="flores200",
+        choices=("flores200", "flores101"),
+        help="SentencePiece tokenizer for spBLEU (default flores200).",
+    )
+    st_metrics_parser.add_argument(
+        "--json", action="store_true", help="Print JSON on stdout instead of the table."
+    )
+    st_metrics_parser.set_defaults(func=_cmd_st_metrics)
+
     text_prior_parser = subparsers.add_parser(
         "text-prior",
         help="Teacher-forced NLL/BPC of a frozen set's references under a bare backbone "
@@ -109,6 +138,15 @@ def _cmd_rescore(args: argparse.Namespace) -> int:
     triples, stats = extract_triples(args.log)
     write_triples(triples, args.out)
     print(json.dumps(stats, indent=2))
+    return 0
+
+
+def _cmd_st_metrics(args: argparse.Namespace) -> int:
+    """Score finished ST logs and print one table (or JSON document) per run."""
+    from melteval.st_metrics import format_table, score_logs, to_json
+
+    results = score_logs(args.logs, group_by=args.group_by, lowercase=args.lowercase, spm=args.spm)
+    print(to_json(results) if args.json else "\n\n".join(format_table(r) for r in results))
     return 0
 
 

@@ -136,6 +136,9 @@ echo "[run_eval] venv:       ${VENV_PATH}"
 echo "[run_eval] model:      ${MODEL} (prompt family ${FAMILY})"
 echo "[run_eval] eval set:   ${EVAL_SET} (${EVAL_SET_KIND})"
 echo "[run_eval] output dir: ${OUTPUT_DIR}"
+# The ST task reads the SentencePiece model for spBLEU from $SACREBLEU/models and
+# stops before generating if it is not there. Say where it will look.
+echo "[run_eval] sacrebleu:   ${SACREBLEU:-(unset: ~/.sacrebleu)}"
 echo "[run_eval] extra args: ${EXTRA_ARGS[*]:-(none)}"
 
 # shellcheck disable=SC1090
