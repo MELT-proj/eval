@@ -70,7 +70,8 @@ benchmarks:
   # Shar frozen sets (freeze them first!!!) #
   ###########################################
 
-  # Frozen from configs/shar/fleurs24-st-xen-test.yaml
+  # Frozen from configs/shar/fleurs24-st-xen-test.yaml. On JUPITER azeros lacks el, pl, ro, sk, sl, sv
+  # (and ru, uk), so those slices are commented out; uncomment with their sources in the config.
   - name: fleurs24-st-xen
     frozen_set: ${FLEURS24_ST_XEN_SET}
     needs_instruction: true
@@ -81,7 +82,7 @@ benchmarks:
       - {task: st, dataset_id: fleurs-cs_en, post_scorers: [melteval/rescore.py@comet_scorer]}
       - {task: st, dataset_id: fleurs-da_en, post_scorers: [melteval/rescore.py@comet_scorer]}
       - {task: st, dataset_id: fleurs-de_en, post_scorers: [melteval/rescore.py@comet_scorer]}
-      - {task: st, dataset_id: fleurs-el_en, post_scorers: [melteval/rescore.py@comet_scorer]}
+# - {task: st, dataset_id: fleurs-el_en, post_scorers: [melteval/rescore.py@comet_scorer]}
       - {task: st, dataset_id: fleurs-es_en, post_scorers: [melteval/rescore.py@comet_scorer]}
       - {task: st, dataset_id: fleurs-et_en, post_scorers: [melteval/rescore.py@comet_scorer]}
       - {task: st, dataset_id: fleurs-fi_en, post_scorers: [melteval/rescore.py@comet_scorer]}
@@ -94,12 +95,12 @@ benchmarks:
       - {task: st, dataset_id: fleurs-lv_en, post_scorers: [melteval/rescore.py@comet_scorer]}
       - {task: st, dataset_id: fleurs-mt_en, post_scorers: [melteval/rescore.py@comet_scorer]}
       - {task: st, dataset_id: fleurs-nl_en, post_scorers: [melteval/rescore.py@comet_scorer]}
-      - {task: st, dataset_id: fleurs-pl_en, post_scorers: [melteval/rescore.py@comet_scorer]}
+# - {task: st, dataset_id: fleurs-pl_en, post_scorers: [melteval/rescore.py@comet_scorer]}
       - {task: st, dataset_id: fleurs-pt_en, post_scorers: [melteval/rescore.py@comet_scorer]}
-      - {task: st, dataset_id: fleurs-ro_en, post_scorers: [melteval/rescore.py@comet_scorer]}
-      - {task: st, dataset_id: fleurs-sk_en, post_scorers: [melteval/rescore.py@comet_scorer]}
-      - {task: st, dataset_id: fleurs-sl_en, post_scorers: [melteval/rescore.py@comet_scorer]}
-      - {task: st, dataset_id: fleurs-sv_en, post_scorers: [melteval/rescore.py@comet_scorer]}
+# - {task: st, dataset_id: fleurs-ro_en, post_scorers: [melteval/rescore.py@comet_scorer]}
+# - {task: st, dataset_id: fleurs-sk_en, post_scorers: [melteval/rescore.py@comet_scorer]}
+# - {task: st, dataset_id: fleurs-sl_en, post_scorers: [melteval/rescore.py@comet_scorer]}
+# - {task: st, dataset_id: fleurs-sv_en, post_scorers: [melteval/rescore.py@comet_scorer]}
 
   # Frozen from configs/shar/fleurs24-st-enx-test.yaml
   - name: fleurs24-st-enx
