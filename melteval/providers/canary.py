@@ -115,6 +115,6 @@ def parse_spec(text: str) -> tuple[str, str]:
     for code in (source, target):
         if code not in LANGUAGES:
             raise ValueError(f"{FAMILY} does not cover language {code!r}; run it on the languages it supports only.")
-    if "en" not in (source, target):
+    if source != target and "en" not in (source, target):
         raise ValueError(f"{FAMILY} translates to and from English only, got {source}->{target}.")
     return source, target
