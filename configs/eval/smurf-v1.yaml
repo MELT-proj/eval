@@ -1,10 +1,10 @@
 # SMURF checkpoints on eval suite v1.
 #
 #   ASR  LibriSpeech clean / other (en)        WER          librispeech, librispeech-other
-#   ASR  VoxPopuli, 16 languages               WER/CER      voxpopuli
+#   ASR  VoxPopuli, 16 languages               WER/CER      voxpopuli (one slice per language)
 #   ASR  MCIF chunked (en)                     WER          mcif chunked_asr
-#   ST   FLEURS en->EU (23), EU->en (23)       COMET-22 DA  fleurs24-st-enx, fleurs24-st-xen
-#   ST   MCIF chunked en->de, en->it           COMET-22 DA  mcif chunked_st
+#   ST   FLEURS en->EU (23), EU->en (17)       COMET-22 DA  fleurs24-st-enx, fleurs24-st-xen
+#   ST   MCIF chunked en->de, en->it           BLEU/chrF    mcif chunked_st (no official COMET on JUPITER)
 #   SQA  MCIF short fixed prompt (en, de, it)  BERTScore    mcif audio_chat
 #
 #   python scripts/evaluate.py plan configs/eval/smurf-v1.yaml --site jupiter -v
@@ -42,14 +42,19 @@ models:
 
 benchmarks:
 
+  # chunked_st: the official COMET scorer is commented out below. It needs the mwerSegmenter binary,
+  # which is i386-only and cannot run on JUPITER (aarch64); only the inline BLEU/chrF is reported.
+  # Uncomment where the binary runs (and set MWERSEGMENTER_ROOT).
   - name: mcif
     spec: configs/hf/mcif.yaml
     # Venv of the post-hoc scorers (mcif-bench: BERTScore, COMET), run by `evaluate.py score`.
     post_venv: ${METRICS_VENV_PATH}
     slices:
       - {task: chunked_asr, dataset_id: mcif-short-fixed-en}
-      - {task: chunked_st, dataset_id: mcif-short-fixed-de, post_scorers: [melteval/mcif_scoring.py@mcif_official_trans_scorer]}
-      - {task: chunked_st, dataset_id: mcif-short-fixed-it, post_scorers: [melteval/mcif_scoring.py@mcif_official_trans_scorer]}
+      - {task: chunked_st, dataset_id: mcif-short-fixed-de}
+      # - {task: chunked_st, dataset_id: mcif-short-fixed-de, post_scorers: [melteval/mcif_scoring.py@mcif_official_trans_scorer]}
+      - {task: chunked_st, dataset_id: mcif-short-fixed-it}
+      # - {task: chunked_st, dataset_id: mcif-short-fixed-it, post_scorers: [melteval/mcif_scoring.py@mcif_official_trans_scorer]}
       - {task: audio_chat, dataset_id: mcif-short-fixed-en, post_scorers: [melteval/mcif_scoring.py@mcif_official_qa_scorer]}
       - {task: audio_chat, dataset_id: mcif-short-fixed-de, post_scorers: [melteval/mcif_scoring.py@mcif_official_qa_scorer]}
       - {task: audio_chat, dataset_id: mcif-short-fixed-it, post_scorers: [melteval/mcif_scoring.py@mcif_official_qa_scorer]}
@@ -137,4 +142,19 @@ benchmarks:
     frozen_set: ${VOXPOPULI_SET}
     needs_instruction: true
     slices:
-      - {task: asr}
+      - {task: asr, dataset_id: voxpopuli-en}
+      - {task: asr, dataset_id: voxpopuli-de}
+      - {task: asr, dataset_id: voxpopuli-fr}
+      - {task: asr, dataset_id: voxpopuli-es}
+      - {task: asr, dataset_id: voxpopuli-it}
+      - {task: asr, dataset_id: voxpopuli-pl}
+      - {task: asr, dataset_id: voxpopuli-ro}
+      - {task: asr, dataset_id: voxpopuli-hu}
+      - {task: asr, dataset_id: voxpopuli-cs}
+      - {task: asr, dataset_id: voxpopuli-nl}
+      - {task: asr, dataset_id: voxpopuli-fi}
+      - {task: asr, dataset_id: voxpopuli-hr}
+      - {task: asr, dataset_id: voxpopuli-sk}
+      - {task: asr, dataset_id: voxpopuli-sl}
+      - {task: asr, dataset_id: voxpopuli-et}
+      - {task: asr, dataset_id: voxpopuli-lt}

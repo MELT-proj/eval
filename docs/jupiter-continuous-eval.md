@@ -54,6 +54,10 @@ VIRTUAL_ENV=$PROJECT/$USER/venvs/metrics-eval uv pip install -e . mcif-bench "se
 $PROJECT/$USER/venvs/metrics-eval/bin/python -c "from mcif.evaluation import score_sqa; import comet, melteval; print('ok')"
 ```
 
+**Offline models for the post-hoc scorers.** The following need to be fetched in `$HF_HOME` from the login node: `Unbabel/wmt22-comet-da` and `xlm-roberta-large` (COMET), `roberta-large` (BERTScore, en) and `bert-base-multilingual-cased` (BERTScore, de/it).
+
+**Problem atm: MCIF ST (chunked_st) has no official COMET here.** Its scorer needs the `mwerSegmenter` binary from RWTH, which is i386-only and cannot run on JUPITER (aarch64), so those two slices report BLEU/chrF only.
+
 **Freezing needs the training package.** `melteval freeze` over a Shar source takes its reference rules from `melt-proj`, which the SMURF venv does not have. Freeze from a venv with `melt-eval[shar]` (the one that froze `fleurs24-st-xen-test`).
 
 ### 1.4. Downloads
