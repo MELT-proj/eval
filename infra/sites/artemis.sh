@@ -18,6 +18,11 @@ export HF_HOME="${HF_HOME:-/mnt/scratch-artemis/giuseppe/melt-data/hf_cache}"
 export OUTPUT_DIR="${OUTPUT_DIR:-/mnt/scratch-artemis/giuseppe/melt-data/eval-logs}"
 # Where scripts/evaluate.py puts each campaign (configs/eval/*.yaml: output_dir).
 export EVAL_ROOT="${EVAL_ROOT:-/mnt/scratch-artemis/giuseppe/melt-data/eval-runs}"
+# sacrebleu's cache. Holds models/flores200sacrebleuspm, the SentencePiece model
+# behind spBLEU, staged once from a machine with internet (README.md, "spBLEU").
+# Jobs never download it: the ST task checks for it before generating and stops.
+# sacrebleu reads this once, when it is imported.
+export SACREBLEU="${SACREBLEU:-/mnt/scratch-artemis/giuseppe/sacrebleu}"
 export LOCAL_DATASETS_DIR="${LOCAL_DATASETS_DIR:-/mnt/scratch-nyx/giuseppe/melt/melt-data/shar}"
 
 # Where inspect_ai keeps its own state (traces, view assets). It defaults to

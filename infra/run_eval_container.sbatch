@@ -94,6 +94,17 @@ echo "[run_eval_container] frozen set: ${FROZEN_SET}"
 echo "[run_eval_container] output dir: ${OUTPUT_DIR}"
 echo "[run_eval_container] extra args: ${EXTRA_ARGS[*]:-(none)}"
 
+# sacrebleu's cache, holding the SentencePiece model spBLEU needs (README.md,
+# "spBLEU"). Passed in explicitly and bound, rather than left to the host
+# environment leaking through, because the ST task stops before generating when
+# the model is missing -- so the variable and the path must demonstrably arrive.
+SACREBLEU_ARGS=()
+if [[ -n "${SACREBLEU:-}" ]]; then
+    [[ -d "${SACREBLEU}" ]] || { echo "ERROR: SACREBLEU is not a directory: ${SACREBLEU}"; exit 2; }
+    SACREBLEU_ARGS=(--bind "${SACREBLEU}" --env "SACREBLEU=${SACREBLEU}")
+fi
+echo "[run_eval_container] sacrebleu:   ${SACREBLEU:-(unset: ~/.sacrebleu in the container)}"
+
 # --nv: map in the host GPU driver (the image's CUDA toolkit is only there
 #   for JIT builds -- see infra/Singularity.def -- the driver itself still
 #   has to come from the host).
@@ -104,7 +115,7 @@ echo "[run_eval_container] extra args: ${EXTRA_ARGS[*]:-(none)}"
 # The venv at /workspace/venv and repo at /workspace/eval are both baked
 # into the image at build time -- this does not read the host melt-eval
 # checkout at all, so the job sees exactly what was in the image.
-exec apptainer exec --nv --bind /mnt "${MELT_SIF}" \
+exec apptainer exec --nv --bind /mnt ${SACREBLEU_ARGS[@]+"${SACREBLEU_ARGS[@]}"} "${MELT_SIF}" \
     bash -lc '
         set -euo pipefail
         source /workspace/venv/bin/activate

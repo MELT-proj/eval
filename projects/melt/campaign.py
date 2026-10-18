@@ -192,7 +192,7 @@ def _ratio(errors: int, total: int) -> float:
 
 
 def _st_cells(info: LogInfo, summaries) -> dict[tuple, dict]:
-    """Corpus BLEU/chrF for an ST log, read off the log header.
+    """Corpus BLEU/chrF++ for an ST log, read off the log header.
 
     ST is the one place the sample summaries must *not* be trusted: inspect
     truncates long strings when it writes ``summaries.json`` (a hypothesis over
@@ -290,7 +290,7 @@ def extract_rows(info: LogInfo) -> list[dict]:
         }
         for metric in TASK_METRICS[info.task_filter]:
             # `numerator`/`denominator` are the ratio metrics' raw counts, and
-            # empty for BLEU/chrF -- which is not an omission: BLEU has no
+            # empty for BLEU/chrF++ -- which is not an omission: BLEU has no
             # denominator to pool over, which is why the ST summary is a macro
             # average and cannot be anything else.
             numerator, denominator = values.get(f"{metric}_counts", (float("nan"), float("nan")))

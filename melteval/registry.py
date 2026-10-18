@@ -1,6 +1,6 @@
 """Task → default scorer mapping.
 
-Speech-specific metrics (WER/CER, BLEU/chrF) exist for ``asr`` and ``st``, and
+Speech-specific metrics (WER/CER, BLEU/spBLEU/chrF++) exist for ``asr`` and ``st``, and
 for ``chunked_asr``/``chunked_st`` -- the same metrics, but computed over
 several samples' completions reassembled into one hypothesis first, for
 corpora (MCIF's ``short`` track) whose reference spans more than one sample.
@@ -27,6 +27,7 @@ from melteval.scorers import (
     chunked_st_scorer,
     mcq_scorer,
     st_scorer,
+    st_scorer_no_spbleu,
 )
 
 
@@ -63,7 +64,7 @@ def default_max_tokens(task_filter: str | None) -> int | None:
     return TASK_MAX_TOKENS.get(task_filter) if task_filter else None
 
 
-def default_scorer(task_filter: str | None) -> Scorer:
+def default_scorer(task_filter: str | None, spbleu: bool = True) -> Scorer:
     """Return the default scorer for *task_filter*.
 
     With no task filter (a mixed or unfiltered frozen set) this falls back to
@@ -72,6 +73,8 @@ def default_scorer(task_filter: str | None) -> Scorer:
 
     Args:
         task_filter: The task a frozen set was filtered to, or ``None``.
+        spbleu: ``st`` only. ``False`` selects :func:`melteval.scorers.st_scorer_no_spbleu`,
+            for runs that cannot have the SentencePiece model spBLEU needs.
 
     Raises:
         ValueError: If *task_filter* is set but has no registered default.
@@ -83,6 +86,11 @@ def default_scorer(task_filter: str | None) -> Scorer:
         from inspect_ai.scorer import exact
 
         return exact()
+
+    if not spbleu:
+        if task_filter != "st":
+            raise ValueError(f"spbleu=False only applies to task_filter='st', got {task_filter!r}.")
+        return st_scorer_no_spbleu()
 
     factory = TASK_SCORERS.get(task_filter)
     if factory is None:

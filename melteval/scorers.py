@@ -36,7 +36,7 @@ touched by that reduction, which is why it is the right place for text.
 
 Metrics are attached to the scorers themselves (rather than left for a task to
 wire up) so ``inspect eval melteval/tasks.py@speech`` reports corpus WER/CER or
-BLEU/chrF, with a per-language breakdown, with no extra flags.
+BLEU/spBLEU/chrF++, with a per-language breakdown, with no extra flags.
 """
 
 from __future__ import annotations
@@ -284,7 +284,7 @@ def asr_scorer(normalizer: str = "basic") -> Scorer:
 
 
 # =============================================================================
-# ST: BLEU / chrF
+# ST: BLEU / spBLEU / chrF++
 # =============================================================================
 
 #: sacrebleu tokenizer per target language. Anything not listed uses "13a"
@@ -352,8 +352,64 @@ def corpus_bleu() -> Metric:
 
 
 @metric
+def corpus_spbleu(tokenizer: str = "flores200") -> Metric:
+    """Corpus spBLEU via sacrebleu: BLEU over SentencePiece-tokenized text.
+
+    This is the BLEU of the FLORES line of work: both sides are tokenized by a
+    multilingual SentencePiece model (sacrebleu's ``flores200`` tokenizer by
+    default, ``flores101`` for numbers that must be comparable with FLORES-101
+    papers), then scored as ordinary corpus BLEU. Nothing in it depends on the
+    language, so unlike :func:`corpus_bleu` there is no target-language check
+    and it does not raise on a corpus with several targets. A pooled number over
+    several directions is still not worth reporting -- it averages languages
+    with very different score ranges -- so report it per direction.
+
+    The tokenizer's model file is **not** fetched here: sacrebleu would download
+    it inside ``BLEU.__init__``, at the end of a run. :func:`melteval.spm.require_spm_model`
+    runs first and raises if the file is not staged (the ST task makes the same
+    check when it is built, before any generation).
+
+    Scoring is cased, like :func:`corpus_bleu`. The full sacrebleu signature
+    (``tok:flores200`` among it) is logged at INFO.
+
+    Args:
+        tokenizer: ``flores200`` (default) or ``flores101``.
+    """
+    from melteval.spm import SPM_TOKENIZERS
+
+    if tokenizer not in SPM_TOKENIZERS:
+        raise ValueError(f"corpus_spbleu tokenizer must be one of {SPM_TOKENIZERS}, got {tokenizer!r}.")
+
+    def calculate(scores: list[SampleScore]) -> Value:
+        import logging
+
+        import sacrebleu
+
+        from melteval.spm import require_spm_model
+
+        logger = logging.getLogger(__name__)
+        hypotheses = [s.score.metadata["hypothesis"] for s in scores]
+        references = [s.score.metadata["reference"] for s in scores]
+
+        require_spm_model(tokenizer)
+        bleu = sacrebleu.BLEU(tokenize=tokenizer)
+        result = bleu.corpus_score(hypotheses, [references])
+        logger.info("corpus_spbleu signature: %s", bleu.get_signature())
+        return result.score
+
+    return calculate
+
+
+@metric
 def corpus_chrf() -> Metric:
-    """Corpus chrF++ via sacrebleu. Language-agnostic, unlike BLEU."""
+    """Corpus chrF++ via sacrebleu (character 6-grams plus word 1- and 2-grams).
+
+    Despite the name -- kept because logs and ``projects/`` read the keys
+    ``corpus_chrf`` and ``chrf_<group>`` -- this is chrF++, not plain chrF:
+    ``word_order=2``, signature ``nc:6|nw:2``. Plain chrF is ``word_order=0``
+    (``nw:0``) and gives different numbers; ``melteval st-metrics`` reports both
+    (as ``chrfpp`` and ``chrf``). Language-agnostic, unlike BLEU.
+    """
 
     def calculate(scores: list[SampleScore]) -> Value:
         import logging
@@ -372,31 +428,22 @@ def corpus_chrf() -> Metric:
     return calculate
 
 
-@scorer(
-    metrics=[
+def _lexical_st_metrics() -> list:
+    """BLEU and chrF++, pooled and per ``lang`` -- the part of the ST scorer that needs no model file."""
+    return [
         corpus_bleu(),
         corpus_chrf(),
         grouped(corpus_bleu(), "lang", all=False, name_template="bleu_{group_name}"),
         grouped(corpus_chrf(), "lang", all=False, name_template="chrf_{group_name}"),
     ]
-)
-def st_scorer() -> Scorer:
-    """Score a translation by recording the (reference, hypothesis) pair.
 
-    Corpus BLEU/chrF are not the mean of per-sample scores (see the module
-    docstring), so nothing meaningful is computed per sample here. The pair is
-    carried in ``Score.metadata`` — deliberately not ``Score.value``, which
-    goes through inspect's epoch-reduction/``value_to_float`` machinery even
-    for a single epoch and would silently replace this pair's text with
-    ``0.0`` — purely so :func:`corpus_bleu` / :func:`corpus_chrf` have
-    something to recompute over.
 
-    ``Score.value`` itself carries token lengths: not a metric, just enough to
-    make an empty hypothesis or a wildly short/long one visible in the log's
-    per-sample view without decoding the metadata by hand.
+def _pair_recorder() -> Scorer:
+    """Build the per-sample scoring function both ST scorers share.
 
-    Returns:
-        A scorer whose ``Score.metadata`` carries ``{reference, hypothesis}``.
+    A fresh function per call, not one module-level object: inspect's ``@scorer``
+    tags the function it is handed with that scorer's registry entry, and two
+    scorers returning the same object would overwrite each other's tag.
     """
 
     async def score(state: TaskState, target: Target) -> Score:
@@ -409,6 +456,51 @@ def st_scorer() -> Scorer:
         )
 
     return score
+
+
+@scorer(
+    metrics=[
+        *_lexical_st_metrics(),
+        corpus_spbleu(),
+        grouped(corpus_spbleu(), "lang", all=False, name_template="spbleu_{group_name}"),
+    ]
+)
+def st_scorer() -> Scorer:
+    """Score a translation by recording the (reference, hypothesis) pair.
+
+    Corpus BLEU/spBLEU/chrF++ are not the mean of per-sample scores (see the
+    module docstring), so nothing meaningful is computed per sample here. The
+    pair is carried in ``Score.metadata`` — deliberately not ``Score.value``,
+    which goes through inspect's epoch-reduction/``value_to_float`` machinery
+    even for a single epoch and would silently replace this pair's text with
+    ``0.0`` — purely so :func:`corpus_bleu` / :func:`corpus_spbleu` /
+    :func:`corpus_chrf` have something to recompute over.
+
+    The metrics are pooled over the whole run and also grouped by the
+    samples' ``lang``. On the FLEURS ST sets ``lang`` equals ``tgt_lang``, so on
+    X→en all sources land in one ``en`` bucket; what separates directions is
+    ``dataset_id`` (see ``melteval st-metrics --group-by``).
+
+    ``Score.value`` itself carries token lengths: not a metric, just enough to
+    make an empty hypothesis or a wildly short/long one visible in the log's
+    per-sample view without decoding the metadata by hand.
+
+    Returns:
+        A scorer whose ``Score.metadata`` carries ``{reference, hypothesis}``.
+    """
+    return _pair_recorder()
+
+
+@scorer(metrics=_lexical_st_metrics())
+def st_scorer_no_spbleu() -> Scorer:
+    """:func:`st_scorer` without spBLEU, for runs that cannot have its SentencePiece model.
+
+    Selected by ``-T spbleu=false`` on the ST task. The run's log then carries
+    no ``corpus_spbleu``/``spbleu_*`` keys at all -- the metric is absent, not
+    faked -- and spBLEU can still be computed from the log later with
+    ``melteval st-metrics`` once the model is staged.
+    """
+    return _pair_recorder()
 
 
 # =============================================================================
@@ -636,8 +728,8 @@ def chunked_chrf() -> Metric:
 def chunked_st_scorer() -> Scorer:
     """ST scorer for corpora where a reference can span several samples.
 
-    See :func:`chunked_asr_scorer` -- same shape, BLEU/chrF instead of WER/CER.
-    This reports the same corpus BLEU/chrF :func:`st_scorer` does, over
+    See :func:`chunked_asr_scorer` -- same shape, BLEU/chrF++ instead of WER/CER.
+    This reports the same corpus BLEU/chrF++ :func:`st_scorer` does, over
     reassembled groups rather than raw samples; it is not the paper metric for
     a benchmark like MCIF, which scores translation with COMET after a
     sentence-resegmentation step this harness does not perform (see
