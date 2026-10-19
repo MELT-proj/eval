@@ -919,6 +919,55 @@ def mcq_scorer() -> Scorer:
     return score
 
 
+
+# =============================================================================
+# Specific scorer for BBH benchmark.
+# =============================================================================
+
+#: Add the answer is: yes/no
+
+@scorer(
+    metrics=[
+        choice_accuracy(),
+        unresolved_rate(),
+        grouped(choice_accuracy(), "dataset_id", all=False, name_template="accuracy_{group_name}"),
+    ]
+)
+def bbh_scorer() -> Scorer:
+    """Score an instance from BBH benchmark.
+
+    The reference is the option's **text** with an prefix "The answer is: " as stated in instructions provided. Text can be yes/no, A/B/C/D, or other variants.
+
+    Returns:
+        A scorer whose ``Score.value`` carries ``{correct, resolved}`` as 0/1
+        counters — the two things :func:`choice_accuracy` and
+        :func:`unresolved_rate` reduce over. The completion and the option it
+        resolved to go in ``Score.metadata``, which is not put through
+        inspect's numeric epoch reduction (see the module docstring).
+    """
+
+    async def score(state: TaskState, target: Target) -> Score:
+        completion = state.output.completion
+        choices = [choice.value for choice in state.choices] if state.choices else []
+        chosen = resolve_choice(completion, choices)
+
+        correct = chosen is not None and _normalize_choice_text(chosen) == _normalize_choice_text(
+            "The answer is: " + target.text
+        )
+        return Score(
+            value={"correct": int(correct), "resolved": int(chosen is not None)},
+            answer=completion,
+            explanation=(
+                None
+                if chosen is not None
+                else "No option could be read out of the completion; counted as incorrect."
+            ),
+            metadata={"chosen": chosen, "reference": target.text, "completion": completion},
+        )
+
+    return score
+
+
 # =============================================================================
 # Open-ended audio chat: graded by a judge model
 # =============================================================================
