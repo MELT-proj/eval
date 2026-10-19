@@ -44,7 +44,7 @@ HEADLINE = {
     # Same three for MCIF, per dataset_id: wer_<id>, wer_extracted_<id>.
     "chunked_asr": ["wer_*", "preamble_rate"],
     "chunked_st": ["bleu_*"],
-    "audio_mcq": ["choice_accuracy"],
+    "audio_mcq": ["choice_accuracy", "unresolved_rate"],
     # A judge's grade (AIR-Bench Chat).
     "audio_chat": ["accuracy"],
 }

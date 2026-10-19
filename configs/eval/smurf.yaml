@@ -1,0 +1,54 @@
+# This is to eval SMURF checkpoints only, on JUPITER (or any site)
+#
+#   python scripts/evaluate.py plan configs/eval/smurf.yaml --site jupiter -v
+#   python scripts/evaluate.py run  configs/eval/smurf.yaml --site jupiter --limit 5 --wait   # smoke test
+#
+# How the watcher uses this file: for each new checkpoint it copies this config
+# and changes only the model's `name` (to step-<N>) and `model` (to that .ckpt).
+# Everything else -- args, instruction, the benchmarks -- is used as written. Only
+# the first entry of `models:` is read, so keep just one.
+#
+# `instruction` is only needed for benchmarks marked `needs_instruction` (their
+# samples carry no prompt): librispeech and the fleurs24 frozen sets. AIR-Bench
+# and MCIF ship their own prompt per sample.
+
+name: smurf
+output_dir: ${EVAL_ROOT}/smurf
+
+models:
+  - name: smurf
+    model: smurf/checkpoints/smurf/*.ckpt
+    args: [-M, batch_size=8]
+    # SMURF's trained prompt. No ST entry: ST slices are skipped until one is added.
+    instruction:
+      asr: "Transcribe this English audio: "
+
+benchmarks:
+  # --- HuggingFace benchmarks (run `prefetch` first!!!) ---
+
+  - name: mcif
+    spec: configs/hf/mcif.yaml
+    slices:
+      - {task: chunked_asr, dataset_id: mcif-short-fixed-en}
+      - {task: chunked_st, dataset_id: mcif-short-fixed-de}
+      - {task: chunked_st, dataset_id: mcif-short-fixed-it}
+      - {task: chunked_st, dataset_id: mcif-short-fixed-zh}
+
+  # audio_chat needs a judge model, so only the multiple-choice slice is here.
+  - name: air-bench
+    spec: configs/hf/air-bench.yaml
+    slices:
+      - {task: audio_mcq, dataset_id: air-bench-foundation-speech}
+
+  # --- Shar frozen sets (freeze them on this machine first) ---
+  - name: fleurs24-asr
+    frozen_set: ${FLEURS24_ASR_SET}
+    needs_instruction: true
+    slices:
+      - {task: asr}
+
+  - name: librispeech
+    spec: configs/librispeech-hf-test-clean.yaml
+    needs_instruction: true
+    slices:
+      - {task: asr, dataset_id: librispeech-test-clean, time: "02:00:00"}
