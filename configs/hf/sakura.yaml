@@ -1,0 +1,86 @@
+#Sakura-Bench (https://huggingface.co/datasets/SLLM-multi-hop/)
+
+name: sakura
+seed: 0
+
+input_cfg:
+  - type: hf_dataset
+    repo: SLLM-multi-hop/LanguageQA
+    split: test
+    text_column: single_answer
+    instruction_column: single_instruction
+    revision: c01798546b81f307deea7c7e262fdb61a310e886
+    tags:
+      task: audio_mcq
+      dataset_id: sakura-language-lang
+
+  - type: hf_dataset
+    repo: SLLM-multi-hop/LanguageQA
+    split: test
+    text_column: multi_answer
+    instruction_column: multi_instruction
+    revision: c01798546b81f307deea7c7e262fdb61a310e886
+    tags:
+      task: audio_mcq
+      dataset_id: sakura-language-lang-multi
+
+  - type: hf_dataset
+    repo: SLLM-multi-hop/GenderQA
+    split: test
+    text_column: single_answer
+    instruction_column: single_instruction
+    revision: 480072252c31754a355a38aa83a76a39d0607501
+    tags:
+      task: audio_mcq
+      dataset_id: sakura-language-gender
+  
+  - type: hf_dataset
+    repo: SLLM-multi-hop/GenderQA
+    split: test
+    text_column: multi_answer
+    instruction_column: multi_instruction
+    revision: 480072252c31754a355a38aa83a76a39d0607501
+    tags:
+      task: audio_mcq
+      dataset_id: sakura-language-gender-multi
+  
+
+  - type: hf_dataset
+    repo: SLLM-multi-hop/AnimalQA
+    split: test
+    text_column: single_answer
+    instruction_column: single_instruction
+    revision: 2d688069e631732f2efaff0caa327f2a42a7bc6e
+    tags:
+      task: audio_mcq
+      dataset_id: sakura-language-animal
+  
+  - type: hf_dataset
+    repo: SLLM-multi-hop/AnimalQA
+    split: test
+    text_column: multi_answer
+    instruction_column: multi_instruction
+    revision: 2d688069e631732f2efaff0caa327f2a42a7bc6e
+    tags:
+      task: audio_mcq
+      dataset_id: sakura-language-animal-multi
+
+  - type: hf_dataset
+    repo: SLLM-multi-hop/EmotionQA
+    split: test
+    text_column: single_answer
+    instruction_column: single_instruction
+    revision: e22b78d8a8396377aac0bde5d67871a78cc3a3f4
+    tags:
+      task: audio_mcq
+      dataset_id: sakura-language-emotion
+  
+  - type: hf_dataset
+    repo: SLLM-multi-hop/EmotionQA
+    split: test
+    text_column: multi_answer
+    instruction_column: multi_instruction
+    revision: e22b78d8a8396377aac0bde5d67871a78cc3a3f4
+    tags:
+      task: audio_mcq
+      dataset_id: sakura-language-emotion-multi
