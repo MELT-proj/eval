@@ -28,7 +28,6 @@ from melteval.scorers import (
     mcq_scorer,
     st_scorer,
     st_scorer_no_spbleu,
-    bbh_scorer,
 )
 
 
@@ -43,7 +42,6 @@ TASK_SCORERS: dict[str, Callable[[], Scorer]] = {
     "chunked_st": chunked_st_scorer,
     "audio_mcq": mcq_scorer,
     "audio_chat": chat_scorer,
-    "bbh": bbh_scorer,
 }
 
 #: Generation budget per task, used when the run does not set ``--max-tokens``
@@ -58,7 +56,6 @@ TASK_MAX_TOKENS: dict[str, int] = {
     "chunked_st": 256,
     "audio_mcq": 512,
     "audio_chat": 1024,
-    "bbh": 256,
 }
 
 
