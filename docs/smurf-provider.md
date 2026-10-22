@@ -74,6 +74,10 @@ be configured here, and it cannot drift from the weights it belongs to. A
 prompt that already contains the tag is left untouched, which is how a
 benchmark shipping its own prompt keeps control of where the audio goes.
 
+**A system prompt is a separate turn.** `-M system_prompt=...` (or a `system:`
+map on the model entry in a launcher config) is sent as a `system` turn before
+the user turn. Without one, there is no system turn.
+
 **The instruction is not the model's.** In SMURF training it is the
 conversation's `context` tag, baked into the Lhotse manifests at data-prep
 time (`fbk_speechllm.data_preprocessing.prepare_data_for_training`, drawing

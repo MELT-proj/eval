@@ -12,7 +12,7 @@ from inspect_ai.model import ChatMessageUser, ContentAudio, ContentData, Content
 from melteval.dataset import AUDIO_DATA_KEY
 from melteval.providers.base import _extract
 from melteval.providers.melt import _batched_audio, _generate_kwargs
-from melteval.providers.smurf import _collate_audio, _generation_kwargs, _plan_device_map, _with_audio_tag
+from melteval.providers.smurf import _collate_audio, _generation_kwargs, _plan_device_map, _turns, _with_audio_tag
 
 
 class TestExtract:
@@ -204,6 +204,22 @@ class TestSmurfAudioTag:
         and must not end up with two placeholders for one audio."""
         prompt = f"Given {self.TAG}, answer the question."
         assert _with_audio_tag(prompt, self.TAG, "suffix") == prompt
+
+
+class TestSmurfTurns:
+    """A system prompt is a turn of its own, as SMURF's training dataloader builds it."""
+
+    def test_without_a_system_prompt_the_conversation_is_one_user_turn(self):
+        assert _turns("Transcribe: <tag>") == [{"role": "user", "content": "Transcribe: <tag>"}]
+
+    def test_a_system_prompt_goes_first_and_is_not_merged_into_the_instruction(self):
+        assert _turns("Transcribe: <tag>", "Respond directly.") == [
+            {"role": "system", "content": "Respond directly."},
+            {"role": "user", "content": "Transcribe: <tag>"},
+        ]
+
+    def test_an_empty_system_prompt_sends_no_system_turn(self):
+        assert _turns("Transcribe: <tag>", "") == [{"role": "user", "content": "Transcribe: <tag>"}]
 
 
 class TestSmurfGenerationKwargs:

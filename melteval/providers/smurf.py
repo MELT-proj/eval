@@ -28,6 +28,8 @@ Two consequences worth knowing:
   into the positions of ``cfg.audio_locator_tag`` (``<|audioplaceholder|>``),
   read off the loaded checkpoint here rather than configured anywhere else, so
   it cannot drift from the weights it belongs to.
+* **A system prompt is its own turn.** ``-M system_prompt=...`` is sent as a
+  ``system`` turn before the user turn.
 
 Nothing heavy is imported at module scope: registering the provider must not
 cost a torch or NeMo import.
@@ -74,6 +76,7 @@ class SmurfAPI(BatchedSpeechAPI):
         num_beams: int = 1,
         use_model_defaults: bool | None = False,
         enable_thinking: bool | None = None,
+        system_prompt: str | None = None,
         **model_args: Any,
     ) -> None:
         """Load a checkpoint.
@@ -114,6 +117,8 @@ class SmurfAPI(BatchedSpeechAPI):
                 the config says rather than to whatever the LLM ships with.
             enable_thinking: Prompt-formatter hint for formats with a thinking
                 mode. Left unset by default, matching SMURF's inference path.
+            system_prompt: Sent as a ``system`` turn before every request's
+                user turn. ``None`` (the default) sends no system turn.
             **model_args: Forwarded to the checkpoint loader.
 
         Raises:
@@ -147,6 +152,7 @@ class SmurfAPI(BatchedSpeechAPI):
         self.num_beams = int(num_beams)
         self.use_model_defaults = use_model_defaults
         self.enable_thinking = enable_thinking
+        self.system_prompt = system_prompt
 
         logger.info(
             "Loading SMURF checkpoint from %s (%s)",
@@ -194,7 +200,7 @@ class SmurfAPI(BatchedSpeechAPI):
 
         audios, audio_lens = _collate_audio(batch, self.model.sampling_rate)
         prompts = [
-            [{"role": "user", "content": _with_audio_tag(r.text, self.audio_locator_tag, self.audio_placement)}]
+            _turns(_with_audio_tag(r.text, self.audio_locator_tag, self.audio_placement), self.system_prompt)
             for r in batch
         ]
 
@@ -460,6 +466,12 @@ def _with_audio_tag(text: str, tag: str, placement: str) -> str:
     if tag in text:
         return text
     return f"{text} {tag}" if placement == "suffix" else f"{tag} {text}"
+
+
+def _turns(user_content: str, system_prompt: str | None = None) -> list[dict[str, str]]:
+    """One request's conversation: the system turn, if any, then the user turn."""
+    turns = [{"role": "system", "content": system_prompt}] if system_prompt else []
+    return [*turns, {"role": "user", "content": user_content}]
 
 
 def _collate_audio(batch: list[_Request], sampling_rate: int):
