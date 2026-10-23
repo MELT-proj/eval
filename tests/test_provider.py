@@ -221,6 +221,15 @@ class TestSmurfTurns:
     def test_an_empty_system_prompt_sends_no_system_turn(self):
         assert _turns("Transcribe: <tag>", "") == [{"role": "user", "content": "Transcribe: <tag>"}]
 
+    def test_user_placement_opens_the_user_turn_with_the_system_prompt(self):
+        """For a prompt_format with no system role, which would reject a system turn."""
+        assert _turns("Transcribe: <tag>", "Respond directly.", "user") == [
+            {"role": "user", "content": "Respond directly.\n\nTranscribe: <tag>"},
+        ]
+
+    def test_user_placement_without_a_system_prompt_leaves_the_turn_alone(self):
+        assert _turns("Transcribe: <tag>", None, "user") == [{"role": "user", "content": "Transcribe: <tag>"}]
+
 
 class TestSmurfGenerationKwargs:
     def test_defaults_to_greedy(self):

@@ -74,7 +74,7 @@ The running nodes have no internet and jobs run with `HF_HUB_OFFLINE=1`, so anyt
 | 6 | `Qwen/Qwen3-Omni-30B-A3B-Instruct`        | baseline (2.3), about 60 GB                    |
 | 7 | `roberta-large`, `bert-base-multilingual-cased`, `Unbabel/wmt22-comet-da`, `xlm-roberta-large` | BERTScore (MCIF SQA: `roberta-large` for en, the multilingual BERT for de/it) and COMET, post-hoc (2.5) |
 | 8 | `openai/whisper-large-v3`                 | baseline (2.3)                                 |
-| 9 | `DeSTA-ntu/DeSTA2.5-Audio-Llama-3.1-8B`, `meta-llama/Llama-3.1-8B-Instruct` (gated) | baseline (2.3); also needs its own venv, see [baseline-providers.md](baseline-providers.md) |
+| 9 | `DeSTA-ntu/DeSTA2.5-Audio-Llama-3.1-8B`, `DeSTA-ntu/Llama-3.1-8B-Instruct` (its `llm_model_id`, not `meta-llama/...`) | baseline (2.3); also needs its own venv, see [baseline-providers.md](baseline-providers.md) |
 
 ```bash
 cd $PROJECT/$USER/eval
@@ -99,7 +99,7 @@ huggingface-cli download Qwen/Qwen2-Audio-7B-Instruct
 huggingface-cli download Qwen/Qwen3-Omni-30B-A3B-Instruct
 huggingface-cli download openai/whisper-large-v3
 huggingface-cli download DeSTA-ntu/DeSTA2.5-Audio-Llama-3.1-8B
-huggingface-cli download meta-llama/Llama-3.1-8B-Instruct   # accept the licence on the Hub first
+huggingface-cli download DeSTA-ntu/Llama-3.1-8B-Instruct    # the backbone DeSTA's config.json names (llm_model_id)
 
 # 3. MCIF, audio included
 python - <<'EOF'

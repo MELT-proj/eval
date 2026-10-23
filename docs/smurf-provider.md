@@ -74,9 +74,17 @@ be configured here, and it cannot drift from the weights it belongs to. A
 prompt that already contains the tag is left untouched, which is how a
 benchmark shipping its own prompt keeps control of where the audio goes.
 
-**A system prompt is a separate turn.** `-M system_prompt=...` (or a `system:`
-map on the model entry in a launcher config) is sent as a `system` turn before
-the user turn. Without one, there is no system turn.
+**Where a system prompt goes depends on the checkpoint's `prompt_format`.**
+`-M system_prompt=...` (or a `system:` map on the model entry in a launcher
+config) is placed according to `-M system_placement`:
+
+1. **The format has a `system` role:** `system_placement=turn` (the default)
+   sends the prompt as a `system` turn before the user turn.
+2. **It does not:** `system_placement=user` puts the prompt at the start of the
+   user turn, a blank line before the instruction. A `system` turn here fails
+   every sample with `AssertionError: Found turn with turn['role']='system'`.
+
+Without a system prompt there is no system turn either way.
 
 **The instruction is not the model's.** In SMURF training it is the
 conversation's `context` tag, baked into the Lhotse manifests at data-prep

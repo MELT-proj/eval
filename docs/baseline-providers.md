@@ -88,7 +88,7 @@ inspect eval melteval/tasks.py@asr --model melt/hf/desta25 -T frozen_set=... \
   -T prompt_style=hf -T instruction='"Transcribe this audio."' -M batch_size=8
 ```
 
-The Hub repo holds only the connector weights; the model class is `DeSTA25AudioModel` in the `desta` package ([github.com/kehanlu/DeSTA2.5-Audio](https://github.com/kehanlu/DeSTA2.5-Audio)), which also loads a gated Llama-3.1-8B-Instruct backbone and a Whisper encoder. It pins its own `transformers`/`torch`, so it needs **its own venv**; the matrix entry (`venv: ${DESTA_VENV_PATH}`) is skipped when that venv does not exist.
+The Hub repo holds only the connector weights; the model class is `DeSTA25AudioModel` in the `desta` package ([github.com/kehanlu/DeSTA2.5-Audio](https://github.com/kehanlu/DeSTA2.5-Audio)), which also loads a Llama-3.1-8B-Instruct backbone (`DeSTA-ntu/Llama-3.1-8B-Instruct`, the `llm_model_id` in its `config.json`) and a Whisper encoder (`openai/whisper-large-v3`). It pins its own `transformers`/`torch`, so it needs **its own venv**; the matrix entry (`venv: ${DESTA_VENV_PATH}`) is skipped when that venv does not exist.
 
 **Install.** Accept the [Llama-3.1 licence](https://huggingface.co/meta-llama/Llama-3.1-8B-Instruct), then:
 

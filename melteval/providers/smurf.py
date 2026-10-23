@@ -28,8 +28,13 @@ Two consequences worth knowing:
   into the positions of ``cfg.audio_locator_tag`` (``<|audioplaceholder|>``),
   read off the loaded checkpoint here rather than configured anywhere else, so
   it cannot drift from the weights it belongs to.
-* **A system prompt is its own turn.** ``-M system_prompt=...`` is sent as a
-  ``system`` turn before the user turn.
+* **Where a system prompt goes depends on the checkpoint's ``prompt_format``.**
+  ``-M system_prompt=...`` is placed according to ``-M system_placement``:
+
+  1. The format has a ``system`` role: ``turn`` (the default) sends it as a
+     ``system`` turn before the user turn.
+  2. It does not: ``user`` puts it at the start of the user turn, a blank
+     line before the instruction. A ``system`` turn there is rejected.
 
 Nothing heavy is imported at module scope: registering the provider must not
 cost a torch or NeMo import.
@@ -54,6 +59,10 @@ logger = logging.getLogger(__name__)
 #: turn, so the placeholder lands at the end of the user message.
 AUDIO_PLACEMENTS = ("suffix", "prefix")
 
+#: Where a system prompt goes: its own ``system`` turn, or the start of the user
+#: turn, for a checkpoint whose ``prompt_format`` has no ``system`` role.
+SYSTEM_PLACEMENTS = ("turn", "user")
+
 
 @modelapi(name="smurf")
 class SmurfAPI(BatchedSpeechAPI):
@@ -77,6 +86,7 @@ class SmurfAPI(BatchedSpeechAPI):
         use_model_defaults: bool | None = False,
         enable_thinking: bool | None = None,
         system_prompt: str | None = None,
+        system_placement: str = "turn",
         **model_args: Any,
     ) -> None:
         """Load a checkpoint.
@@ -119,10 +129,14 @@ class SmurfAPI(BatchedSpeechAPI):
                 mode. Left unset by default, matching SMURF's inference path.
             system_prompt: Sent as a ``system`` turn before every request's
                 user turn. ``None`` (the default) sends no system turn.
+            system_placement: ``turn`` (the default) sends *system_prompt* as a
+                ``system`` turn; ``user`` prepends it to the user turn, for a
+                ``prompt_format`` with no ``system`` role.
             **model_args: Forwarded to the checkpoint loader.
 
         Raises:
             ValueError: If *audio_placement* is not one of :data:`AUDIO_PLACEMENTS`,
+                if *system_placement* is not one of :data:`SYSTEM_PLACEMENTS`,
                 if *device* and *device_map* are both given, if *device_map* is
                 given and is not ``"auto"``, or if it's given alongside a
                 *map_location* other than ``"cpu"``.
@@ -132,6 +146,10 @@ class SmurfAPI(BatchedSpeechAPI):
         if audio_placement not in AUDIO_PLACEMENTS:
             raise ValueError(
                 f"audio_placement must be one of {AUDIO_PLACEMENTS}, got {audio_placement!r}."
+            )
+        if system_placement not in SYSTEM_PLACEMENTS:
+            raise ValueError(
+                f"system_placement must be one of {SYSTEM_PLACEMENTS}, got {system_placement!r}."
             )
         if device is not None and device_map is not None:
             raise ValueError(
@@ -153,6 +171,7 @@ class SmurfAPI(BatchedSpeechAPI):
         self.use_model_defaults = use_model_defaults
         self.enable_thinking = enable_thinking
         self.system_prompt = system_prompt
+        self.system_placement = system_placement
 
         logger.info(
             "Loading SMURF checkpoint from %s (%s)",
@@ -200,7 +219,11 @@ class SmurfAPI(BatchedSpeechAPI):
 
         audios, audio_lens = _collate_audio(batch, self.model.sampling_rate)
         prompts = [
-            _turns(_with_audio_tag(r.text, self.audio_locator_tag, self.audio_placement), self.system_prompt)
+            _turns(
+                _with_audio_tag(r.text, self.audio_locator_tag, self.audio_placement),
+                self.system_prompt,
+                self.system_placement,
+            )
             for r in batch
         ]
 
@@ -468,8 +491,14 @@ def _with_audio_tag(text: str, tag: str, placement: str) -> str:
     return f"{text} {tag}" if placement == "suffix" else f"{tag} {text}"
 
 
-def _turns(user_content: str, system_prompt: str | None = None) -> list[dict[str, str]]:
-    """One request's conversation: the system turn, if any, then the user turn."""
+def _turns(user_content: str, system_prompt: str | None = None, placement: str = "turn") -> list[dict[str, str]]:
+    """One request's conversation: the system turn, if any, then the user turn.
+
+    With *placement* ``user`` there is no system turn: the system prompt opens
+    the user turn, a blank line before the instruction.
+    """
+    if system_prompt and placement == "user":
+        return [{"role": "user", "content": f"{system_prompt}\n\n{user_content}"}]
     turns = [{"role": "system", "content": system_prompt}] if system_prompt else []
     return [*turns, {"role": "user", "content": user_content}]
 
