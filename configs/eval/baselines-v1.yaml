@@ -75,16 +75,6 @@ models:
       chunked_asr: "Focus on the audio clips and instruction. Respond directly without any other words"
       audio_mcq: "Focus on the audio clips and instruction. Choose one of the options without any explanation."
 
-  - name: smurf
-    # Always one .ckpt file in checkpoints/smurf/ (gitignored).
-    model: smurf/checkpoints/smurf/*.ckpt
-    # Same as configs/eval/smurf-v1.yaml (see the comments there): load on the host,
-    # zero-shot instructions with the sample's languages.
-    args: [-M, batch_size=8, -M, map_location=cpu]
-    instruction:
-      asr: "Transcribe this {lang} audio: "
-      st: "Translate this {src_lang} audio into {tgt_lang}: "
-
   - name: melt
     # Always one run folder in checkpoints/melt/. The prompt format is read
     # from its training_config.yaml; without one the run fails rather than guess.

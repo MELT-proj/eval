@@ -1,6 +1,6 @@
 # Baseline report
 
-Every model (baselines, SMURF, MELT) on every benchmark slice (AIR-Bench, MCIF,
+Every model (baselines, MELT) on every benchmark slice (AIR-Bench, MCIF,
 ASR/ST sets, etc.), as one table.
 
 ```
@@ -28,9 +28,10 @@ python projects/baselines/report.py --log-root <dir> --log-root <dir> --out repo
 
 Models: the baselines are `melt/hf/qwen2_audio`, `melt/hf/qwen3_omni`, `melt/hf/whisper` and `melt/hf/desta25`,
 at the revisions pinned in [docs/baseline-providers.md](../../docs/baseline-providers.md).
-SMURF comes from the one `.ckpt` in `checkpoints/smurf/`, MELT from the one run
-folder in `checkpoints/melt/` (both gitignored, paths relative to the repo
-root). The MELT venv and the Shar frozen sets come from the environment
+MELT comes from the one run folder in `checkpoints/melt/` (gitignored, relative
+to the repo root). SMURF is not here: it has its own config,
+[configs/eval/smurf-v1.yaml](../../configs/eval/smurf-v1.yaml), on the same
+suite; pass both log folders to `report.py` for one table. The MELT venv and the Shar frozen sets come from the environment
 (`MELT_VENV_PATH`, `FLEURS24_ASR_SET`, `FLEURS24_ST_XEN_SET`). Anything unset
 or missing on the current machine is skipped, with the reason.
 

@@ -73,6 +73,8 @@ The running nodes have no internet and jobs run with `HF_HUB_OFFLINE=1`, so anyt
 | 5 | `Qwen/Qwen2-Audio-7B-Instruct`            | baseline (2.3)                                 |
 | 6 | `Qwen/Qwen3-Omni-30B-A3B-Instruct`        | baseline (2.3), about 60 GB                    |
 | 7 | `roberta-large`, `bert-base-multilingual-cased`, `Unbabel/wmt22-comet-da`, `xlm-roberta-large` | BERTScore (MCIF SQA: `roberta-large` for en, the multilingual BERT for de/it) and COMET, post-hoc (2.5) |
+| 8 | `openai/whisper-large-v3`                 | baseline (2.3)                                 |
+| 9 | `DeSTA-ntu/DeSTA2.5-Audio-Llama-3.1-8B`, `meta-llama/Llama-3.1-8B-Instruct` (gated) | baseline (2.3); also needs its own venv, see [baseline-providers.md](baseline-providers.md) |
 
 ```bash
 cd $PROJECT/$USER/eval
@@ -92,9 +94,12 @@ huggingface-cli download bert-base-multilingual-cased
 huggingface-cli download Unbabel/wmt22-comet-da
 huggingface-cli download xlm-roberta-large
 
-# 5-6. The baselines' models
+# 5-6, 8-9. The baselines' models
 huggingface-cli download Qwen/Qwen2-Audio-7B-Instruct
 huggingface-cli download Qwen/Qwen3-Omni-30B-A3B-Instruct
+huggingface-cli download openai/whisper-large-v3
+huggingface-cli download DeSTA-ntu/DeSTA2.5-Audio-Llama-3.1-8B
+huggingface-cli download meta-llama/Llama-3.1-8B-Instruct   # accept the licence on the Hub first
 
 # 3. MCIF, audio included
 python - <<'EOF'
@@ -202,13 +207,14 @@ Iif `tmux attach` says `no sessions`, the process is gone. Start it again: it re
 
 `baselines_models` in the watch config lists fixed models that are evaluated **once**, on the same benchmarks as the checkpoints, into the same `output_dir`. Their logs stay in `logs/` and the report gets one extra column per baseline. They do not count in `max_in_flight` or retention.
 
-- Download their weights first (1.4, rows 5-6).
+- Download their weights first (1.4, rows 5-6 and 8-9).
+- DeSTA2.5 runs from its own venv (`DESTA_VENV_PATH`, install in [baseline-providers.md](baseline-providers.md)). `infra/sites/jupiter.sh` sets no default, so export it before starting the watcher; without it the DeSTA slices are skipped, with the reason.
 - A `failed` baseline is not retried by itself. After fixing the cause: `python scripts/watch_checkpoints.py rerun-baselines configs/watch/smurf.yaml` (slices that already succeeded are left alone).
 - To run without baselines,comment out these two keys in [configs/watch/smurf.yaml](../configs/watch/smurf.yaml) and restart the watcher:
 
   ```yaml
   baselines_config: configs/eval/baselines-v1.yaml
-  baselines_models: [qwen2-audio-7b-instruct, qwen3-omni-30b-a3b-instruct]
+  baselines_models: [qwen2-audio-7b-instruct, qwen3-omni-30b-a3b-instruct, whisper-large-v3, whisper-large-v3-translate, desta2.5-audio]
   ```
 
   Logs already written stay in `logs/` and keep showing in the report.

@@ -15,7 +15,12 @@ output_dir: ${EVAL_ROOT}/smurf-run     # ledger, per-step configs, logs/ and res
 # Fixed baselines: evaluated once, on the benchmarks of eval_config, into the same
 # report (one extra column each). A slice with a successful log is never rerun.
 baselines_config: configs/eval/baselines-v1.yaml   # where these models are defined
-baselines_models: [qwen2-audio-7b-instruct, qwen3-omni-30b-a3b-instruct]
+baselines_models:
+  - qwen2-audio-7b-instruct
+  - qwen3-omni-30b-a3b-instruct
+  - whisper-large-v3
+  - whisper-large-v3-translate
+  - desta2.5-audio
 
 every_n: 2            # evaluate the 1st, 3rd, 5th... checkpoint found (1 = all of them)
 settle_minutes: 10    # a .ckpt untouched for this long is considered fully written

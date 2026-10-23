@@ -39,6 +39,20 @@ models:
     instruction:
       asr: "Transcribe this {lang} audio: "
       st: "Translate this {src_lang} audio into {tgt_lang}: "
+    # System prompts per task (`default` covers the QA tasks: audio_chat, audio_mcq).
+    system:
+      default: &qa >-
+        Answer the question about the audio in the language the question is asked in.
+        Output only the answer. Do not repeat these instructions.
+      asr: &transcribe >-
+        Transcribe the speech in the audio verbatim, in the language it is spoken in.
+        Output only the transcript. Do not repeat these instructions.
+      chunked_asr: *transcribe
+      st: &translate >-
+        Translate the speech in the audio into the target language named in the instruction.
+        Output only the translation, written entirely in the target language, even if the speech
+        is in another language. Do not repeat these instructions.
+      chunked_st: *translate
 
 benchmarks: configs/eval/suites/v1.yaml
 
