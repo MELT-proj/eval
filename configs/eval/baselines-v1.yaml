@@ -27,19 +27,20 @@ models:
     args: [-M, batch_size=8]
     # Skipped: most clips run past the 30 s window (MCIF long, AIR-Bench music).
     skip: [mcif-long-*, air-bench-foundation-music]
-    # For benchmarks marked `needs_instruction` (their samples carry none of # their own). No entry for a slice's task: that slice is skipped.
+    # For `needs_instruction` benchmarks; no entry for a task skips its slices.
+    # Names the source language, as smurf-v1.yaml does ({lang}/{src_lang}/{tgt_lang} from the sample's tags).
     instruction:
       # Asks for the bare transcription: with "Transcribe this audio." it
       # prefixes many answers with "The original content of this audio is:", # which is scored as-is.
-      asr: "Transcribe this audio. Output only the transcription."
-      st: "Translate this audio into {tgt_lang}."
+      asr: "Transcribe this {lang} audio. Output only the transcription."
+      st: "Translate this {src_lang} audio into {tgt_lang}."
 
   - name: qwen3-omni-30b-a3b-instruct
     model: melt/hf/qwen3_omni
     args: [-M, batch_size=4]
     instruction:
-      asr: "Transcribe this audio."
-      st: "Translate this audio into {tgt_lang}."
+      asr: "Transcribe this {lang} audio."
+      st: "Translate this {src_lang} audio into {tgt_lang}."
 
   # Whisper takes no instruction: it transcribes, or (task=translate) translates into English, and the language is auto-detected. The `instruction` below is ignored by the provider
   - name: whisper-large-v3
@@ -64,8 +65,8 @@ models:
     # Same 30 s window as Qwen2-Audio, so the same slices are skipped (see there).
     skip: [mcif-long-*, air-bench-foundation-music]
     instruction:
-      asr: "Transcribe this audio. Output only the transcription."
-      st: "Translate this audio into {tgt_lang}."
+      asr: "Transcribe this {lang} audio. Output only the transcription."
+      st: "Translate this {src_lang} audio into {tgt_lang}."
     # System prompts per task as the DeSTA2.5 authors recommend (see docs/baseline-providers.md).
     # MCQ user turn follows their evaluation_tips.md.
     mcq_instruction: "{question}\nThe answer could be: {options}"
