@@ -227,7 +227,7 @@ Some metrics need a model of their own and are computed after generation, by `ev
 | MCIF ST (`chunked_st`, de/it) | `mcif_scoring.py@mcif_official_trans_scorer` | `official_trans_comet` (needs mwerSegmenter) |
 | FLEURS ST, both directions | `rescore.py@comet_scorer` | `comet`, and `comet_coverage` (share of samples COMET could score) |
 
-They are declared per slice in [configs/eval/smurf-v1.yaml](../configs/eval/smurf-v1.yaml) (`post_scorers:`, with `post_venv:` on the benchmark). The watcher runs them by itself: once a checkpoint's generation is `done`, each pass calls `evaluate.py score`, which submits what is missing and skips what is already queued, and the checkpoint becomes `scored` when nothing is left. Until then the report shows `pending` for those metrics. A missing score never makes a checkpoint `failed`; after 3 submissions that did not complete it, the watcher stops trying and `status` says so.
+They are declared per slice in the suite, [configs/eval/suites/v1.yaml](../configs/eval/suites/v1.yaml) (`post_scorers:`, with `post_venv:` on the benchmark); [configs/eval/smurf-v1.yaml](../configs/eval/smurf-v1.yaml) drops the ones JUPITER cannot run (`skip_post_scorers:`). The watcher runs them by itself: once a checkpoint's generation is `done`, each pass calls `evaluate.py score`, which submits what is missing and skips what is already queued, and the checkpoint becomes `scored` when nothing is left. Until then the report shows `pending` for those metrics. A missing score never makes a checkpoint `failed`; after 3 submissions that did not complete it, the watcher stops trying and `status` says so.
 
 By hand, for any config:
 

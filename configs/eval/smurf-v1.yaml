@@ -4,7 +4,7 @@
 #   ASR  VoxPopuli, 16 languages               WER/CER      voxpopuli (one slice per language)
 #   ASR  MCIF chunked (en)                     WER          mcif chunked_asr
 #   ST   FLEURS en->EU (23), EU->en (17)       COMET-22 DA  fleurs24-st-enx, fleurs24-st-xen
-#   ST   MCIF chunked en->de, en->it           BLEU/chrF    mcif chunked_st (no official COMET on JUPITER)
+#   ST   MCIF chunked en->de, en->it           BLEU/chrF++  mcif chunked_st (no official COMET on JUPITER)
 #   SQA  MCIF short fixed prompt (en, de, it)  BERTScore    mcif audio_chat
 #
 #   python scripts/evaluate.py plan configs/eval/smurf-v1.yaml --site jupiter -v
@@ -40,121 +40,22 @@ models:
       asr: "Transcribe this {lang} audio: "
       st: "Translate this {src_lang} audio into {tgt_lang}: "
 
-benchmarks:
+benchmarks: configs/eval/suites/v1.yaml
 
-  # chunked_st: the official COMET scorer is commented out below. It needs the mwerSegmenter binary,
-  # which is i386-only and cannot run on JUPITER (aarch64); only the inline BLEU/chrF is reported.
-  # Uncomment where the binary runs (and set MWERSEGMENTER_ROOT).
-  - name: mcif
-    spec: configs/hf/mcif.yaml
-    # Venv of the post-hoc scorers (mcif-bench: BERTScore, COMET), run by `evaluate.py score`.
-    post_venv: ${METRICS_VENV_PATH}
-    slices:
-      - {task: chunked_asr, dataset_id: mcif-short-fixed-en}
-      - {task: chunked_st, dataset_id: mcif-short-fixed-de}
-      # - {task: chunked_st, dataset_id: mcif-short-fixed-de, post_scorers: [melteval/mcif_scoring.py@mcif_official_trans_scorer]}
-      - {task: chunked_st, dataset_id: mcif-short-fixed-it}
-      # - {task: chunked_st, dataset_id: mcif-short-fixed-it, post_scorers: [melteval/mcif_scoring.py@mcif_official_trans_scorer]}
-      - {task: audio_chat, dataset_id: mcif-short-fixed-en, post_scorers: [melteval/mcif_scoring.py@mcif_official_qa_scorer]}
-      - {task: audio_chat, dataset_id: mcif-short-fixed-de, post_scorers: [melteval/mcif_scoring.py@mcif_official_qa_scorer]}
-      - {task: audio_chat, dataset_id: mcif-short-fixed-it, post_scorers: [melteval/mcif_scoring.py@mcif_official_qa_scorer]}
+# Slices of the suite this campaign does not run (benchmark names or dataset_ids).
+skip:
+  - air-bench
+  - covost2
+  - mcif-long-*
+  - mcif-short-mixed-*
+  - "*-zh"
+  # FLEURS X->en sources missing on JUPITER.
+  - fleurs-el_en
+  - fleurs-pl_en
+  - fleurs-ro_en
+  - fleurs-sk_en
+  - fleurs-sl_en
+  - fleurs-sv_en
 
-  - name: librispeech
-    spec: configs/hf/librispeech-hf-test-clean.yaml
-    needs_instruction: true
-    slices:
-      - {task: asr, dataset_id: librispeech-test-clean, time: "02:00:00"}
-
-  - name: librispeech-other
-    spec: configs/hf/librispeech-hf-test-other.yaml
-    needs_instruction: true
-    slices:
-      - {task: asr, dataset_id: librispeech-test-other, time: "02:00:00"}
-
-  ###########################################
-  # Shar frozen sets (freeze them first!!!) #
-  ###########################################
-
-  # Frozen from configs/shar/fleurs24-st-xen-test.yaml. On JUPITER azeros lacks el, pl, ro, sk, sl, sv
-  # (and ru, uk), so those slices are commented out; uncomment with their sources in the config.
-  - name: fleurs24-st-xen
-    frozen_set: ${FLEURS24_ST_XEN_SET}
-    needs_instruction: true
-    # COMET-22 DA (melteval/rescore.py), post-hoc in the metrics venv.
-    post_venv: ${METRICS_VENV_PATH}
-    slices:
-      - {task: st, dataset_id: fleurs-bg_en, post_scorers: [melteval/rescore.py@comet_scorer]}
-      - {task: st, dataset_id: fleurs-cs_en, post_scorers: [melteval/rescore.py@comet_scorer]}
-      - {task: st, dataset_id: fleurs-da_en, post_scorers: [melteval/rescore.py@comet_scorer]}
-      - {task: st, dataset_id: fleurs-de_en, post_scorers: [melteval/rescore.py@comet_scorer]}
-# - {task: st, dataset_id: fleurs-el_en, post_scorers: [melteval/rescore.py@comet_scorer]}
-      - {task: st, dataset_id: fleurs-es_en, post_scorers: [melteval/rescore.py@comet_scorer]}
-      - {task: st, dataset_id: fleurs-et_en, post_scorers: [melteval/rescore.py@comet_scorer]}
-      - {task: st, dataset_id: fleurs-fi_en, post_scorers: [melteval/rescore.py@comet_scorer]}
-      - {task: st, dataset_id: fleurs-fr_en, post_scorers: [melteval/rescore.py@comet_scorer]}
-      - {task: st, dataset_id: fleurs-ga_en}  # no FLEURS ga source transcript: BLEU/chrF only
-      - {task: st, dataset_id: fleurs-hr_en, post_scorers: [melteval/rescore.py@comet_scorer]}
-      - {task: st, dataset_id: fleurs-hu_en, post_scorers: [melteval/rescore.py@comet_scorer]}
-      - {task: st, dataset_id: fleurs-it_en, post_scorers: [melteval/rescore.py@comet_scorer]}
-      - {task: st, dataset_id: fleurs-lt_en, post_scorers: [melteval/rescore.py@comet_scorer]}
-      - {task: st, dataset_id: fleurs-lv_en, post_scorers: [melteval/rescore.py@comet_scorer]}
-      - {task: st, dataset_id: fleurs-mt_en, post_scorers: [melteval/rescore.py@comet_scorer]}
-      - {task: st, dataset_id: fleurs-nl_en, post_scorers: [melteval/rescore.py@comet_scorer]}
-# - {task: st, dataset_id: fleurs-pl_en, post_scorers: [melteval/rescore.py@comet_scorer]}
-      - {task: st, dataset_id: fleurs-pt_en, post_scorers: [melteval/rescore.py@comet_scorer]}
-# - {task: st, dataset_id: fleurs-ro_en, post_scorers: [melteval/rescore.py@comet_scorer]}
-# - {task: st, dataset_id: fleurs-sk_en, post_scorers: [melteval/rescore.py@comet_scorer]}
-# - {task: st, dataset_id: fleurs-sl_en, post_scorers: [melteval/rescore.py@comet_scorer]}
-# - {task: st, dataset_id: fleurs-sv_en, post_scorers: [melteval/rescore.py@comet_scorer]}
-
-  # Frozen from configs/shar/fleurs24-st-enx-test.yaml
-  - name: fleurs24-st-enx
-    frozen_set: ${FLEURS24_ST_ENX_SET}
-    needs_instruction: true
-    post_venv: ${METRICS_VENV_PATH}
-    slices:
-      - {task: st, dataset_id: fleurs-en_bg, post_scorers: [melteval/rescore.py@comet_scorer]}
-      - {task: st, dataset_id: fleurs-en_cs, post_scorers: [melteval/rescore.py@comet_scorer]}
-      - {task: st, dataset_id: fleurs-en_da, post_scorers: [melteval/rescore.py@comet_scorer]}
-      - {task: st, dataset_id: fleurs-en_de, post_scorers: [melteval/rescore.py@comet_scorer]}
-      - {task: st, dataset_id: fleurs-en_el, post_scorers: [melteval/rescore.py@comet_scorer]}
-      - {task: st, dataset_id: fleurs-en_es, post_scorers: [melteval/rescore.py@comet_scorer]}
-      - {task: st, dataset_id: fleurs-en_et, post_scorers: [melteval/rescore.py@comet_scorer]}
-      - {task: st, dataset_id: fleurs-en_fi, post_scorers: [melteval/rescore.py@comet_scorer]}
-      - {task: st, dataset_id: fleurs-en_fr, post_scorers: [melteval/rescore.py@comet_scorer]}
-      - {task: st, dataset_id: fleurs-en_ga, post_scorers: [melteval/rescore.py@comet_scorer]}
-      - {task: st, dataset_id: fleurs-en_hr, post_scorers: [melteval/rescore.py@comet_scorer]}
-      - {task: st, dataset_id: fleurs-en_hu, post_scorers: [melteval/rescore.py@comet_scorer]}
-      - {task: st, dataset_id: fleurs-en_it, post_scorers: [melteval/rescore.py@comet_scorer]}
-      - {task: st, dataset_id: fleurs-en_lt, post_scorers: [melteval/rescore.py@comet_scorer]}
-      - {task: st, dataset_id: fleurs-en_lv, post_scorers: [melteval/rescore.py@comet_scorer]}
-      - {task: st, dataset_id: fleurs-en_mt, post_scorers: [melteval/rescore.py@comet_scorer]}
-      - {task: st, dataset_id: fleurs-en_nl, post_scorers: [melteval/rescore.py@comet_scorer]}
-      - {task: st, dataset_id: fleurs-en_pl, post_scorers: [melteval/rescore.py@comet_scorer]}
-      - {task: st, dataset_id: fleurs-en_pt, post_scorers: [melteval/rescore.py@comet_scorer]}
-      - {task: st, dataset_id: fleurs-en_ro, post_scorers: [melteval/rescore.py@comet_scorer]}
-      - {task: st, dataset_id: fleurs-en_sk, post_scorers: [melteval/rescore.py@comet_scorer]}
-      - {task: st, dataset_id: fleurs-en_sl, post_scorers: [melteval/rescore.py@comet_scorer]}
-      - {task: st, dataset_id: fleurs-en_sv, post_scorers: [melteval/rescore.py@comet_scorer]}
-
-  # Frozen configs/shar/voxpopuli-test.yaml
-  - name: voxpopuli
-    frozen_set: ${VOXPOPULI_SET}
-    needs_instruction: true
-    slices:
-      - {task: asr, dataset_id: voxpopuli-en}
-      - {task: asr, dataset_id: voxpopuli-de}
-      - {task: asr, dataset_id: voxpopuli-fr}
-      - {task: asr, dataset_id: voxpopuli-es}
-      - {task: asr, dataset_id: voxpopuli-it}
-      - {task: asr, dataset_id: voxpopuli-pl}
-      - {task: asr, dataset_id: voxpopuli-ro}
-      - {task: asr, dataset_id: voxpopuli-hu}
-      - {task: asr, dataset_id: voxpopuli-cs}
-      - {task: asr, dataset_id: voxpopuli-nl}
-      - {task: asr, dataset_id: voxpopuli-fi}
-      - {task: asr, dataset_id: voxpopuli-hr}
-      - {task: asr, dataset_id: voxpopuli-sk}
-      - {task: asr, dataset_id: voxpopuli-sl}
-      - {task: asr, dataset_id: voxpopuli-et}
-      - {task: asr, dataset_id: voxpopuli-lt}
+# Needs mwerSegmenter, which cannot run on JUPITER (aarch64).
+skip_post_scorers: [melteval/mcif_scoring.py@mcif_official_trans_scorer]

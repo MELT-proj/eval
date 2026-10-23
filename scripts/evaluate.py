@@ -142,9 +142,31 @@ def resolve_model(model: str) -> tuple[str | None, str | None]:
     return None, f"{model!r} is not a melt/..., melt/hf/... or smurf/... model"
 
 
+def load_benchmarks(value) -> list[dict]:
+    """A config's ``benchmarks``: a list as written, or the path of a suite file holding one.
+
+    A suite path is relative to the repo root, like every other path in a config.
+    """
+    if not isinstance(value, str):
+        return value
+    path = Path(expand(value) or value)
+    if not path.is_absolute():
+        path = REPO_ROOT / path
+    if not path.exists():
+        raise SystemExit(f"Benchmark suite {value!r} not found ({path}).")
+    return yaml.safe_load(path.read_text(encoding="utf-8"))["benchmarks"]
+
+
+def skipped_by(patterns: list[str], benchmark: str, dataset_id: str | None) -> bool:
+    """Whether a ``skip:`` list excludes a slice: a glob matching its benchmark's name or its dataset_id."""
+    names = [benchmark, dataset_id] if dataset_id else [benchmark]
+    return any(fnmatch.fnmatch(name, pattern) for name in names for pattern in patterns)
+
+
 def load_config(path: Path, out: str | None) -> dict:
     """Read a config and settle its output directory (``--out`` wins over ``output_dir``)."""
     config = yaml.safe_load(path.read_text(encoding="utf-8"))
+    config["benchmarks"] = load_benchmarks(config["benchmarks"])
     output_dir = expand(out or config.get("output_dir"))
     if not output_dir:
         raise SystemExit(
@@ -238,7 +260,10 @@ def plan(
             for slice_cfg in bench["slices"]:
                 task, dataset_id, sname = slice_cfg["task"], slice_cfg.get("dataset_id"), slice_name(slice_cfg)
                 label = f"{name} x {bench['name']}/{sname}"
-                if dataset_id and any(fnmatch.fnmatch(dataset_id, p) for p in model_cfg.get("skip", [])):
+                if skipped_by(config.get("skip", []), bench["name"], dataset_id):
+                    skipped.append(f"{label}: excluded by the config's skip list")
+                    continue
+                if skipped_by(model_cfg.get("skip", []), bench["name"], dataset_id):
                     skipped.append(f"{label}: excluded by the model's skip list")
                     continue
 
@@ -271,7 +296,9 @@ def plan(
                 args += [str(a) for a in slice_cfg.get("args", [])]
                 if task in JUDGE_TASKS:
                     args.append("--no-score")
-                post_scorers = [str(s) for s in slice_cfg.get("post_scorers", [])]
+                # `skip_post_scorers`: scorers that cannot run where this config is used
+                post_scorers = [str(s) for s in slice_cfg.get("post_scorers", [])
+                                if str(s) not in config.get("skip_post_scorers", [])]  # fmt: skip
                 if post_scorers:
                     # So the report can show a missing post-hoc metric as pending.
                     args += ["--metadata", f"melteval_post_scorers={','.join(post_scorers)}"]
@@ -581,10 +608,14 @@ def start_pack(pack: list[Job], site: str, settings: dict, config: dict) -> str 
 
 
 def snapshot_config(config: dict) -> None:
-    """Keep a copy of the config in the output folder, so the folder says what it holds."""
+    """Keep a copy of the config in the output folder, so the folder says what it holds.
+
+    Written with its benchmarks expanded: a suite file can change after the run.
+    """
     out = config["_output_dir"]
     out.mkdir(parents=True, exist_ok=True)
-    shutil.copyfile(config["_path"], out / "config.yaml")
+    resolved = {k: v for k, v in config.items() if not k.startswith("_")}
+    (out / "config.yaml").write_text(yaml.safe_dump(resolved, sort_keys=False), encoding="utf-8")
 
 
 def cmd_plan(args, config) -> None:

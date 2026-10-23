@@ -70,6 +70,17 @@ benchmarks:
   DeSTA2.5 sets it, to follow its authors' layout.
 - A slice may add `args` (e.g. `[--max-tokens, "4096"]`) and `time` (the SLURM
   wall clock; in a pack, the pack's minimum wall clock and the order slices are taken in, longest first).
+- `benchmarks` may instead be the path of a suite file holding the list
+  (`benchmarks: configs/eval/suites/v1.yaml`). The real configs do this, so
+  every campaign scores the same benchmark definitions; a campaign that runs
+  part of a suite says so with `skip`, never with its own copy of the list.
+- `skip` (a model entry, or the whole config): globs matched against a
+  benchmark's name and each slice's `dataset_id`. A model's skip is what that
+  model cannot run; the config's is what the campaign leaves out.
+- `skip_post_scorers` (the whole config): post-hoc scorers not to run where
+  this config is used (e.g. MCIF's mwerSegmenter-based COMET on JUPITER). They
+  are not declared in the logs either, so the report does not show them as pending.
+- The output folder's `config.yaml` is the config with its suite expanded.
 
 ## 3. The commands
 

@@ -173,6 +173,59 @@ class TestPlan:
         assert job.args[job.args.index("--log-format") :][:2] == ["--log-format", "json"]
         assert "melteval_model=qwen" in job.args and "melteval_campaign=test" in job.args
 
+    def test_the_configs_skip_drops_slices_by_benchmark_name_or_dataset_id_for_every_model(self, tmp_path):
+        jobs, skipped = _jobs(tmp_path, skip=["air-bench", "librispeech-test-*"])
+        assert {s for _, s in jobs} == {"chunked_asr-mcif-long-fixed-en", "st"}
+        assert any("smurf x air-bench/audio_chat-air-bench-chat-speech" in line and "config's skip" in line
+                   for line in skipped)  # fmt: skip
+
+    def test_a_models_skip_matches_a_benchmark_name_too(self, tmp_path):
+        """A slice without a dataset_id (`{task: asr}`) can only be skipped by its benchmark's name."""
+        config = _config(tmp_path)
+        config["models"][0]["skip"] = ["librispeech"]
+        jobs, _ = evaluate.plan(config)
+        assert not any(j.model_name == "qwen" and j.benchmark == "librispeech" for j in jobs)
+        assert any(j.model_name == "smurf" and j.benchmark == "librispeech" for j in jobs)
+
+
+class TestSuite:
+    """`benchmarks:` as the path of a suite file shared by several configs."""
+
+    def _write(self, tmp_path, benchmarks):
+        import yaml
+
+        config_file = tmp_path / "c.yaml"
+        config_file.write_text(yaml.safe_dump({"name": "t", "output_dir": str(tmp_path / "out"), "models": [],
+                                               "benchmarks": benchmarks}))  # fmt: skip
+        return config_file
+
+    def test_a_suite_path_is_read_from_the_repo_root(self, tmp_path):
+        config = evaluate.load_config(self._write(tmp_path, "configs/eval/suites/v1.yaml"), None)
+        assert "voxpopuli" in [b["name"] for b in config["benchmarks"]]
+
+    def test_an_inline_list_is_kept_as_written(self, tmp_path):
+        config = evaluate.load_config(self._write(tmp_path, [{"name": "a", "slices": []}]), None)
+        assert config["benchmarks"] == [{"name": "a", "slices": []}]
+
+    def test_a_missing_suite_stops_with_its_path(self, tmp_path):
+        with pytest.raises(SystemExit, match="nope.yaml"):
+            evaluate.load_config(self._write(tmp_path, "configs/eval/suites/nope.yaml"), None)
+
+    def test_the_snapshot_holds_the_expanded_suite(self, tmp_path):
+        import yaml
+
+        config = evaluate.load_config(self._write(tmp_path, "configs/eval/suites/v1.yaml"), None)
+        evaluate.snapshot_config(config)
+        snapshot = yaml.safe_load((tmp_path / "out" / "config.yaml").read_text())
+        assert snapshot["benchmarks"] == config["benchmarks"]
+        assert not any(k.startswith("_") for k in snapshot)
+
+    @pytest.mark.parametrize("name", ["baselines-v1", "smurf-v1"])
+    def test_the_real_configs_share_the_suite(self, name, tmp_path):
+        config = evaluate.load_config(ROOT / "configs" / "eval" / f"{name}.yaml", str(tmp_path))
+        suite = evaluate.load_benchmarks("configs/eval/suites/v1.yaml")
+        assert config["benchmarks"] == suite
+
 
 class TestResolveJudge:
     def test_a_local_baseline_is_loaded_text_only(self):
@@ -227,6 +280,15 @@ class TestPostScorers:
         assert qa.post_scorers == [self.QA] and asr.post_scorers == []
         assert "--no-score" in qa.args and "--no-score" not in asr.args
         assert f"melteval_post_scorers={self.QA}" in qa.args
+
+    def test_skip_post_scorers_neither_runs_nor_declares_them(self, tmp_path):
+        """Declared but never run would show as pending in the report forever."""
+        config = self._config(tmp_path)
+        config["skip_post_scorers"] = [self.QA]
+        jobs, _ = evaluate.plan(config)
+        qa = next(j for j in jobs if j.model_name == "qwen" and j.task == "audio_chat")
+        assert qa.post_scorers == []
+        assert not any(a.startswith("melteval_post_scorers=") for a in qa.args)
 
     def _score(self, tmp_path, monkeypatch, config, queued=frozenset()):
         from types import SimpleNamespace as NS

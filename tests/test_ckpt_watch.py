@@ -185,6 +185,14 @@ class TestBaselines:
         assert config["benchmarks"] == self.template["benchmarks"]
         assert config["output_dir"] == str(tmp_path)
 
+    def test_they_take_the_templates_suite_and_skips(self, tmp_path):
+        """A campaign's `skip` must reach its baselines, or they run slices no checkpoint does."""
+        template = {**self.template, "benchmarks": "configs/eval/suites/v1.yaml", "skip": ["air-bench"],
+                    "skip_post_scorers": ["x.py@y"]}  # fmt: skip
+        config = cw.baselines_config(template, self.models, ["qwen"], tmp_path)
+        assert config["benchmarks"] == "configs/eval/suites/v1.yaml"
+        assert config["skip"] == ["air-bench"] and config["skip_post_scorers"] == ["x.py@y"]
+
     def test_an_unknown_model_is_an_error(self, tmp_path):
         import pytest
 
