@@ -158,3 +158,20 @@ What differs from Qwen2-Audio:
   `long`) go in whole. Size `batch_size` for the longest audio.
 - Needs `transformers` with the `qwen3_omni_moe` model type (checked against
   4.57.6).
+
+
+## Text-only translation baseline
+
+`scripts/text_translate.py` gives a text LLM the reference transcript of each clip of a frozen ST set (the manifest's
+`source_text`) and scores its translation against `target`, per language pair, with chrF++ and spBLEU (cased and
+lowercased) from `melteval.st_metrics`. No audio is involved, so the numbers are a ceiling for a speech model built on
+the same backbone, not a speech result. Prompt: "Translate the following content into {tgt_lang}, and write nothing
+else." followed by the text, one chat turn (thinking off where the template has it), greedy decoding, 384 new tokens at
+most. Outputs that hit the cap are counted in `scores.json` and still scored. Per pair it writes
+`<dataset_id>.hyp.jsonl`; `scores.json` holds the metrics and the sacrebleu signatures.
+
+```
+source infra/sites/artemis.sh
+sbatch --partition=a6000 --qos=gpu-short --gres=gpu:1 --time=04:00:00 infra/run_text_translate.sbatch \
+    Qwen/Qwen3.5-2B /path/to/eval-sets/fleurs24-st-xen-test /path/to/out/qwen/xen --batch-size 64
+```

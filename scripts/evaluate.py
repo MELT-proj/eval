@@ -150,10 +150,20 @@ def load_config(path: Path, out: str | None) -> dict:
     return config
 
 
+def write_instruction(output_dir: Path, instruction: str) -> Path:
+    """Write *instruction* to ``<output_dir>/instructions/<hash>.txt`` and return the path."""
+    import hashlib
+
+    path = output_dir / "instructions" / f"{hashlib.sha256(instruction.encode()).hexdigest()[:12]}.txt"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(instruction, encoding="utf-8")
+    return path
+
+
 def slice_name(slice_cfg: dict) -> str:
-    """A slice's folder name: its task, plus its dataset_id if any."""
-    dataset_id = slice_cfg.get("dataset_id")
-    return f"{slice_cfg['task']}-{dataset_id}" if dataset_id else slice_cfg["task"]
+    """A slice's folder name: its task, plus its dataset_id and lang if any."""
+    parts = [slice_cfg["task"], slice_cfg.get("dataset_id"), slice_cfg.get("lang")]
+    return "-".join(p for p in parts if p)
 
 
 @dataclass
@@ -232,19 +242,34 @@ def plan(
                     skipped.append(f"{label}: excluded by the model's skip list")
                     continue
 
+                lang = slice_cfg.get("lang")
+                if lang and lang not in (model_cfg.get("languages") or [lang]):
+                    skipped.append(f"{label}: language {lang!r} is not in the model's languages list")
+                    continue
                 args = ["-T", f"task_filter={task}"]
                 if dataset_id:
                     args += ["-T", f"dataset_id={dataset_id}"]
+                if lang:
+                    args += ["-T", f"lang={lang}"]
                 # A benchmark whose samples carry no instruction of their own
                 # needs one from the model entry -- except for MELT, whose
                 # prompt comes from the checkpoint's training config.
                 if bench.get("needs_instruction") and family in ("hf", "smurf"):
                     instruction = (model_cfg.get("instruction") or {}).get(task)
+                    if isinstance(instruction, dict):
+                        # One literal instruction per dataset_id, for a model whose environment
+                        # cannot render {lang} placeholders (no language table there).
+                        instruction = instruction.get(dataset_id)
                     if instruction is None:
                         skipped.append(f"{label}: no instruction for task {task!r} in the model entry")
                         continue
                     # -T values are parsed as YAML; a JSON string is a quoted YAML string.
-                    args += ["-T", f"instruction={json.dumps(instruction)}"]
+                    if "," in instruction or ": " in instruction:
+                        # inspect splits every -T value at commas (and YAML reads ": " as a
+                        # mapping), so such an instruction travels in a file.
+                        args += ["-T", f"instruction_file={write_instruction(config['_output_dir'], instruction)}"]
+                    else:
+                        args += ["-T", f"instruction={json.dumps(instruction)}"]
 
                 args += [str(a) for a in model_cfg.get("args", [])]
                 args += [str(a) for a in slice_cfg.get("args", [])]
@@ -323,9 +348,13 @@ def wait_for_room() -> None:
         return
     announced = False
     while True:
-        queued = subprocess.run(
-            ["squeue", "-h", "-u", os.environ.get("USER", "")], capture_output=True, text=True, check=False
-        ).stdout.count("\n")
+        # MAX_QUEUED_OWN=1 counts only this runner's jobs (tagged melteval:), for a user whose
+        # other jobs sit in a different QOS and do not count against the cap.
+        own_only = os.environ.get("MAX_QUEUED_OWN") == "1"
+        out = subprocess.run(
+            ["squeue", "-h", "-u", os.environ.get("USER", ""), "-o", "%k"], capture_output=True, text=True, check=False
+        ).stdout
+        queued = sum(1 for line in out.splitlines() if not own_only or line.startswith("melteval:"))
         if queued < int(limit):
             return
         if not announced:
