@@ -4,15 +4,27 @@ That is, extracting prompts and audio locators from messages and converting
 ``GenerateConfig`` into generation kwargs.
 """
 
+import sys
+import types
 from dataclasses import dataclass, field
 
 import pytest
 from inspect_ai.model import ChatMessageUser, ContentAudio, ContentData, ContentText, GenerateConfig
 
 from melteval.dataset import AUDIO_DATA_KEY
+from melteval.providers import smurf
 from melteval.providers.base import _extract
 from melteval.providers.melt import _batched_audio, _generate_kwargs
-from melteval.providers.smurf import _collate_audio, _generation_kwargs, _plan_device_map, _turns, _with_audio_tag
+from melteval.providers.smurf import (
+    _check_system_placement,
+    _collate_audio,
+    _generation_kwargs,
+    _merge_config,
+    _plan_device_map,
+    _speechllm_class,
+    _turns,
+    _with_audio_tag,
+)
 
 
 class TestExtract:
@@ -229,6 +241,119 @@ class TestSmurfTurns:
 
     def test_user_placement_without_a_system_prompt_leaves_the_turn_alone(self):
         assert _turns("Transcribe: <tag>", None, "user") == [{"role": "user", "content": "Transcribe: <tag>"}]
+
+
+class TestSmurfSystemPlacement:
+    """A system turn the checkpoint's prompt format cannot render is refused at load, not mid-eval."""
+
+    QWEN = {"user": {}, "assistant": {}}
+    EUROLLM = {"system": {}, "user": {}, "assistant": {}}
+
+    def test_a_system_turn_on_a_format_without_a_system_role_is_refused(self):
+        with pytest.raises(ValueError, match="system_placement=user"):
+            _check_system_placement(self.QWEN, "qwen", "Respond directly.", "turn")
+
+    @pytest.mark.parametrize(
+        ("template", "system_prompt", "placement"),
+        [
+            (QWEN, "Respond directly.", "user"),
+            (QWEN, None, "turn"),
+            (EUROLLM, "Respond directly.", "turn"),
+        ],
+    )
+    def test_what_the_format_can_render_passes(self, template, system_prompt, placement):
+        _check_system_placement(template, "fmt", system_prompt, placement)
+
+
+class TestSmurfSpeechllmClass:
+    """The project's prompt formats are registered before loading, as fbk_speechllm.inference does."""
+
+    @staticmethod
+    def _fake_fbk(monkeypatch, *, with_prompts: bool) -> list[str]:
+        calls: list[str] = []
+        speech_llm = types.ModuleType("fbk_speechllm.models.speech_llm")
+        speech_llm.SpeechLLM = type("SpeechLLM", (), {})
+        utils = types.ModuleType("fbk_speechllm.utils")
+        utils.register_custom_perception_modules = lambda: calls.append("perception")
+        prompts = None
+        if with_prompts:
+            prompts = types.ModuleType("fbk_speechllm.prompts")
+            prompts.register_custom_prompt_formats = lambda: calls.append("prompts")
+        for name, module in [
+            ("fbk_speechllm", types.ModuleType("fbk_speechllm")),
+            ("fbk_speechllm.models", types.ModuleType("fbk_speechllm.models")),
+            ("fbk_speechllm.models.speech_llm", speech_llm),
+            ("fbk_speechllm.utils", utils),
+            ("fbk_speechllm.prompts", prompts),  # None makes the import fail
+        ]:
+            monkeypatch.setitem(sys.modules, name, module)
+        return calls
+
+    def test_both_registries_are_filled_before_the_class_is_returned(self, monkeypatch):
+        calls = self._fake_fbk(monkeypatch, with_prompts=True)
+        assert _speechllm_class().__name__ == "SpeechLLM"
+        assert sorted(calls) == ["perception", "prompts"]
+
+    def test_an_fbk_speechllm_without_prompts_is_refused_rather_than_swapped_for_salm(self, monkeypatch):
+        """SALM would load, and then fail on the first batch over an unknown prompt format."""
+        self._fake_fbk(monkeypatch, with_prompts=False)
+        with pytest.raises(ImportError, match="fbk_speechllm.prompts"):
+            _speechllm_class()
+
+
+class TestSmurfConfigOverride:
+    """model_config_override is merged onto the checkpoint's stored config, not swapped in for it."""
+
+    STORED = {
+        "cfg": {
+            "pretrained_llm": "utter-project/EuroLLM-9B-Instruct-2512",
+            "prompt_format": "qwen",
+            "freeze_params": ["^llm\\..+$", "^embed_tokens\\..+$"],
+            "perception": {"output_dim": 4096, "modality_adapter": {"hidden_dim": 5120, "num_layers": 6}},
+        }
+    }
+
+    def test_mappings_merge_and_everything_else_is_replaced(self):
+        merged = _merge_config(
+            self.STORED["cfg"],
+            {"freeze_params": ["^llm\\..+$"], "perception": {"modality_adapter": {"hidden_dim": 7424}}},
+        )
+        assert merged["freeze_params"] == ["^llm\\..+$"]
+        assert merged["perception"] == {"output_dim": 4096, "modality_adapter": {"hidden_dim": 7424, "num_layers": 6}}
+        assert merged["prompt_format"] == "qwen"
+
+    def test_only_what_the_override_names_changes(self, tmp_path, monkeypatch):
+        torch = pytest.importorskip("torch")
+        pytest.importorskip("lightning")
+        ckpt = tmp_path / "step=1000.ckpt"
+        torch.save({"state_dict": {}, "hyper_parameters": self.STORED}, ckpt)
+        override = tmp_path / "override.yaml"
+        override.write_text("cfg:\n  prompt_format: eurollm\n")
+
+        loaded: dict = {}
+
+        class FakeSpeechLLM:
+            @classmethod
+            def load_from_checkpoint(cls, path, **kwargs):
+                loaded.update(kwargs)
+
+        monkeypatch.setattr(smurf, "_speechllm_class", lambda: FakeSpeechLLM)
+        smurf._load_speechllm(str(ckpt), model_config_override=str(override))
+
+        expected = _merge_config(self.STORED["cfg"], {"prompt_format": "eurollm"})
+        assert loaded["cfg"] == expected
+        assert loaded["cfg"]["perception"]["modality_adapter"]["hidden_dim"] == 5120
+
+    def test_a_checkpoint_without_stored_hparams_is_refused(self, tmp_path, monkeypatch):
+        torch = pytest.importorskip("torch")
+        pytest.importorskip("lightning")
+        ckpt = tmp_path / "bare.ckpt"
+        torch.save({"state_dict": {}}, ckpt)
+        override = tmp_path / "override.yaml"
+        override.write_text("cfg:\n  prompt_format: eurollm\n")
+        monkeypatch.setattr(smurf, "_speechllm_class", lambda: object)
+        with pytest.raises(ValueError, match="no hyperparameters"):
+            smurf._load_speechllm(str(ckpt), model_config_override=str(override))
 
 
 class TestSmurfGenerationKwargs:

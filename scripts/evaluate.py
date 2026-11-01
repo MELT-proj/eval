@@ -245,6 +245,14 @@ def plan(
                 skipped.append(f"model {name}: venv {model_cfg['venv']!r} not found on this machine")
                 continue
             env["VENV_PATH"] = venv
+        model_args = [str(a) for a in model_cfg.get("args", [])]
+        if "model_config_override" in model_cfg:
+            # Absolute: inspect chdirs into melteval/ while it builds the task.
+            override, reason = resolve_path(model_cfg["model_config_override"], "model_config_override")
+            if override is None:
+                skipped.append(f"model {name}: {reason}")
+                continue
+            model_args += ["-M", f"model_config_override={override}"]
 
         for bench in config["benchmarks"]:
             if benchmarks and bench["name"] not in benchmarks:
@@ -286,7 +294,7 @@ def plan(
                 if mcq_instruction and task == "audio_mcq" and family == "hf":
                     args += ["-T", f"mcq_instruction={json.dumps(mcq_instruction)}"]
 
-                args += [str(a) for a in model_cfg.get("args", [])]
+                args += model_args
                 # Optional per-task system prompts (`system:` map, `default` as fallback), e.g. DeSTA2.5's.
                 # Passed as a model argument so inspect records it in the log.
                 system = model_cfg.get("system") or {}

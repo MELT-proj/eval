@@ -34,9 +34,12 @@ pack:
 models:
   - name: smurf
     model: smurf/checkpoints/smurf/*.ckpt
-    # map_location=cpu: load in host RAM and move to the GPU already in bf16.
-    # system_placement=user: the runs' prompt_format has no system role, so `system:` opens the user turn.
-    args: [-M, batch_size=8, -M, map_location=cpu, -M, system_placement=user]
+    # map_location=cpu: load in host RAM and move to the GPU already in bf16
+    args: [-M, batch_size=8, -M, map_location=cpu]
+    # Loads the checkpoint with prompt_format=eurollm (stored: qwen)
+    # Checkpoints evaluated before this (qwen, no override) used
+    # `-M system_placement=user` instead, which opens the user turn with the system prompt.
+    model_config_override: configs/smurf/eurollm_override_config.yaml
     instruction:
       asr: "Transcribe this {lang} audio: "
       st: "Translate this {src_lang} audio into {tgt_lang}: "

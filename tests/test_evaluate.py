@@ -152,6 +152,22 @@ class TestPlan:
         for key in (("qwen", "asr-librispeech-test-clean"), ("melt", "asr-librispeech-test-clean")):
             assert not any(a.startswith("system_prompt=") for a in jobs[key].args)
 
+    def test_a_model_config_override_becomes_an_absolute_model_argument(self, tmp_path):
+        """Relative to the repo root in the config; absolute in the job, since inspect chdirs into melteval/."""
+        config = _config(tmp_path)
+        config["models"][3]["model_config_override"] = "configs/smurf/eurollm_override_config.yaml"
+        jobs = {(j.model_name, j.slice): j for j in evaluate.plan(config)[0]}
+        args = jobs["smurf", "asr-librispeech-test-clean"].args
+        assert f"model_config_override={ROOT}/configs/smurf/eurollm_override_config.yaml" in args
+        assert not any(a.startswith("model_config_override=") for a in jobs["qwen", "asr-librispeech-test-clean"].args)
+
+    def test_a_missing_model_config_override_skips_the_model_and_says_why(self, tmp_path):
+        config = _config(tmp_path)
+        config["models"][3]["model_config_override"] = "configs/smurf/nonexistent.yaml"
+        jobs, skipped = evaluate.plan(config)
+        assert not any(j.model_name == "smurf" for j in jobs)
+        assert any(line.startswith("model smurf: model_config_override") for line in skipped)
+
     def test_an_mcq_instruction_goes_only_to_the_multiple_choice_slices_of_its_model(self, tmp_path):
         jobs, _ = _jobs(tmp_path)
         mcq = jobs["desta", "audio_mcq-air-bench-foundation-speech"]

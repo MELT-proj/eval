@@ -81,10 +81,25 @@ config) is placed according to `-M system_placement`:
 1. **The format has a `system` role:** `system_placement=turn` (the default)
    sends the prompt as a `system` turn before the user turn.
 2. **It does not:** `system_placement=user` puts the prompt at the start of the
-   user turn, a blank line before the instruction. A `system` turn here fails
-   every sample with `AssertionError: Found turn with turn['role']='system'`.
+   user turn, a blank line before the instruction. A `system` turn here is
+   refused when the model loads (inside `generate()` it would fail every sample
+   with `AssertionError: Found turn with turn['role']='system'`).
 
 Without a system prompt there is no system turn either way.
+
+`qwen` (the format the first runs were trained with) has no `system` role;
+FBK's `eurollm` format (`fbk_speechllm/prompts/`) does, with otherwise identical
+markup. Newer checkpoints are evaluated with `eurollm`, so the system prompt
+gets its own turn (the default placement). To do that, load the checkpoint with
+[configs/smurf/eurollm_override_config.yaml](../configs/smurf/eurollm_override_config.yaml):
+`model_config_override:` in a launcher model entry, or
+`-M model_config_override=<abs path>` directly.
+
+The override is merged onto the config stored in the checkpoint, so it only
+needs `prompt_format: eurollm` and works for any architecture. (FBK's inference
+replaces the stored config instead, which is why their copy repeats the whole
+run config.) The provider registers FBK's formats
+(`fbk_speechllm.prompts.register_custom_prompt_formats`) before loading.
 
 **The instruction is not the model's.** In SMURF training it is the
 conversation's `context` tag, baked into the Lhotse manifests at data-prep
@@ -116,6 +131,10 @@ uv venv --python 3.12 /path/to/venvs/smurf-eval
 VIRTUAL_ENV=/path/to/venvs/smurf-eval uv pip install -e /path/to/speechllm
 VIRTUAL_ENV=/path/to/venvs/smurf-eval uv pip install -e "/path/to/melt-eval[metrics]"
 ```
+
+The speechllm checkout must be recent enough to have `fbk_speechllm/prompts/`
+(the `eurollm` format); with an older one the provider refuses to load and says
+so. An editable install picks it up from a `git pull`.
 
 Note `melt-eval` without the `shar` extra: that extra pulls in `melt-proj`,
 which is MELT's training package and has no business in this environment.

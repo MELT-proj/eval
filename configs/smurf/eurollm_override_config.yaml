@@ -1,0 +1,10 @@
+# Config override to evaluate SMURF checkpoints with the EuroLLM chat format
+# (`prompt_format: eurollm`), so the system prompt goes in its own turn.
+#
+# Merged onto the config stored in the checkpoint, so it only names what changes
+# and works for any architecture. This is different from FBK's code  (smurf4eu/speechllm@595e857,
+# working_config/generate/), which is a full copy of the run's config (their
+# inference replaces the stored config instead).
+# Set via `model_config_override:` in configs/eval/smurf-v1.yaml, or -M model_config_override=<abs path>.
+cfg:
+  prompt_format: eurollm

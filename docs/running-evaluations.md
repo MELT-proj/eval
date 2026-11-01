@@ -64,6 +64,10 @@ benchmarks:
   from the checkpoint's `training_config.yaml`.
 - `system` (optional, a model entry): a system prompt per task, with `default`
   for any task not listed. Passed to the slice's job as `-M system_prompt=...`.
+- `model_config_override` (optional, a model entry, `smurf` models): a YAML
+  merged onto the checkpoint's stored model config, relative to the repo root.
+  Passed as an absolute `-M model_config_override=...`. See
+  [smurf-provider.md](smurf-provider.md) for the `eurollm` format.
 - `mcq_instruction` (optional, a model entry, `hf` models): replaces the
   instruction of `audio_mcq` samples with a template using `{question}` and
   `{options}` (`"a", "b" or "c"`). Passed as `-T mcq_instruction=...`. Only
