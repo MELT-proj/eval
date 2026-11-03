@@ -122,12 +122,12 @@ An omni model (text, image and audio in; text out) from [swiss-ai/Apertus-v1.5-8
 
 ```bash
 uv venv --python 3.12 $PROJECT/$USER/venvs/apertus-eval
-VIRTUAL_ENV=$PROJECT/$USER/venvs/apertus-eval uv pip install -e ".[hf,metrics]" \
-  "transformers[torch,vision,audio] @ git+https://github.com/swiss-ai/transformers.git@3797303dda74844e3d1f8977ff5518bb91f818b4"
+VIRTUAL_ENV=$PROJECT/$USER/venvs/apertus-eval uv pip install --prerelease=allow -e ".[hf,metrics]" librosa soundfile \
+  "transformers[torch,vision] @ git+https://github.com/swiss-ai/transformers.git@3797303dda74844e3d1f8977ff5518bb91f818b4"
 huggingface-cli download swiss-ai/Apertus-v1.5-8B --revision 1519de0ae7f3d114879291810a58259966f64c99
 ```
 
-The fork commit is the one the model card pins.
+The fork commit is the one the model card pins. The model card installs `transformers[torch,vision,audio]`; the `audio` extra is left out here because it pulls `kenlm`, which needs a C++ build with `Python.h` (not on JUPITER's login nodes) and is only for language-model decoding in ASR pipelines. `librosa` and `soundfile` are what the provider and the readers use.
 
 - **24 kHz audio.** The processor takes 24 kHz mono and rejects any other declared rate. The readers resample to 16 kHz on load, so `ApertusAPI` upsamples each clip to 24 kHz before the batch. The content above 8 kHz is already gone, which does not matter for speech tasks, but the model hears slightly different audio from one fed the original recording.
 - **Float32 audio tower.** The model card says not to recast the model: it loads with `dtype=auto` and the audio features are not cast to the model dtype (`cast_audio_features = False`).

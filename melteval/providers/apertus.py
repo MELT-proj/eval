@@ -70,7 +70,13 @@ class ApertusAPI(HFSpeechChatAPI):
         batch_window: int = DEFAULT_BATCH_WINDOW,
         **model_args: object,
     ) -> None:
-        """Load the model and its processor; arguments as in :class:`HFSpeechChatAPI`."""
+        """Load the model and its processor; arguments as in :class:`HFSpeechChatAPI`.
+
+        ``attn_implementation`` defaults to ``None`` (transformers' own choice) instead of
+        the ``sdpa`` the base class forces: the vision tokenizer submodel has no SDPA
+        support, so forcing it raises at load time.
+        """
+        model_args.setdefault("attn_implementation", None)
         super().__init__(
             model_name,
             base_url,

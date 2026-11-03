@@ -913,6 +913,21 @@ class TestApertus:
         assert ApertusAPI.cast_audio_features is False
         assert ApertusAPI.revision
 
+    def test_attention_implementation_is_left_to_transformers(self, monkeypatch):
+        from melteval.providers import apertus
+        from melteval.providers.hf import HFSpeechChatAPI
+
+        seen = {}
+
+        def fake_init(self, *args, **kwargs):
+            seen.update(kwargs)
+
+        monkeypatch.setattr(HFSpeechChatAPI, "__init__", fake_init)
+        apertus.ApertusAPI("apertus")
+        assert seen["attn_implementation"] is None
+        apertus.ApertusAPI("apertus", attn_implementation="eager")
+        assert seen["attn_implementation"] == "eager"
+
     def test_audio_is_resampled_keeping_its_duration_and_the_waiting_future(self):
         pytest.importorskip("librosa")
         import numpy as np
