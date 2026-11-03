@@ -76,6 +76,16 @@ models:
       chunked_asr: "Focus on the audio clips and instruction. Respond directly without any other words"
       audio_mcq: "Focus on the audio clips and instruction. Choose one of the options without any explanation."
 
+  # Gated model on Swiss AI's fork of transformers: own venv (docs/baseline-providers.md).
+  - name: apertus-1.5-8b
+    model: melt/hf/apertus
+    venv: ${APERTUS_VENV_PATH}
+    args: [-M, batch_size=8]
+    skip: [air-bench-foundation-music]
+    instruction:
+      asr: "Transcribe this {lang} audio. Output only the transcription."
+      st: "Translate this {src_lang} audio into {tgt_lang}."
+
   - name: melt
     # Always one run folder in checkpoints/melt/. The prompt format is read
     # from its training_config.yaml; without one the run fails rather than guess.

@@ -1,6 +1,6 @@
 # Baseline providers
 
-Baselines are reference points next to MELT and SMURF: off-the-shelf models loaded through `transformers` (Qwen2-Audio, Qwen3-Omni, Whisper) and DeSTA2.5-Audio, which comes from its own package.
+Baselines are reference points next to MELT and SMURF: off-the-shelf models loaded through `transformers` (Qwen2-Audio, Qwen3-Omni, Whisper, Apertus-1.5) and DeSTA2.5-Audio, which comes from its own package.
 
 Each is a thin subclass of `melteval/providers/hf.py`, which owns what they share. A subclass says which classes to load, how long a clip the model takes in one piece, and how its `generate()` takes arguments and returns output. Whisper and DeSTA2.5 override the batch step.
 
@@ -10,6 +10,7 @@ Each is a thin subclass of `melteval/providers/hf.py`, which owns what they shar
 | Qwen3-Omni-30B-A3B-Instruct   | `melt/hf/qwen3_omni`  | `26291f793822fb6be9555850f06dfe95f2d7e695` | no fixed limit       |
 | Whisper large-v3              | `melt/hf/whisper`     | `06f233fe06e710322aca913c1bc4249a0d71fce1` | no limit (long-form) |
 | DeSTA2.5-Audio (Llama-3.1-8B) | `melt/hf/desta25`     | `1427f8725d35a0c9da0c7c54b1ffcc157a5948af` | 30 s                 |
+| Apertus-v1.5-8B               | `melt/hf/apertus`     | `1519de0ae7f3d114879291810a58259966f64c99` | no fixed limit       |
 
 All run with `-T prompt_style=hf` (the launcher and `run_eval.sbatch` set it). The revision is set on the class (`repo`, `revision` in `melteval/providers/qwen*.py`) and loaded from the HF cache, offline too once downloaded (`scripts/evaluate.py prefetch`, or `huggingface-cli download <repo> --revision <sha>`). `-M revision=<sha>` loads another commit; `-M path=<dir>` loads a local checkpoint of the same architecture.
 
@@ -109,3 +110,26 @@ Leave NumPy at 2.x; `Desta25API` restores the `np.sctypes` that `desta` needs. S
 
 - **System prompt.** Results are wrong without one: the model is an instruction-tuned LLM and otherwise answers like a chat assistant. The launcher passes the model entry's `system:` map, one prompt per task and `default` for the rest, as `-M system_prompt=...`; outside the launcher `Desta25API` sends the authors' default. Prompts follow the [README](https://github.com/kehanlu/DeSTA2.5-Audio) and `docs/evaluation_tips.md`; only the ASR and ST user instructions are ours, and so is applying the MCQ system prompt to AIR-Bench. ST and `audio_chat` use the default.
 - **30 s window.** As for Qwen2-Audio, a clip over 30 s fails that sample alone (`AudioTooLongError`, `--fail-on-error` applies) and MCIF `long` is skipped.
+
+## Apertus-v1.5-8B
+
+```bash
+inspect eval melteval/tasks.py@asr --model melt/hf/apertus -T frozen_set=... \
+  -T prompt_style=hf -T instruction='"Transcribe this audio."' -M batch_size=8
+```
+
+An omni model (text, image and audio in; text out) from [swiss-ai/Apertus-v1.5-8B](https://huggingface.co/swiss-ai/Apertus-v1.5-8B). The Hub repo is **gated** (accept the licence and acceptable-use policy, then `huggingface-cli login`), and the `transformers` integration is only in Swiss AI's fork, so it needs **its own venv**; the matrix entry (`venv: ${APERTUS_VENV_PATH}`) is skipped when that venv does not exist.
+
+```bash
+uv venv --python 3.12 $PROJECT/$USER/venvs/apertus-eval
+VIRTUAL_ENV=$PROJECT/$USER/venvs/apertus-eval uv pip install -e ".[hf,metrics]" \
+  "transformers[torch,vision,audio] @ git+https://github.com/swiss-ai/transformers.git@3797303dda74844e3d1f8977ff5518bb91f818b4"
+huggingface-cli download swiss-ai/Apertus-v1.5-8B --revision 1519de0ae7f3d114879291810a58259966f64c99
+```
+
+The fork commit is the one the model card pins.
+
+- **24 kHz audio.** The processor takes 24 kHz mono and rejects any other declared rate. The readers resample to 16 kHz on load, so `ApertusAPI` upsamples each clip to 24 kHz before the batch. The content above 8 kHz is already gone, which does not matter for speech tasks, but the model hears slightly different audio from one fed the original recording.
+- **Float32 audio tower.** The model card says not to recast the model: it loads with `dtype=auto` and the audio features are not cast to the model dtype (`cast_audio_features = False`).
+- **The chat template is the model's**, system turn included ("You are Apertus 1.5 Omni..."); the instruction stays bare, like for the Qwen models.
+- **Languages.** The model card lists none for audio input, so no language is excluded here: a language it handles badly shows as a low score, not as a skipped slice.

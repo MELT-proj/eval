@@ -47,6 +47,9 @@ class HFSpeechChatAPI(BatchedSpeechAPI):
     #: Hub commit loaded by default. Pinned so a number is always tied to the
     #: same weights (docs/baseline-providers.md lists them).
     revision: str | None = None
+    #: Cast the processor's ``input_features`` to the model dtype before ``generate()``.
+    #: Off for a model that keeps its audio tower in float32 inside a half-precision model.
+    cast_audio_features: bool = True
 
     def __init__(
         self,
@@ -74,7 +77,8 @@ class HFSpeechChatAPI(BatchedSpeechAPI):
             config: Default generation config.
             device: Torch device. Defaults to CUDA when available. Ignored
                 with ``device_map``, where the weights place themselves.
-            dtype: Compute dtype for the model weights.
+            dtype: Compute dtype for the model weights, or ``auto`` to keep the dtypes
+                stored in the checkpoint.
             batch_size: Samples per forward pass.
             batch_window: How many batches' worth of requests to pool and sort
                 by audio length before batching (see :class:`BatchedSpeechAPI`).
@@ -165,6 +169,7 @@ class HFSpeechChatAPI(BatchedSpeechAPI):
             sequences=self._sequences,
             with_audio=not self.text_only,
             processor_kwargs=self._processor_kwargs(),
+            cast_audio_features=self.cast_audio_features,
         )
 
 
@@ -194,7 +199,7 @@ def load(
     """
     import torch
 
-    torch_dtype = getattr(torch, dtype) if isinstance(dtype, str) else dtype
+    torch_dtype = getattr(torch, dtype) if isinstance(dtype, str) and dtype != "auto" else dtype
     model_args.setdefault("attn_implementation", "sdpa")
     model = model_cls.from_pretrained(model_name, dtype=torch_dtype, revision=revision, **model_args)
     if "device_map" in model_args:
@@ -245,6 +250,7 @@ def generate(
     sequences: Callable[[object], object] = lambda output: output,
     with_audio: bool = True,
     processor_kwargs: dict[str, object] | None = None,
+    cast_audio_features: bool = True,
 ) -> list[str]:
     """Generate one completion per request from already-rendered *prompts*.
 
@@ -262,6 +268,8 @@ def generate(
             request must carry none.
         processor_kwargs: Extra keyword arguments for the processor call
             that carries the audio.
+        cast_audio_features: Cast ``input_features`` to ``model.dtype``. Turn off for a
+            model whose audio tower stays in float32.
 
     Returns:
         The decoded new tokens for each request, in order.
@@ -292,7 +300,7 @@ def generate(
     inputs = {key: value.to(device) for key, value in inputs.items() if hasattr(value, "to")}
     # The feature extractor produces float32; a bf16 model's audio encoder
     # needs its input in its own dtype (same failure as in providers/melt.py).
-    if "input_features" in inputs:
+    if cast_audio_features and "input_features" in inputs:
         inputs["input_features"] = inputs["input_features"].to(model.dtype)
 
     with torch.no_grad():

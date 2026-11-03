@@ -22,6 +22,7 @@ from typing import Any
 
 from inspect_ai.model import GenerateConfig, ModelAPI, modelapi
 
+from melteval.providers.apertus import ApertusAPI
 from melteval.providers.base import BatchedSpeechAPI
 from melteval.providers.desta25 import Desta25API
 from melteval.providers.melt import MELTAPI
@@ -37,6 +38,7 @@ HF_MODELS: dict[str, type[BatchedSpeechAPI]] = {
     "qwen3_omni": Qwen3OmniAPI,
     "whisper": WhisperAPI,
     "desta25": Desta25API,
+    "apertus": ApertusAPI,
 }
 
 
