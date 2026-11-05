@@ -12,11 +12,13 @@ reimplementing any part of it. It is not registered anywhere in
 ``melteval.registry`` and never runs as part of ``inspect eval`` -- only via
 ``inspect score``, and only from wherever ``mcif-bench`` is installed.
 
-Usage, from an environment with ``pip install mcif-bench`` (which pulls in
-``jiwer``, ``whisper-normalizer``, ``bert-score`` and ``unbabel-comet``) and
-this package installed alongside it (``pip install -e /path/to/melt-eval`` --
-none of its own extras are needed, just ``inspect_ai`` and
-``huggingface_hub``, both base dependencies)::
+Usage, from an environment with ``mcif-bench`` installed from the commit that
+switched to ``mweralign`` (it pulls in ``jiwer``, ``whisper-normalizer``,
+``bert-score``, ``unbabel-comet`` and ``mweralign``; PyPI still has the older
+``mcif-bench`` 1.x, which drives the ``mwerSegmenter`` binary instead -- see
+this module's last paragraph) and this package installed alongside it
+(``pip install -e /path/to/melt-eval`` -- none of its own extras are needed,
+just ``inspect_ai`` and ``huggingface_hub``, both base dependencies)::
 
     # generate first, wherever the checkpoint lives -- --no-score if that
     # environment cannot also carry mcif-bench's dependencies
@@ -38,20 +40,22 @@ a missing one -- caught here and re-raised with the missing id named, but not
 otherwise recoverable. A partial run (``-T limit=``, a debug slice) cannot be
 scored this way; generate the whole ``dataset_id`` first.
 
-**Translation additionally needs the ``mwerSegmenter`` tool** the official
-pipeline itself depends on (not a pip package -- see
-``mcif.evaluation.MwerSegmenter``'s docstring for where to get it and set
-``MWERSEGMENTER_ROOT``) and downloads a COMET checkpoint on first use.
-BERTScore downloads a baseline-rescaling file per language on first use.
+**Translation re-segments with ``mweralign``, not an external binary.** The
+official pipeline's ``MwerSegmenter`` used to shell out to RWTH's
+``mwerSegmenter`` executable, which only ever existed as an x86 binary; since
+``mcif-bench`` 2.0 it calls `mweralign
+<https://pypi.org/project/mweralign/>`_ in-process, so there is nothing to
+download, no ``MWERSEGMENTER_ROOT`` to set, and no reason the scorer cannot
+run on aarch64. ``mweralign`` publishes x86_64 wheels only, so elsewhere
+(aarch64) pip builds it from its sdist, which needs a C++17 compiler and has
+no other requirement. Translation also downloads a COMET checkpoint on first
+use. BERTScore downloads a baseline-rescaling file per language on first use.
 Neither happens for ASR, which needs only ``jiwer``.
 """
 
 from __future__ import annotations
 
-import contextlib
 import gzip
-import os
-import tempfile
 
 from inspect_ai.scorer import Metric, SampleScore, Score, Scorer, Target, Value, metric, scorer # type: ignore
 from inspect_ai.solver import TaskState # type: ignore
@@ -125,25 +129,6 @@ def _missing_completion_error(exc: KeyError, macro_task: str) -> ValueError:
     )
 
 
-@contextlib.contextmanager
-def _private_cwd():
-    """Run the enclosed code from a fresh temporary directory.
-
-    ``mwerSegmenter`` writes its output to a fixed ``__segments`` file in the
-    *current* directory, and ``mcif.evaluation.MwerSegmenter`` reads it back
-    from there. Two scoring jobs started from the same directory (the repo
-    root, under ``infra/run_score.sbatch``) would read each other's
-    segmentation and report a wrong COMET with no error.
-    """
-    previous = os.getcwd()
-    with tempfile.TemporaryDirectory(prefix="mcif-mwer-") as tmp:
-        os.chdir(tmp)
-        try:
-            yield
-        finally:
-            os.chdir(previous)
-
-
 @metric
 def official_asr_wer() -> Metric:
     """Corpus WER via ``mcif.evaluation.score_asr`` -- the paper's own metric:
@@ -173,9 +158,9 @@ def official_asr_wer() -> Metric:
 @metric
 def official_trans_comet() -> Metric:
     """COMET via ``mcif.evaluation.score_st`` -- the paper's own metric, after
-    the same ``mwerSegmenter`` resentence-alignment step the official
-    evaluation performs. See this module's docstring for the external tool
-    and checkpoint download this pulls in."""
+    the same ``mweralign`` resentence-alignment step the official evaluation
+    performs. See this module's docstring for the COMET checkpoint download
+    this pulls in on first use."""
 
     def calculate(scores: list[SampleScore]) -> Value:
         if not scores:
@@ -191,8 +176,7 @@ def official_trans_comet() -> Metric:
         from mcif.evaluation import score_st # type: ignore
 
         try:
-            with _private_cwd():
-                return score_st(_hypo_dict(scores), ref_dict, lang)
+            return score_st(_hypo_dict(scores), ref_dict, lang)
         except KeyError as exc:
             raise _missing_completion_error(exc, "TRANS") from exc
 

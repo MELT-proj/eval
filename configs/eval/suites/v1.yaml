@@ -22,8 +22,8 @@ benchmarks:
     # Each dataset_id holds several task kinds; one job per kind.
     slices:
       - {task: chunked_asr, dataset_id: mcif-short-fixed-en}
-      # COMET-22 DA after mwerSegmenter re-segmentation, MCIF's own pipeline
-      # (needs $MWERSEGMENTER_ROOT: an x86 binary, so this needs to run outside jupiter atm).
+      # COMET-22 DA after mweralign re-segmentation, MCIF's own pipeline
+      # (mcif-bench 2.0, which resegments in-process: no external binary, any arch).
       - {task: chunked_st, dataset_id: mcif-short-fixed-de, post_scorers: [melteval/mcif_scoring.py@mcif_official_trans_scorer]}
       - {task: chunked_st, dataset_id: mcif-short-fixed-it, post_scorers: [melteval/mcif_scoring.py@mcif_official_trans_scorer]}
       # SQA, short fixed prompt: 220 questions per language on English audio

@@ -48,15 +48,57 @@ From here on, every command assumes this venv is active (run the `source .../act
 
 **Metrics venv.** MCIF's official scorers (BERTScore for SQA, COMET for MCIF ST) and COMET for FLEURS run *after* generation, from a venv of their own (`$METRICS_VENV_PATH` in [infra/sites/jupiter.sh](../infra/sites/jupiter.sh)): `mcif-bench` and `unbabel-comet` pin their own `transformers`.
 
+`mcif-bench` on PyPI is still the 1.x line, whose translation scorer drives RWTH's `mwerSegmenter` binary (x86-only). The 2.0 line replaced it with `mweralign`, which resegments in-process, so MCIF ST COMET runs here like anywhere else. Build the venv with the repo's script, which pins the 2.0 commit:
+
 ```bash
-uv venv --python 3.12 $PROJECT/$USER/venvs/metrics-eval
-VIRTUAL_ENV=$PROJECT/$USER/venvs/metrics-eval uv pip install -e . mcif-bench "setuptools<81" "transformers<5"
-$PROJECT/$USER/venvs/metrics-eval/bin/python -c "from mcif.evaluation import score_sqa; import comet, melteval; print('ok')"
+infra/setup/metrics_venv.sh $PROJECT/$USER/venvs/metrics-eval   # or: METRICS_VENV_PATH=... infra/setup/metrics_venv.sh
 ```
+
+It is the equivalent of
+
+```bash
+uv venv --python 3.12 --python-preference only-managed $PROJECT/$USER/venvs/metrics-eval
+VIRTUAL_ENV=$PROJECT/$USER/venvs/metrics-eval uv pip install -e . \
+    "mcif-bench @ git+https://github.com/hlt-mt/mcif.git@cdb1d62a00281a14bef52f829b113fc73981c85d" \
+    "setuptools<81" "transformers<5"
+```
+
+followed by an import check that would have caught the JUPITER failure below (`score_st`, `mweralign`, `comet`, `melteval`, and `httpcore`).
+
+**Point `$METRICS_VENV_PATH` at that venv.** It is what the suite's `post_venv:` resolves at plan time, and it may already be exported in your shell to the older shared venv (built before the 2.0 upgrade, `mcif 1.0`, no `mweralign`). Check the one the jobs will actually use, not the one you just built:
+
+```bash
+"${METRICS_VENV_PATH%/bin/activate}/bin/python" -c "import mcif, mweralign; print(mcif.__version__)"   # must print 2.0
+```
+
+With 1.x the ST COMET job fails with `... mwerSegmenter is not in PATH and no MWERSEGMENTER_ROOT ...` — a loud error, but only after the job is queued and started.
+
+Two aarch64 details: `mweralign` publishes x86_64 wheels only, so here `uv` builds it from its sdist (needs the login node's `gcc`/`g++`, which is enough; nothing to set up by hand). And `--python-preference only-managed` keeps the venv's interpreter under `$PROJECT`, which the compute nodes mount — a venv built against a `$HOME` interpreter only works on the login node.
+
+Do **not** pass `--prerelease=allow`: it resolves `httpx` to its `1.0.dev*` line, which dropped `httpcore`, and every scoring job then dies on `import inspect_ai` with `ModuleNotFoundError: No module named 'httpcore'` before it reads a log. That is exactly how the first MCIF ST scoring attempt here failed (`metrics-mcif` venv) — all three jobs, in about a minute, with `mcif-bench`/`mweralign` themselves installed fine.
 
 **Offline models for the post-hoc scorers.** The following need to be fetched in `$HF_HOME` from the login node: `Unbabel/wmt22-comet-da` and `xlm-roberta-large` (COMET), `roberta-large` (BERTScore, en) and `bert-base-multilingual-cased` (BERTScore, de/it).
 
-**Problem atm: MCIF ST (chunked_st) has no official COMET here.** Its scorer needs the `mwerSegmenter` binary from RWTH, which is i386-only and cannot run on JUPITER (aarch64), so those two slices report BLEU/chrF only.
+**MCIF references are a download too.** `mcif_scoring` re-fetches `MCIF.<track>.<lang>.ref.xml.gz` itself (it scores against the exact revision generation used, not whatever the dataset cache happens to hold), and the compute nodes are offline. Cache the two files the ST slices need from the login node — the keys come from the logs, so this works for logs someone else generated:
+
+```bash
+export HF_HUB_OFFLINE=0
+python - <<'EOF'
+import glob, json
+from melteval.readers.mcif import download_reference_gz
+keys = set()
+for path in glob.glob(f"{EVAL_ROOT}/{CAMPAIGN}/logs/*/mcif/chunked_st-*/*"):
+    if not path.endswith((".json", ".eval")):      # .out files live there too
+        continue
+    meta = json.load(open(path))["samples"][0]["metadata"]
+    keys.add((meta["repo"], meta["revision"], meta["track"], meta["lang"]))
+for key in sorted(keys):
+    print("fetch", key, download_reference_gz(*key))
+EOF
+export HF_HUB_OFFLINE=1
+```
+
+(`evaluate.py prefetch` is not the tool here: it also downloads model snapshots, which scoring does not need.) If the logs were generated under another account's `HF_HOME`, symlink that account's `hub/<repo>` into yours read-only instead of downloading again, e.g. `ln -s /e/scratch/<project>/<user>/hf_cache/hub/datasets--FBK-MT--MCIF $HF_HOME/hub/`.
 
 **Freezing needs the training package.** `melteval freeze` over a Shar source takes its reference rules from `melt-proj`, which the SMURF venv does not have. Freeze from a venv with `melt-eval[shar]` (the one that froze `fleurs24-st-xen-test`).
 
@@ -230,10 +272,10 @@ Some metrics need a model of their own and are computed after generation, by `ev
 | Slices | Scorer | Metric in the report |
 | ------ | ------ | -------------------- |
 | MCIF SQA (`audio_chat`, en/de/it) | `mcif_scoring.py@mcif_official_qa_scorer` | `official_bertscore` |
-| MCIF ST (`chunked_st`, de/it) | `mcif_scoring.py@mcif_official_trans_scorer` | `official_trans_comet` (needs mwerSegmenter) |
+| MCIF ST (`chunked_st`, de/it) | `mcif_scoring.py@mcif_official_trans_scorer` | `official_trans_comet` |
 | FLEURS ST, both directions | `rescore.py@comet_scorer` | `comet`, and `comet_coverage` (share of samples COMET could score) |
 
-They are declared per slice in the suite, [configs/eval/suites/v1.yaml](../configs/eval/suites/v1.yaml) (`post_scorers:`, with `post_venv:` on the benchmark); [configs/eval/smurf-v1.yaml](../configs/eval/smurf-v1.yaml) drops the ones JUPITER cannot run (`skip_post_scorers:`). The watcher runs them by itself: once a checkpoint's generation is `done`, each pass calls `evaluate.py score`, which submits what is missing and skips what is already queued, and the checkpoint becomes `scored` when nothing is left. Until then the report shows `pending` for those metrics. A missing score never makes a checkpoint `failed`; after 3 submissions that did not complete it, the watcher stops trying and `status` says so.
+They are declared per slice in the suite, [configs/eval/suites/v1.yaml](../configs/eval/suites/v1.yaml) (`post_scorers:`, with `post_venv:` on the benchmark). The watcher runs them by itself: once a checkpoint's generation is `done`, each pass calls `evaluate.py score`, which submits what is missing and skips what is already queued, and the checkpoint becomes `scored` when nothing is left. Until then the report shows `pending` for those metrics. A missing score never makes a checkpoint `failed`; after 3 submissions that did not complete it, the watcher stops trying and `status` says so.
 
 By hand, for any config:
 
@@ -242,6 +284,28 @@ python scripts/evaluate.py score $EVAL_ROOT/smurf-run/configs/<run>-step-0004000
 ```
 
 The official MCIF scorers need every sample of a `dataset_id` in the log: they cannot score a `--limit` run.
+
+**Backfilling a metric on existing logs** (MCIF ST, before it ran on JUPITER) needs no regeneration — `score` only reads logs. Point a scoring-only config at the campaign, usually copying the one the watcher wrote and trimming it, and pass the campaign as `--out` so `plan` finds `logs/`:
+
+```yaml
+name: mcif-comet
+output_dir: ${EVAL_ROOT}/mcif-comet       # or pass --out explicitly
+skip: [air-bench, librispeech, librispeech-other, covost2, voxpopuli, fleurs24-asr,
+       fleurs24-st-xen, fleurs24-st-enx, mcif-short-fixed-en, mcif-short-fixed-zh,
+       mcif-short-mixed-*, mcif-long-*]
+models:                                   # name = the logs/<name> folder, model = the checkpoint
+  - name: <run>-step-0207000
+    model: smurf/<absolute path to step=0207000.ckpt>
+benchmarks: configs/eval/suites/v1.yaml
+```
+
+```bash
+python scripts/evaluate.py score <that config> --out $EVAL_ROOT/mcif-comet --site jupiter --benchmarks mcif
+```
+
+`plan` skips a model whose checkpoint is not on this machine, and `score` inherits that: for logs copied from elsewhere, give the row any model of the right family (`model: melt/hf/qwen2_audio`) — only the folder name matters for scoring. Add `--models` to score one row, `--rescore` to redo a score that is already in the log (the default is to skip those). Scoring appends to the log in place and never regenerates samples; the copied logs need to be writable by whoever's job scores them.
+
+Scoring is GPU work like generation: it goes through `infra/runners/submit_score.sh` → `infra/run_score.sbatch`, one SLURM job per (model, benchmark, scorer), and its stdout is `logs/<model>/mcif/score-slurm-<jobid>.out`.
 
 ### 2.6. Some things to take into account
 

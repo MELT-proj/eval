@@ -86,8 +86,9 @@ benchmarks:
   benchmark's name and each slice's `dataset_id`. A model's skip is what that
   model cannot run; the config's is what the campaign leaves out.
 - `skip_post_scorers` (the whole config): post-hoc scorers not to run where
-  this config is used (e.g. MCIF's mwerSegmenter-based COMET on JUPITER). They
-  are not declared in the logs either, so the report does not show them as pending.
+  this config is used (e.g. a metric whose model is not in the metrics venv on
+  that site). They are not declared in the logs either, so the report does not
+  show them as pending.
 - The output folder's `config.yaml` is the config with its suite expanded.
 
 ## 3. The commands
@@ -192,6 +193,17 @@ judge_venv: ${JUDGE_VENV}        # optional venv (e.g. one with the provider's S
 
 A log already graded by the judge's scorer is skipped (`--rescore` to redo).
 The scores are written into the same log, so `report` picks them up.
+
+The same command runs the benchmark's post-hoc **metric** scorers when a slice
+declares `post_scorers:` and its benchmark `post_venv:` — MCIF's official
+WER/COMET/BERTScore, and COMET for FLEURS. Those load a model of their own and
+pin their own `transformers`, hence a venv apart, pointed at by
+`$METRICS_VENV_PATH` (each site file sets a default). Build it with
+`infra/setup/metrics_venv.sh`, which installs `mcif-bench` 2.0 from git (its
+`mweralign` resegmentation needs no external binary), then warm the offline
+cache for the metric checkpoints and MCIF references — see
+[../README.md](../README.md#reproducing-mcifs-official-metrics-wercometbertscore)
+and, for JUPITER, [jupiter-continuous-eval.md](jupiter-continuous-eval.md#25-post-hoc-scoring).
 
 ## 5. The output folder
 

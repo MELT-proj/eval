@@ -10,6 +10,11 @@
 # melt-eval; see README.md "Install" for how to rebuild it).
 export VENV_PATH="${VENV_PATH:-/mnt/scratch-artemis/giuseppe/venvs/melteval/bin/activate}"
 
+# Post-hoc metrics (MCIF's official scorers, COMET), in a venv of their own —
+# infra/setup/metrics_venv.sh builds it. No external binary: mcif-bench 2.0
+# resegments with mweralign in-process.
+export METRICS_VENV_PATH="${METRICS_VENV_PATH:-/mnt/scratch-artemis/giuseppe/venvs/metrics-eval/bin/activate}"
+
 # --- storage (host paths) -----------------------------------------------------
 # All under scratch, never $HOME: artemis $HOME is GlusterFS-synced and quota
 # limited, and venvs/eval-logs/frozen-sets are exactly the kind of large,

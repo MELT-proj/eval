@@ -4,7 +4,7 @@
 #   ASR  VoxPopuli, 16 languages               WER/CER      voxpopuli (one slice per language)
 #   ASR  MCIF chunked (en)                     WER          mcif chunked_asr
 #   ST   FLEURS en->EU (23), EU->en (17)       COMET-22 DA  fleurs24-st-enx, fleurs24-st-xen
-#   ST   MCIF chunked en->de, en->it           BLEU/chrF++  mcif chunked_st (no official COMET on JUPITER)
+#   ST   MCIF chunked en->de, en->it           COMET-22 DA  mcif chunked_st (after mweralign re-segmentation)
 #   SQA  MCIF short fixed prompt (en, de, it)  BERTScore    mcif audio_chat
 #
 #   python scripts/evaluate.py plan configs/eval/smurf-v1.yaml --site jupiter -v
@@ -74,6 +74,3 @@ skip:
   - fleurs-sk_en
   - fleurs-sl_en
   - fleurs-sv_en
-
-# Needs mwerSegmenter, which cannot run on JUPITER (aarch64).
-skip_post_scorers: [melteval/mcif_scoring.py@mcif_official_trans_scorer]
