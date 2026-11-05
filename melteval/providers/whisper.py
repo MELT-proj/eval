@@ -30,6 +30,8 @@ class WhisperAPI(HFSpeechChatAPI):
     family = FAMILY
     repo = "openai/whisper-large-v3"
     revision = "06f233fe06e710322aca913c1bc4249a0d71fce1"
+    #: The prompt is never read: Whisper only sees the audio.
+    ignores_instruction = True
 
     def __init__(self, *args: object, task: str = "transcribe", **kwargs: object) -> None:
         """Load Whisper.

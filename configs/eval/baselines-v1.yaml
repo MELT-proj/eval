@@ -34,20 +34,15 @@ models:
       asr: "Transcribe this audio."
       st: "Translate this audio into English."
 
-  # Whisper takes no instruction: it transcribes, or (task=translate) translates into English, and the language is auto-detected. The `instruction` below is ignored by the provider
+  # Whisper is one checkpoint with two modes: it transcribes (ASR) or translates
+  # into English (ST), selected per task with `task=`. It reads no instruction:
+  # neither the launcher nor the provider passes one.
   - name: whisper-large-v3
     model: melt/hf/whisper
     args: [-M, batch_size=8]
+    args_by_task:
+      st: [-M, task=translate]
     skip: [air-bench-*, mcif-*]
-    instruction:
-      asr: "Transcribe this audio."
-
-  - name: whisper-large-v3-translate
-    model: melt/hf/whisper
-    args: [-M, batch_size=8, -M, task=translate]
-    skip: [air-bench-*, mcif-*]
-    instruction:
-      st: "Translate this audio into English."
 
   - name: desta2.5-audio
     model: melt/hf/desta25
@@ -122,15 +117,17 @@ benchmarks:
       # `time`: SLURM wall clock; Qwen3-Omni needs ~1h15 here, past the 1h10 default cap.
       - {task: asr, dataset_id: librispeech-test-clean, time: "02:00:00"}
 
-  # X->en ST from HF (fixie-ai/covost2, see configs/hf/covost2.yaml); what whisper-large-v3-translate runs on.
+  # X->en ST from the local CoVoST2 Shar tree (configs/st-eval-campaign-v1.yaml),
+  # what whisper-large-v3's `st` mode runs on. Read live: nothing to download.
   - name: covost2
-    spec: configs/hf/covost2.yaml
+    spec: configs/st-eval-campaign-v1.yaml
     needs_instruction: true
     slices:
       - {task: st, dataset_id: covost2-de_en}
       - {task: st, dataset_id: covost2-es_en}
       - {task: st, dataset_id: covost2-fr_en}
       - {task: st, dataset_id: covost2-it_en}
+      - {task: st, dataset_id: covost2-pt_en}
 
   # Shar frozen sets: only where the corpora are. Their paths come from the
   # environment; a machine without them skips these benchmarks.

@@ -371,6 +371,20 @@ class TestModelFamily:
 
         assert family_of(model) == family
 
+    @pytest.mark.parametrize(
+        ("model", "ignored"),
+        [
+            ("melt/hf/whisper", True),
+            ("melt/hf/qwen2_audio", False),
+            ("melt//abs/ckpt", False),
+            ("mockllm/model", False),
+        ],
+    )
+    def test_ignores_instruction(self, model, ignored):
+        from melteval.providers import ignores_instruction
+
+        assert ignores_instruction(model) is ignored
+
 
 class TestProviderGuard:
     """Crossing a model with another family's solver produces fluent, wrong text."""
@@ -403,6 +417,54 @@ class TestProviderGuard:
         _require_provider(self._state("melt/hf/qwen3_omni"), *_INSTRUCTION_PROVIDERS)
         _require_provider(self._state("melt//ckpt"), "melt")
         _require_provider(self._state("mockllm/model"), *_INSTRUCTION_PROVIDERS)
+
+
+class TestInstructionIgnoredByProvider:
+    """Whisper reads only the audio, so a benchmark without a prompt must not stop it."""
+
+    class _Store:
+        def __init__(self):
+            self.data = {}
+
+        def set(self, key, value):
+            self.data[key] = value
+
+    def _state(self, model, metadata=None):
+        from types import SimpleNamespace
+
+        api, _, name = model.partition("/")
+        return SimpleNamespace(
+            model=SimpleNamespace(api=api, name=name),
+            sample_id="s-0",
+            metadata=metadata or {"task": "asr"},
+            choices=[],
+            store=self._Store(),
+            messages=[],
+        )
+
+    def _run(self, state):
+        import asyncio
+
+        from melteval.solver import _instruction_solve
+
+        async def generate(current):
+            return current
+
+        return asyncio.run(_instruction_solve(state, generate, ("hf",), None, None, {}))
+
+    def test_an_empty_prompt_reaches_a_provider_that_ignores_it(self):
+        state = self._run(self._state("melt/hf/whisper"))
+
+        [message] = state.messages
+        text = "".join(c.text for c in message.content if getattr(c, "type", None) == "text")
+        assert text == ""
+        spec = state.store.data["melteval:format_spec"]
+        assert spec["instruction"] == ""
+        assert spec["instruction_source"] == "provider_ignores_instruction"
+
+    def test_a_provider_that_uses_the_prompt_still_refuses_an_empty_one(self):
+        with pytest.raises(ValueError, match="No instruction for sample"):
+            self._run(self._state("melt/hf/qwen2_audio"))
 
 
 class TestInstructionSolverThroughRealInspect(TestSmurfSolverThroughRealInspect):

@@ -60,7 +60,11 @@ benchmarks:
 - A **slice** is one `(task, dataset_id)` of a benchmark. A **job** is one
   model on one slice:, i.one `inspect eval`, one log.
 - `instruction` is only used for `hf` and `smurf` models. MELT reads its prompt
-  from the checkpoint's `training_config.yaml`.
+  from the checkpoint's `training_config.yaml`, and a provider that ignores the
+  prompt (Whisper) gets none even when a benchmark marks `needs_instruction`.
+- `args_by_task` (optional, a model entry): extra `inspect eval` arguments for
+  slices of one task, on top of `args`. Whisper uses it to run one entry in both
+  modes (`args: [-M, batch_size=8]`, `args_by_task: {st: [-M, task=translate]}`).
 - `system` (optional, a model entry): a system prompt per task, with `default`
   for any task not listed. Passed to the slice's job as `-M system_prompt=...`.
 - `mcq_instruction` (optional, a model entry, `hf` models): replaces the

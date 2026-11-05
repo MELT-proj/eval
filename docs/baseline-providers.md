@@ -72,10 +72,15 @@ infra/runners/submit_eval.sh <site> melt/hf/qwen3_omni configs/hf/air-bench.yaml
 
 ```bash
 inspect eval melteval/tasks.py@asr --model melt/hf/whisper -T frozen_set=... \
-  -T prompt_style=hf -T instruction='"Transcribe this audio."' -M batch_size=8
+  -T prompt_style=hf -M batch_size=8
 ```
 
-Not a chat model: no template, and the **instruction is ignored** (it is passed only because the launcher requires one per task for benchmarks with none, `needs_instruction`). Model arguments set what it does: `-M task=transcribe` (default) or `-M task=translate` (into English). The baseline matrix has one entry per direction.
+Not a chat model: no template, and the **instruction is ignored**, so the task
+takes none (the launcher knows to ask for none even on benchmarks marked
+`needs_instruction`). Model arguments set what it does: `-M task=transcribe`
+(default) or `-M task=translate` (into English). The baseline matrix has one
+Whisper entry and selects the mode per task (`args_by_task`), rather than one
+entry and one run per direction.
 
 - **Language is auto-detected.** A provider never sees a sample's metadata, so a short clip can get the wrong language.
 - **Long audio** is decoded long-form (sequential 30 s windows, `return_timestamps=True`), not refused.
