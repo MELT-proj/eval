@@ -24,3 +24,5 @@ history/
 data/checkpoints
 _my_docs
 checkpoints
+# Plots regenerate from the aggregated table; keep the source, not the output.
+projects/smurf4eu/plotting/output/

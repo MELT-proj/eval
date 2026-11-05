@@ -1,0 +1,59 @@
+# Fill the ASR cells that are still empty for the baselines that can transcribe
+# but were never run on FLEURS-24, LibriSpeech or MCIF chunked ASR.
+#
+#   python scripts/evaluate.py run configs/eval/baselines-fill-asr.yaml --site artemis --wait
+
+name: baselines-fill-asr
+output_dir: ${EVAL_ROOT}/baselines-fill-asr
+
+models:
+  - name: qwen2-audio-7b-instruct
+    model: melt/hf/qwen2_audio
+    args: [-M, batch_size=8]
+    # MCIF ASR and LibriSpeech already have a number from the Jupiter campaign.
+    skip: [mcif, librispeech, librispeech-other]
+    instruction:
+      asr: "Transcribe this {lang} audio. Output only the transcription."
+
+  - name: qwen3-omni-30b-a3b-instruct
+    model: melt/hf/qwen3_omni
+    args: [-M, batch_size=4]
+    skip: [mcif, librispeech, librispeech-other]
+    instruction:
+      asr: "Transcribe this {lang} audio."
+
+  - name: whisper-large-v3
+    model: melt/hf/whisper
+    args: [-M, batch_size=8]
+    skip: [librispeech, librispeech-other]
+
+  - name: apertus-1.5-8b
+    model: melt/hf/apertus
+    venv: ${APERTUS_VENV_PATH}
+    args: [-M, batch_size=8]
+    instruction:
+      asr: "Transcribe this {lang} audio. Output only the transcription."
+
+benchmarks:
+  - name: fleurs24-asr-test
+    frozen_set: /mnt/scratch-artemis/giuseppe/melt-data/eval-sets/fleurs24-asr-test
+    needs_instruction: true
+    slices:
+      - {task: asr}
+
+  - name: librispeech
+    spec: configs/hf/librispeech-hf-test-clean.yaml
+    needs_instruction: true
+    slices:
+      - {task: asr, dataset_id: librispeech-test-clean, time: "02:00:00"}
+
+  - name: librispeech-other
+    spec: configs/hf/librispeech-hf-test-other.yaml
+    needs_instruction: true
+    slices:
+      - {task: asr, dataset_id: librispeech-test-other, time: "02:00:00"}
+
+  - name: mcif
+    spec: configs/hf/mcif.yaml
+    slices:
+      - {task: chunked_asr, dataset_id: mcif-short-fixed-en}
