@@ -74,7 +74,7 @@ with the training repo checked out as a sibling:
 # expects ../training to exist (sibling checkout); see [tool.uv.sources] in
 # pyproject.toml if you keep it somewhere else
 uv venv --python 3.12 /path/to/venvs/melteval
-VIRTUAL_ENV=/path/to/venvs/melteval uv pip install --prerelease=allow -e ".[shar,metrics,dev]"
+VIRTUAL_ENV=/path/to/venvs/melteval uv pip install --prerelease=allow -e ".[shar,metrics,dev,analysis]"
 ```
 
 `--prerelease=allow` is needed because `melt-proj` pins a pre-release lhotse
@@ -82,7 +82,8 @@ VIRTUAL_ENV=/path/to/venvs/melteval uv pip install --prerelease=allow -e ".[shar
 corpora, pulls in the training package), `hf` (remote HuggingFace test
 splits), `metrics` (jiwer, sacrebleu, sentencepiece -- the last for spBLEU, which
 also needs a model file that is staged separately: see
-[ST metrics](#st-metrics-bleu-spbleu-chrf)).
+[ST metrics](#st-metrics-bleu-spbleu-chrf)), and `analysis` (pandas, openpyxl
+and the plotting stack `scripts/evaluate.py report` and `projects/` need).
 
 ## Usage
 
