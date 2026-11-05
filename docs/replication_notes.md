@@ -55,10 +55,10 @@ input_cfg:
 
 ### LibriSpeech
 
-Config for testing in [configs/librispeech-hf-smoke.yaml](../configs/librispeech-hf-smoke.yaml) (`hf-internal-testing/librispeech_asr_dummy`, `clean/validation`, ~73 samples).
+Config for testing in [configs/hf/librispeech-hf-smoke.yaml](../configs/hf/librispeech-hf-smoke.yaml) (`hf-internal-testing/librispeech_asr_dummy`, `clean/validation`, ~73 samples).
 
 ```bash
-melteval freeze configs/librispeech-hf-smoke.yaml -o runs/librispeech-hf-smoke
+melteval freeze configs/hf/librispeech-hf-smoke.yaml -o runs/librispeech-hf-smoke
 melteval show runs/librispeech-hf-smoke
 ```
 
@@ -128,7 +128,7 @@ Knobs (environment variables, forwarded into the job):
 | --------------------------- | ---------------------------------------------- | ------------------------------------------------------- |
 | `MODEL_CKPT`              | — (required)                                  | path to the`.ckpt`                                    |
 | `VENV`                    | — (required)                                  | the SMURF venv's`bin/activate`                        |
-| `CONFIG`                  | `configs/librispeech-hf-smoke.yaml`          | frozen-set config                                       |
+| `CONFIG`                  | `configs/hf/librispeech-hf-smoke.yaml`          | frozen-set config                                       |
 | `INSTRUCTION`             | `"Transcribe this English audio: "`          | prompt (must match upstream)                            |
 | `MAX_TOKENS`              | `128`                                        | generation cap on both sides                            |
 | `MELTEVAL_DEVICE_MAP`     | (one GPU)                                      | `auto` to shard the melteval side                     |
@@ -142,12 +142,12 @@ Knobs (environment variables, forwarded into the job):
 
 ```bash
 # melteval side: the frozen set (reuse the one from 1.3)
-melteval freeze configs/librispeech-hf-smoke.yaml -o runs/librispeech-hf-smoke
+melteval freeze configs/hf/librispeech-hf-smoke.yaml -o runs/librispeech-hf-smoke
 melteval show runs/librispeech-hf-smoke                 # confirm ~73 samples
 
 # upstream side: the SAME HF split -> lhotse CutSet, same order and same ids
 python scripts/hf_to_lhotse.py \
-  --config configs/librispeech-hf-smoke.yaml \
+  --config configs/hf/librispeech-hf-smoke.yaml \
   -o runs/crosscheck-smurf-cuts
 # -> runs/crosscheck-smurf-cuts/cuts.jsonl.gz  (+ audio/*.wav at 16 kHz)
 ```

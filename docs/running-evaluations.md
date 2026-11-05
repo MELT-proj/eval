@@ -45,7 +45,7 @@ models:
 
 benchmarks:
   - name: librispeech
-    spec: configs/librispeech-hf-test-clean.yaml   # or  frozen_set: <dir>
+    spec: configs/hf/librispeech-hf-test-clean.yaml   # or  frozen_set: <dir>
     needs_instruction: true                # its samples carry no prompt of their own
     slices:                                # one job per slice
       - {task: asr, dataset_id: librispeech-test-clean, time: "02:00:00"}
@@ -58,7 +58,8 @@ benchmarks:
 ```
 
 - A **slice** is one `(task, dataset_id)` of a benchmark. A **job** is one
-  model on one slice:, i.one `inspect eval`, one log.
+  model on one slice: one `inspect eval`, one log. On a site that packs slices
+  (see "Packs" below), several jobs share one SLURM job; each still has its own log.
 - `instruction` is only used for `hf` and `smurf` models. MELT reads its prompt
   from the checkpoint's `training_config.yaml`, and a provider that ignores the
   prompt (Whisper) gets none even when a benchmark marks `needs_instruction`.
@@ -67,12 +68,27 @@ benchmarks:
   modes (`args: [-M, batch_size=8]`, `args_by_task: {st: [-M, task=translate]}`).
 - `system` (optional, a model entry): a system prompt per task, with `default`
   for any task not listed. Passed to the slice's job as `-M system_prompt=...`.
+- `model_config_override` (optional, a model entry, `smurf` models): a YAML
+  merged onto the checkpoint's stored model config, relative to the repo root.
+  Passed as an absolute `-M model_config_override=...`. See
+  [smurf-provider.md](smurf-provider.md) for the `eurollm` format.
 - `mcq_instruction` (optional, a model entry, `hf` models): replaces the
   instruction of `audio_mcq` samples with a template using `{question}` and
   `{options}` (`"a", "b" or "c"`). Passed as `-T mcq_instruction=...`. Only
   DeSTA2.5 sets it, to follow its authors' layout.
 - A slice may add `args` (e.g. `[--max-tokens, "4096"]`) and `time` (the SLURM
-  wall clock).
+  wall clock; in a pack, the pack's minimum wall clock and the order slices are taken in, longest first).
+- `benchmarks` may instead be the path of a suite file holding the list
+  (`benchmarks: configs/eval/suites/v1.yaml`). The real configs do this, so
+  every campaign scores the same benchmark definitions; a campaign that runs
+  part of a suite says so with `skip`, never with its own copy of the list.
+- `skip` (a model entry, or the whole config): globs matched against a
+  benchmark's name and each slice's `dataset_id`. A model's skip is what that
+  model cannot run; the config's is what the campaign leaves out.
+- `skip_post_scorers` (the whole config): post-hoc scorers not to run where
+  this config is used (e.g. MCIF's mwerSegmenter-based COMET on JUPITER). They
+  are not declared in the logs either, so the report does not show them as pending.
+- The output folder's `config.yaml` is the config with its suite expanded.
 
 ## 3. The commands
 
@@ -107,6 +123,45 @@ to `<output_dir>/smoke-limit5/` so it never counts as the real run).
   it on a machine where the GPU is yours or inside an `srun` allocation, never
   on a shared GPU outside SLURM (see AGENTS.md).
 
+### Packs: whole-node sites (JUPITER)
+
+Some sites only allocate whole nodes, so a 1-GPU job per slice would leave the
+other GPUs idle and reload the model for every slice. When the site file
+exports `MELT_PACK_GPUS` (JUPITER: 4), `run` submits the pending slices as
+**packs** instead:
+
+- one pack = one SLURM job on one node = one model with one set of model
+  arguments (`-M ...`, `--max-tokens`, ...) and many slices;
+- inside it, one worker per GPU (`melteval/pack.py`): it loads the model once
+  and takes the next unclaimed slice until none are left;
+- every slice still writes its own log into its own folder, so `status`,
+  `report`, `score` and the watcher work as before. A slice that failed, or
+  that the pack ran out of time for, is `failed`/`missing` and the next `run`
+  retries it, in a new pack.
+
+The command does not change:
+
+```bash
+python scripts/evaluate.py plan configs/eval/smurf-v1.yaml --site jupiter      # ends with the packs `run` would submit
+python scripts/evaluate.py run  configs/eval/smurf-v1.yaml --site jupiter --limit 5 --wait   # smoke test: a few packs, not one job per slice
+```
+
+A config tunes packs with a `pack:` block (read only where packs are on):
+
+```yaml
+pack:
+  time: "06:00:00"   # wall clock of each pack; never less than its longest slice's `time:`
+  max_slices: 20     # more slices than this go round-robin into several packs (in parallel, on several nodes)
+  # gpus: 4          # overrides the site's MELT_PACK_GPUS
+```
+
+`pack: false` in a config, or `MELT_PACK_GPUS=0` in the shell, goes back to one
+job per slice. A pack queued or running shows up in `squeue -o %k` as
+`melteval-pack:<output_dir>/packs/<id>.json`, the manifest listing its slices;
+the job's own output is `<output_dir>/packs/<id>-slurm-<jobid>.out` (which slice
+each GPU is on) and each slice's inspect output is
+`<log_dir>/pack-<jobid>-gpu<N>.out`.
+
 ### What calls what
 
 ```
@@ -114,12 +169,15 @@ scripts/evaluate.py run
   └─ per job:  infra/runners/submit_eval.sh <site> <model> <eval_set> <args>   (SLURM)
                or bash infra/run_eval.sbatch  <model> <eval_set> <args>         (--local)
                  └─ inspect eval melteval/tasks.py@speech --model <model> -T prompt_style=<family> ...
+  └─ per pack (site with MELT_PACK_GPUS): infra/runners/submit_pack.sh <site> <output_dir>/packs/<id>.json
+                 └─ infra/run_eval_pack.sbatch: one `python -m melteval.pack <manifest>` per GPU
+                      └─ per slice, in the same process: the same `inspect eval ...` as above
                       └─ melteval/providers/router.py → MELTAPI | Qwen2AudioAPI | Qwen3OmniAPI | WhisperAPI | Desta25API
                          (smurf/... → SmurfAPI)
 ```
 
 `run_eval.sbatch` also works on its own, for a single job:
-`infra/runners/submit_eval.sh bocconi melt/hf/qwen2_audio configs/librispeech-hf-test-clean.yaml -T task_filter=asr -T instruction='"Transcribe this audio."'`.
+`infra/runners/submit_eval.sh bocconi melt/hf/qwen2_audio configs/hf/librispeech-hf-test-clean.yaml -T task_filter=asr -T instruction='"Transcribe this audio."'`.
 
 ## 4. The judge
 

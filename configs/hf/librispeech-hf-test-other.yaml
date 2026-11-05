@@ -1,0 +1,16 @@
+# Full LibriSpeech test-other via HF (same revision as test-clean).
+# 2939 samples.
+name: librispeech-hf-test-other
+seed: 0
+
+input_cfg:
+  - type: hf_dataset
+    repo: openslr/librispeech_asr
+    revision: 71cacbfb7e2354c4226d01e70d77d5fca3d04ba1
+    name: other
+    split: test              # 2939 samples
+    id_column: id
+    tags:
+      task: asr
+      lang: en
+      dataset_id: librispeech-test-other

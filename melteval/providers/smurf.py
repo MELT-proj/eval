@@ -28,6 +28,18 @@ Two consequences worth knowing:
   into the positions of ``cfg.audio_locator_tag`` (``<|audioplaceholder|>``),
   read off the loaded checkpoint here rather than configured anywhere else, so
   it cannot drift from the weights it belongs to.
+* **Where a system prompt goes depends on the checkpoint's ``prompt_format``.**
+  ``-M system_prompt=...`` is placed according to ``-M system_placement``:
+
+  1. The format has a ``system`` role: ``turn`` (the default) sends it as a
+     ``system`` turn before the user turn.
+  2. It does not: ``user`` puts it at the start of the user turn, a blank
+     line before the instruction. A ``system`` turn there is rejected at load.
+
+  ``qwen`` (the first runs' format) has no ``system`` role; ``eurollm`` (from
+  ``fbk_speechllm.prompts``) does. To load a ``qwen`` checkpoint as ``eurollm``,
+  pass ``-M model_config_override=configs/smurf/eurollm_override_config.yaml``;
+  it is merged onto the stored config, changing only ``prompt_format``.
 
 Nothing heavy is imported at module scope: registering the provider must not
 cost a torch or NeMo import.
@@ -52,6 +64,10 @@ logger = logging.getLogger(__name__)
 #: turn, so the placeholder lands at the end of the user message.
 AUDIO_PLACEMENTS = ("suffix", "prefix")
 
+#: Where a system prompt goes: its own ``system`` turn, or the start of the user
+#: turn, for a checkpoint whose ``prompt_format`` has no ``system`` role.
+SYSTEM_PLACEMENTS = ("turn", "user")
+
 
 @modelapi(name="smurf")
 class SmurfAPI(BatchedSpeechAPI):
@@ -74,6 +90,8 @@ class SmurfAPI(BatchedSpeechAPI):
         num_beams: int = 1,
         use_model_defaults: bool | None = False,
         enable_thinking: bool | None = None,
+        system_prompt: str | None = None,
+        system_placement: str = "turn",
         **model_args: Any,
     ) -> None:
         """Load a checkpoint.
@@ -84,10 +102,11 @@ class SmurfAPI(BatchedSpeechAPI):
             base_url: Unused; a local model has no endpoint.
             api_key: Unused; a local model needs no credential.
             config: Default generation config.
-            model_config_override: Path to a YAML holding the model config to
-                use in place of the one stored in the checkpoint -- the
-                ``hparams.yaml`` shape that NeMo's ``exp_manager`` writes. Same
-                key as SMURF's own inference config.
+            model_config_override: Path to a YAML deep-merged onto the model
+                config stored in the checkpoint -- the ``hparams.yaml`` shape
+                that NeMo's ``exp_manager`` writes, holding only the keys that
+                change. Same key as SMURF's own inference config, which
+                replaces the stored config instead of merging onto it.
             device: Torch device. Defaults to CUDA when available. Mutually
                 exclusive with device_map.
             device_map: ``"auto"`` shards the checkpoint across every visible
@@ -114,10 +133,16 @@ class SmurfAPI(BatchedSpeechAPI):
                 the config says rather than to whatever the LLM ships with.
             enable_thinking: Prompt-formatter hint for formats with a thinking
                 mode. Left unset by default, matching SMURF's inference path.
+            system_prompt: Sent as a ``system`` turn before every request's
+                user turn. ``None`` (the default) sends no system turn.
+            system_placement: ``turn`` (the default) sends *system_prompt* as a
+                ``system`` turn; ``user`` prepends it to the user turn, for a
+                ``prompt_format`` with no ``system`` role.
             **model_args: Forwarded to the checkpoint loader.
 
         Raises:
             ValueError: If *audio_placement* is not one of :data:`AUDIO_PLACEMENTS`,
+                if *system_placement* is not one of :data:`SYSTEM_PLACEMENTS`,
                 if *device* and *device_map* are both given, if *device_map* is
                 given and is not ``"auto"``, or if it's given alongside a
                 *map_location* other than ``"cpu"``.
@@ -127,6 +152,10 @@ class SmurfAPI(BatchedSpeechAPI):
         if audio_placement not in AUDIO_PLACEMENTS:
             raise ValueError(
                 f"audio_placement must be one of {AUDIO_PLACEMENTS}, got {audio_placement!r}."
+            )
+        if system_placement not in SYSTEM_PLACEMENTS:
+            raise ValueError(
+                f"system_placement must be one of {SYSTEM_PLACEMENTS}, got {system_placement!r}."
             )
         if device is not None and device_map is not None:
             raise ValueError(
@@ -147,6 +176,8 @@ class SmurfAPI(BatchedSpeechAPI):
         self.num_beams = int(num_beams)
         self.use_model_defaults = use_model_defaults
         self.enable_thinking = enable_thinking
+        self.system_prompt = system_prompt
+        self.system_placement = system_placement
 
         logger.info(
             "Loading SMURF checkpoint from %s (%s)",
@@ -176,6 +207,13 @@ class SmurfAPI(BatchedSpeechAPI):
             self.model = self.model.to(device=self.device, dtype=target_dtype)
         self.model.eval()
 
+        from nemo.collections.common.prompts.formatter import PromptFormatter
+
+        prompt_format = self.model.cfg.get("prompt_format")
+        _check_system_placement(
+            PromptFormatter.resolve(prompt_format).TEMPLATE, prompt_format, system_prompt, system_placement
+        )
+
         self.audio_locator_tag = self.model.audio_locator_tag
         logger.info(
             "SMURF checkpoint loaded: prompt_format=%s audio_locator_tag=%s sampling_rate=%d",
@@ -194,7 +232,11 @@ class SmurfAPI(BatchedSpeechAPI):
 
         audios, audio_lens = _collate_audio(batch, self.model.sampling_rate)
         prompts = [
-            [{"role": "user", "content": _with_audio_tag(r.text, self.audio_locator_tag, self.audio_placement)}]
+            _turns(
+                _with_audio_tag(r.text, self.audio_locator_tag, self.audio_placement),
+                self.system_prompt,
+                self.system_placement,
+            )
             for r in batch
         ]
 
@@ -364,8 +406,8 @@ def _load_speechllm(
 
     Args:
         model_name: Path to a ``.ckpt`` file or to a ``save_pretrained`` directory.
-        model_config_override: Optional ``hparams.yaml``-shaped config that
-            replaces the one stored in the checkpoint.
+        model_config_override: Optional ``hparams.yaml``-shaped config,
+            deep-merged onto the one stored in the checkpoint.
         map_location: Passed through to Lightning's checkpoint loader.
         **model_args: Forwarded to the loader.
 
@@ -406,12 +448,52 @@ def _load_speechllm(
 
         # Read as a plain dict, not OmegaConf: SALM asserts its config is a
         # dict so that Lightning can serialise the hyperparameters back out.
-        override_args = load_hparams_from_yaml(model_config_override, use_omegaconf=False)
+        override = load_hparams_from_yaml(model_config_override, use_omegaconf=False)
+        # Merged onto what the checkpoint stores rather than replacing it, unlike
+        # fbk_speechllm.inference: the override then only has to name what
+        # changes (prompt_format), and the architecture always comes from the
+        # checkpoint it belongs to.
+        stored = _stored_hparams(path)
+        override_args = {key: _merge_config(stored.get(key), value) for key, value in override.items()}
         logger.info("Overriding the checkpoint's model config with %s", model_config_override)
 
     if map_location is not None:
         model_args["map_location"] = map_location
     return model_class.load_from_checkpoint(model_name, **override_args, **model_args)
+
+
+def _stored_hparams(path: Path) -> dict[str, Any]:
+    """Read the hyperparameters a Lightning checkpoint was saved with.
+
+    The checkpoint is memory-mapped, so its tensors are not read; Lightning
+    loads it again in full right after.
+
+    Raises:
+        ValueError: If the checkpoint stores no hyperparameters to merge onto.
+    """
+    import torch
+
+    checkpoint = torch.load(path, map_location="cpu", mmap=True, weights_only=False)
+    hparams = checkpoint.get("hyper_parameters")
+    if not hparams:
+        raise ValueError(f"{path} stores no hyperparameters, so model_config_override has nothing to apply to.")
+    # A config saved as OmegaConf would not merge as a dict, and SALM wants one.
+    from omegaconf import DictConfig, OmegaConf
+
+    return {
+        key: OmegaConf.to_container(value) if isinstance(value, DictConfig) else value
+        for key, value in hparams.items()
+    }
+
+
+def _merge_config(base: Any, override: Any) -> Any:
+    """Deep-merge *override* onto *base*: mappings merge key by key, anything else is replaced."""
+    if not isinstance(base, dict) or not isinstance(override, dict):
+        return override
+    merged = dict(base)
+    for key, value in override.items():
+        merged[key] = _merge_config(base.get(key), value)
+    return merged
 
 
 def _speechllm_class():
@@ -422,13 +504,20 @@ def _speechllm_class():
     -side behaviour (checkpoint saving, extra logging) -- nothing generation
     reads -- so a checkpoint whose config does not reference the project's own
     perception module still evaluates without the private package installed.
+
+    The project's custom prompt formats (``eurollm``) are registered here too,
+    as ``fbk_speechllm.inference`` does before loading: SALM resolves
+    ``cfg.prompt_format`` by name inside ``generate()``, and an unregistered
+    one only fails there, mid-eval.
+
+    Raises:
+        ImportError: If ``fbk_speechllm`` is installed but predates
+            ``fbk_speechllm.prompts`` -- falling back to SALM then would lose the
+            custom formats silently -- or if neither it nor SALM imports.
     """
     try:
         from fbk_speechllm.models.speech_llm import SpeechLLM
         from fbk_speechllm.utils import register_custom_perception_modules
-
-        register_custom_perception_modules()
-        return SpeechLLM
     except ImportError as fbk_error:
         try:
             from nemo.collections.speechlm2.models.salm import SALM
@@ -448,6 +537,43 @@ def _speechllm_class():
         )
         return SALM
 
+    try:
+        from fbk_speechllm.prompts import register_custom_prompt_formats
+    except ImportError as prompts_error:
+        raise ImportError(
+            f"fbk_speechllm is installed but has no fbk_speechllm.prompts ({prompts_error}): it predates the "
+            "custom prompt formats (eurollm) that newer SMURF checkpoints are evaluated with. Update the "
+            "speechllm checkout this environment installs (git pull; reinstall if it is not editable)."
+        ) from prompts_error
+
+    register_custom_prompt_formats()
+    register_custom_perception_modules()
+    return SpeechLLM
+
+
+def _check_system_placement(
+    template: dict[str, Any], prompt_format: str, system_prompt: str | None, placement: str
+) -> None:
+    """Refuse a ``system`` turn that the checkpoint's prompt format cannot render.
+
+    Args:
+        template: The resolved ``PromptFormatter``'s ``TEMPLATE``, keyed by role.
+        prompt_format: Its name, for the message.
+        system_prompt: The system prompt, if any.
+        placement: One of :data:`SYSTEM_PLACEMENTS`.
+
+    Raises:
+        ValueError: If a system prompt would be sent as a ``system`` turn to a
+            format with no ``system`` role. Otherwise that only fails inside
+            ``generate()``, on the first batch.
+    """
+    if system_prompt and placement == "turn" and "system" not in template:
+        raise ValueError(
+            f"prompt_format {prompt_format!r} has no system role, so system_placement=turn cannot be used. "
+            "Pass -M system_placement=user to open the user turn with the system prompt instead, or load the "
+            "checkpoint with a format that has one (-M model_config_override=..., e.g. eurollm)."
+        )
+
 
 def _with_audio_tag(text: str, tag: str, placement: str) -> str:
     """Ensure the prompt contains the model's audio placeholder exactly once.
@@ -460,6 +586,18 @@ def _with_audio_tag(text: str, tag: str, placement: str) -> str:
     if tag in text:
         return text
     return f"{text} {tag}" if placement == "suffix" else f"{tag} {text}"
+
+
+def _turns(user_content: str, system_prompt: str | None = None, placement: str = "turn") -> list[dict[str, str]]:
+    """One request's conversation: the system turn, if any, then the user turn.
+
+    With *placement* ``user`` there is no system turn: the system prompt opens
+    the user turn, a blank line before the instruction.
+    """
+    if system_prompt and placement == "user":
+        return [{"role": "user", "content": f"{system_prompt}\n\n{user_content}"}]
+    turns = [{"role": "system", "content": system_prompt}] if system_prompt else []
+    return [*turns, {"role": "user", "content": user_content}]
 
 
 def _collate_audio(batch: list[_Request], sampling_rate: int):

@@ -2,7 +2,7 @@
 """Convert the HF split a melteval freeze config points at into a Lhotse CutSet.
 
 Usage:
-    python scripts/hf_to_lhotse.py --config configs/librispeech-hf-smoke.yaml \
+    python scripts/hf_to_lhotse.py --config configs/hf/librispeech-hf-smoke.yaml \
         -o runs/crosscheck-smurf-cuts
     # -> runs/crosscheck-smurf-cuts/cuts.jsonl.gz  (+ runs/crosscheck-smurf-cuts/audio/*.wav)
 """

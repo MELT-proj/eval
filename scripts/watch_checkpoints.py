@@ -33,7 +33,10 @@ SUBMIT_GRACE = 600
 
 def load_evaluate():
     """``scripts/evaluate.py`` as a module: its planning code says which jobs a config means and how they stand."""
-    spec = importlib.util.spec_from_file_location("evaluate", REPO_ROOT / "scripts" / "evaluate.py")
+    path = REPO_ROOT / "scripts" / "evaluate.py"
+    spec = importlib.util.spec_from_file_location("evaluate", path)
+    if spec is None or spec.loader is None:
+        raise ImportError(f"cannot load {path}")
     module = importlib.util.module_from_spec(spec)
     sys.modules["evaluate"] = module
     spec.loader.exec_module(module)
@@ -65,6 +68,8 @@ class Watch:
             ) from None
         self.ckpt_dir = Path(expand(raw["ckpt_dir"])).expanduser()
         self.pattern = raw.get("pattern", "step=*.ckpt")
+        # The run's name prefixes each checkpoint's row in the report (<run>-step-<N>).
+        self.run = raw.get("run_name") or cw.run_name(self.ckpt_dir)
         self.every_n = int(raw.get("every_n", 1))
         self.settle = float(raw.get("settle_minutes", 10)) * 60
         self.max_in_flight = int(raw.get("max_in_flight", 2))
@@ -102,8 +107,9 @@ class Watch:
 
     def config_for(self, entry: cw.Entry) -> Path:
         """Write the evaluate.py config for this checkpoint; return its path."""
-        config = cw.step_config(self.template, entry.step, Path(entry.path), self.output_dir)
-        path = self.output_dir / "configs" / f"{cw.model_name(entry.step)}.yaml"
+        name = cw.name_of(entry)
+        config = cw.step_config(self.template, entry.step, Path(entry.path), self.output_dir, name)
+        path = self.output_dir / "configs" / f"{name}.yaml"
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text(yaml.safe_dump(config, sort_keys=False), encoding="utf-8")
         return path
@@ -142,7 +148,12 @@ def discover(watch: Watch) -> None:
         seq = watch.state.next_seq
         selected = cw.is_selected(seq, watch.every_n)
         watch.state.entries[ckpt.step] = cw.Entry(
-            ckpt.step, str(ckpt.path.resolve()), seq, cw.SELECTED if selected else cw.SKIPPED, now()
+            ckpt.step,
+            str(ckpt.path.resolve()),
+            seq,
+            cw.SELECTED if selected else cw.SKIPPED,
+            now(),
+            name=cw.model_name(ckpt.step, watch.run),
         )
         log(f"step {ckpt.step}: new ({'evaluate' if selected else 'skipped by every_n'})")
 
@@ -243,6 +254,45 @@ def refresh(watch: Watch, evaluate) -> bool:
     return changed
 
 
+def score_pending(watch: Watch, evaluate) -> bool:
+    """Start the post-hoc scorers (BERTScore, COMET, judges) of finished evaluations.
+
+    Generation counts as done without them (``settle``); a checkpoint is
+    ``scored`` once none is missing. A scoring job still queued is waited for,
+    not resubmitted; one that keeps failing stops after ``MAX_SCORE_TRIES``.
+
+    Returns:
+        Whether any checkpoint (or the baselines) became fully scored.
+    """
+    targets: list[tuple[cw.Entry | cw.Baselines, str, Path]] = [
+        (e, cw.name_of(e), watch.config_for(e)) for e in watch.state.entries.values() if e.status == cw.DONE and not e.scored
+    ]
+    base = watch.state.baselines
+    if watch.has_baselines() and base.status == cw.DONE and not base.scored:
+        targets.append((base, "baselines", watch.baselines_path()))
+    changed = False
+    queued = evaluate.queued_tags()
+    for owner, label, config in targets:
+        jobs, _ = evaluate.plan(evaluate.load_config(config, None))
+        pending = evaluate.pending_scores(jobs)
+        if not pending:
+            owner.scored, changed = True, True
+            log(f"{label}: scoring done")
+            continue
+        if all(item.tag in queued for item in pending):
+            continue
+        if owner.score_tries >= cw.MAX_SCORE_TRIES:
+            owner.note = f"post-hoc scoring still missing after {owner.score_tries} tries (see score-slurm-*.out)"
+            continue
+        log(f"{label}: scoring {len(pending)} log(s)")
+        command = [
+            sys.executable, str(REPO_ROOT / "scripts" / "evaluate.py"), "score", str(config), "--site", watch.site,
+        ]  # fmt: skip
+        subprocess.run(command, cwd=REPO_ROOT, check=False)
+        owner.score_tries += 1
+    return changed
+
+
 def report(watch: Watch) -> None:
     """Rebuild <output_dir>/results (one column per checkpoint)."""
     config = next(iter(sorted((watch.output_dir / "configs").glob("*.yaml"))), None)
@@ -261,6 +311,8 @@ def cycle(watch: Watch, evaluate) -> None:
     submit_baselines(watch)
     # Both run: `or` would skip the baselines' check whenever a checkpoint finished.
     finished = [refresh(watch, evaluate), refresh_baselines(watch, evaluate)]
+    # After refresh, so a checkpoint that just finished generating is scored in the same pass.
+    finished.append(score_pending(watch, evaluate))
     if any(finished):
         report(watch)
     submit(watch)
@@ -286,14 +338,19 @@ def cmd_status(watch: Watch, args) -> None:
     """Print the ledger, with the retention metric and what pruning would do."""
     metrics = watch.metrics()
     keep, delete = cw.plan_retention(watch.state, watch.retention, metrics)
-    print(f"{'step':>8}  {'status':<10} {'metric':>10}  keep?")
+    print(f"{'step':>8}  {'status':<10} {'scored':<6} {'metric':>10}  {'keep?':<10} model / path")
     for step, entry in sorted(watch.state.entries.items()):
         value = f"{metrics[step]:.4f}" if step in metrics else "-"
         verdict = "" if entry.status == cw.DELETED else (keep.get(step) or "candidate")
-        print(f"{step:>8}  {entry.status:<10} {value:>10}  {verdict}  {entry.note}")
+        scored = "yes" if entry.scored else ("-" if entry.status != cw.DONE else "no")
+        print(
+            f"{step:>8}  {entry.status:<10} {scored:<6} {value:>10}  {verdict:<10} "
+            f"{cw.name_of(entry)} ({entry.path})  {entry.note}"
+        )
     if watch.has_baselines():
         base = watch.state.baselines
-        print(f"\nbaselines ({', '.join(watch.baselines_models)}): {base.status or 'pending'}  {base.note}")
+        scored = ", scored" if base.scored else ""
+        print(f"\nbaselines ({', '.join(watch.baselines_models)}): {base.status or 'pending'}{scored}  {base.note}")
     print(f"\n{len(keep)} kept, {len(delete)} deletion candidate(s). Ledger: {watch.state_path}")
 
 
@@ -305,7 +362,10 @@ def cmd_enqueue(watch: Watch, args) -> None:
         if args.step not in found:
             raise SystemExit(f"No checkpoint for step {args.step} in {watch.ckpt_dir}.")
         seq = watch.state.next_seq
-        entry = cw.Entry(args.step, str(found[args.step].path.resolve()), seq, cw.SKIPPED, first_seen=now())
+        entry = cw.Entry(
+            args.step, str(found[args.step].path.resolve()), seq, cw.SKIPPED, first_seen=now(),
+            name=cw.model_name(args.step, watch.run),
+        )  # fmt: skip
         watch.state.entries[args.step] = entry
     if entry.status in (cw.SKIPPED, cw.FAILED):
         entry.status, entry.note = cw.SELECTED, ""
@@ -342,7 +402,7 @@ def cmd_candidates(watch: Watch, args) -> None:
             continue
         size = path.stat().st_size
         total += size
-        print(f"step {step:>8}  {size / 1e9:6.1f} GB  {path}")
+        print(f"step {step:>8}  {size / 1e9:6.1f} GB  {cw.name_of(watch.state.entries[step])}  {path}")
         lines.append(f"rm -- '{path}'")
     out = watch.output_dir / "delete-candidates.txt"
     out.write_text("\n".join(lines) + ("\n" if lines else ""), encoding="utf-8")

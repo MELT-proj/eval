@@ -142,6 +142,26 @@ class TestOfficialTransComet:
         scores = [_score("Ich gehe.", track="short", lang="de")]
         assert official_trans_comet()(scores) == pytest.approx(0.81)
 
+    def test_runs_mwersegmenter_in_a_directory_of_its_own(self, fake_mcif_evaluation, patched_download):
+        """mwerSegmenter writes ``__segments`` into the cwd; two jobs sharing one would swap results."""
+        import os
+
+        seen = []
+
+        def score_st(hypo, ref, lang):
+            seen.append(os.getcwd())
+            open("__segments", "w").close()
+            return 0.5
+
+        fake_mcif_evaluation.read_reference = lambda fh, track, lang, modality=None: {"TRANS": {}}
+        fake_mcif_evaluation.score_st = score_st
+        before = os.getcwd()
+
+        official_trans_comet()([_score("Ich gehe.", lang="de")])
+
+        assert seen[0] != before and not os.path.exists(seen[0])
+        assert os.getcwd() == before and not os.path.exists(os.path.join(before, "__segments"))
+
     def test_missing_trans_bucket_is_a_clear_error(self, fake_mcif_evaluation, patched_download):
         fake_mcif_evaluation.read_reference = lambda fh, track, lang, modality=None: {"ASR": {}}
         with pytest.raises(ValueError, match="No TRANS reference"):

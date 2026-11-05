@@ -1,0 +1,79 @@
+# SMURF checkpoints on eval suite v1.
+#
+#   ASR  LibriSpeech clean / other (en)        WER          librispeech, librispeech-other
+#   ASR  VoxPopuli, 16 languages               WER/CER      voxpopuli (one slice per language)
+#   ASR  MCIF chunked (en)                     WER          mcif chunked_asr
+#   ST   FLEURS en->EU (23), EU->en (17)       COMET-22 DA  fleurs24-st-enx, fleurs24-st-xen
+#   ST   MCIF chunked en->de, en->it           BLEU/chrF++  mcif chunked_st (no official COMET on JUPITER)
+#   SQA  MCIF short fixed prompt (en, de, it)  BERTScore    mcif audio_chat
+#
+#   python scripts/evaluate.py plan configs/eval/smurf-v1.yaml --site jupiter -v
+#   python scripts/evaluate.py run  configs/eval/smurf-v1.yaml --site jupiter --limit 5 --wait  # smoke test
+#
+# Watcher (configs/watch/smurf.yaml): per new checkpoint it copies this file and
+# changes only the model's `name` (<run>-step-<N>) and `model` (the .ckpt); all
+# else is used as written. Only the first entry of `models:` is read, so keep
+# one. Its baselines run the same benchmarks, taking only their model
+# definitions from baselines-v1.yaml.
+#
+# `instruction` is needed only for `needs_instruction` benchmarks (samples with
+# no prompt): librispeech, voxpopuli, fleurs24. MCIF ships its own prompt.
+
+name: smurf
+output_dir: ${EVAL_ROOT}/smurf
+
+# Packs (sites that set MELT_PACK_GPUS; JUPITER: 4): slices run in whole-node
+# jobs of up to `max_slices`, one worker per GPU, instead of one 1-GPU job each
+# (55 jobs, 55 checkpoint loads -> 3 packs, 12 loads). Pack time is at least its
+# longest slice's `time:`; unfinished slices are rerun by the next `run`.
+# `pack: false` disables; `gpus: N` overrides the site.
+pack:
+  time: "06:00:00"
+  max_slices: 20
+
+models:
+  - name: smurf
+    model: smurf/checkpoints/smurf/*.ckpt
+    # map_location=cpu: load in host RAM and move to the GPU already in bf16
+    args: [-M, batch_size=8, -M, map_location=cpu]
+    # Loads the checkpoint with prompt_format=eurollm (stored: qwen)
+    # Checkpoints evaluated before this (qwen, no override) used
+    # `-M system_placement=user` instead, which opens the user turn with the system prompt.
+    model_config_override: configs/smurf/eurollm_override_config.yaml
+    instruction:
+      asr: "Transcribe this {lang} audio: "
+      st: "Translate this {src_lang} audio into {tgt_lang}: "
+    # System prompts per task (`default` covers the QA tasks: audio_chat, audio_mcq).
+    system:
+      default: &qa >-
+        Answer the question about the audio in the language the question is asked in.
+        Output only the answer. Do not repeat these instructions.
+      asr: &transcribe >-
+        Transcribe the speech in the audio verbatim, in the language it is spoken in.
+        Output only the transcript. Do not repeat these instructions.
+      chunked_asr: *transcribe
+      st: &translate >-
+        Translate the speech in the audio into the target language named in the instruction.
+        Output only the translation, written entirely in the target language, even if the speech
+        is in another language. Do not repeat these instructions.
+      chunked_st: *translate
+
+benchmarks: configs/eval/suites/v1.yaml
+
+# Slices of the suite this campaign does not run (benchmark names or dataset_ids).
+skip:
+  - air-bench
+  - covost2
+  - mcif-long-*
+  - mcif-short-mixed-*
+  - "*-zh"
+  # FLEURS X->en sources missing on JUPITER.
+  - fleurs-el_en
+  - fleurs-pl_en
+  - fleurs-ro_en
+  - fleurs-sk_en
+  - fleurs-sl_en
+  - fleurs-sv_en
+
+# Needs mwerSegmenter, which cannot run on JUPITER (aarch64).
+skip_post_scorers: [melteval/mcif_scoring.py@mcif_official_trans_scorer]

@@ -66,7 +66,7 @@ def _config(tmp_path, **overrides):
             },
             {
                 "name": "librispeech",
-                "spec": "configs/librispeech-hf-test-clean.yaml",
+                "spec": "configs/hf/librispeech-hf-test-clean.yaml",
                 "needs_instruction": True,
                 "slices": [
                     {"task": "asr", "dataset_id": "librispeech-test-clean", "time": "02:00:00"},
@@ -152,6 +152,22 @@ class TestPlan:
         for key in (("qwen", "asr-librispeech-test-clean"), ("melt", "asr-librispeech-test-clean")):
             assert not any(a.startswith("system_prompt=") for a in jobs[key].args)
 
+    def test_a_model_config_override_becomes_an_absolute_model_argument(self, tmp_path):
+        """Relative to the repo root in the config; absolute in the job, since inspect chdirs into melteval/."""
+        config = _config(tmp_path)
+        config["models"][3]["model_config_override"] = "configs/smurf/eurollm_override_config.yaml"
+        jobs = {(j.model_name, j.slice): j for j in evaluate.plan(config)[0]}
+        args = jobs["smurf", "asr-librispeech-test-clean"].args
+        assert f"model_config_override={ROOT}/configs/smurf/eurollm_override_config.yaml" in args
+        assert not any(a.startswith("model_config_override=") for a in jobs["qwen", "asr-librispeech-test-clean"].args)
+
+    def test_a_missing_model_config_override_skips_the_model_and_says_why(self, tmp_path):
+        config = _config(tmp_path)
+        config["models"][3]["model_config_override"] = "configs/smurf/nonexistent.yaml"
+        jobs, skipped = evaluate.plan(config)
+        assert not any(j.model_name == "smurf" for j in jobs)
+        assert any(line.startswith("model smurf: model_config_override") for line in skipped)
+
     def test_an_mcq_instruction_goes_only_to_the_multiple_choice_slices_of_its_model(self, tmp_path):
         jobs, _ = _jobs(tmp_path)
         mcq = jobs["desta", "audio_mcq-air-bench-foundation-speech"]
@@ -191,6 +207,59 @@ class TestPlan:
         assert job.args[job.args.index("--log-format") :][:2] == ["--log-format", "json"]
         assert "melteval_model=qwen" in job.args and "melteval_campaign=test" in job.args
 
+    def test_the_configs_skip_drops_slices_by_benchmark_name_or_dataset_id_for_every_model(self, tmp_path):
+        jobs, skipped = _jobs(tmp_path, skip=["air-bench", "librispeech-test-*"])
+        assert {s for _, s in jobs} == {"chunked_asr-mcif-long-fixed-en", "st"}
+        assert any("smurf x air-bench/audio_chat-air-bench-chat-speech" in line and "config's skip" in line
+                   for line in skipped)  # fmt: skip
+
+    def test_a_models_skip_matches_a_benchmark_name_too(self, tmp_path):
+        """A slice without a dataset_id (`{task: asr}`) can only be skipped by its benchmark's name."""
+        config = _config(tmp_path)
+        config["models"][0]["skip"] = ["librispeech"]
+        jobs, _ = evaluate.plan(config)
+        assert not any(j.model_name == "qwen" and j.benchmark == "librispeech" for j in jobs)
+        assert any(j.model_name == "smurf" and j.benchmark == "librispeech" for j in jobs)
+
+
+class TestSuite:
+    """`benchmarks:` as the path of a suite file shared by several configs."""
+
+    def _write(self, tmp_path, benchmarks):
+        import yaml
+
+        config_file = tmp_path / "c.yaml"
+        config_file.write_text(yaml.safe_dump({"name": "t", "output_dir": str(tmp_path / "out"), "models": [],
+                                               "benchmarks": benchmarks}))  # fmt: skip
+        return config_file
+
+    def test_a_suite_path_is_read_from_the_repo_root(self, tmp_path):
+        config = evaluate.load_config(self._write(tmp_path, "configs/eval/suites/v1.yaml"), None)
+        assert "voxpopuli" in [b["name"] for b in config["benchmarks"]]
+
+    def test_an_inline_list_is_kept_as_written(self, tmp_path):
+        config = evaluate.load_config(self._write(tmp_path, [{"name": "a", "slices": []}]), None)
+        assert config["benchmarks"] == [{"name": "a", "slices": []}]
+
+    def test_a_missing_suite_stops_with_its_path(self, tmp_path):
+        with pytest.raises(SystemExit, match="nope.yaml"):
+            evaluate.load_config(self._write(tmp_path, "configs/eval/suites/nope.yaml"), None)
+
+    def test_the_snapshot_holds_the_expanded_suite(self, tmp_path):
+        import yaml
+
+        config = evaluate.load_config(self._write(tmp_path, "configs/eval/suites/v1.yaml"), None)
+        evaluate.snapshot_config(config)
+        snapshot = yaml.safe_load((tmp_path / "out" / "config.yaml").read_text())
+        assert snapshot["benchmarks"] == config["benchmarks"]
+        assert not any(k.startswith("_") for k in snapshot)
+
+    @pytest.mark.parametrize("name", ["baselines-v1", "smurf-v1"])
+    def test_the_real_configs_share_the_suite(self, name, tmp_path):
+        config = evaluate.load_config(ROOT / "configs" / "eval" / f"{name}.yaml", str(tmp_path))
+        suite = evaluate.load_benchmarks("configs/eval/suites/v1.yaml")
+        assert config["benchmarks"] == suite
+
 
 class TestResolveJudge:
     def test_a_local_baseline_is_loaded_text_only(self):
@@ -218,6 +287,77 @@ class TestResolveJudge:
     def test_a_judge_that_cannot_take_text_only_is_refused(self, judge):
         with pytest.raises(SystemExit, match="text-only"):
             evaluate.resolve_judge({"judge": judge})
+
+
+class TestPostScorers:
+    """Judge-free scorers run after generation (MCIF's official BERTScore, COMET)."""
+
+    QA = "melteval/mcif_scoring.py@mcif_official_qa_scorer"
+
+    def _config(self, tmp_path, venv="act"):
+        (tmp_path / "act").touch()
+        bench = {
+            "name": "mcif",
+            "spec": "configs/hf/mcif.yaml",
+            "post_venv": str(tmp_path / venv),
+            "slices": [
+                {"task": "chunked_asr", "dataset_id": "mcif-short-fixed-en"},
+                {"task": "audio_chat", "dataset_id": "mcif-short-fixed-en", "post_scorers": [self.QA]},
+            ],
+        }
+        return _config(tmp_path, benchmarks=[bench])
+
+    def test_a_slice_carries_its_post_scorers_and_names_them_in_the_log(self, tmp_path):
+        jobs, _ = evaluate.plan(self._config(tmp_path))
+        qa = next(j for j in jobs if j.model_name == "qwen" and j.task == "audio_chat")
+        asr = next(j for j in jobs if j.model_name == "qwen" and j.task == "chunked_asr")
+        assert qa.post_scorers == [self.QA] and asr.post_scorers == []
+        assert "--no-score" in qa.args and "--no-score" not in asr.args
+        assert f"melteval_post_scorers={self.QA}" in qa.args
+
+    def test_skip_post_scorers_neither_runs_nor_declares_them(self, tmp_path):
+        """Declared but never run would show as pending in the report forever."""
+        config = self._config(tmp_path)
+        config["skip_post_scorers"] = [self.QA]
+        jobs, _ = evaluate.plan(config)
+        qa = next(j for j in jobs if j.model_name == "qwen" and j.task == "audio_chat")
+        assert qa.post_scorers == []
+        assert not any(a.startswith("melteval_post_scorers=") for a in qa.args)
+
+    def _score(self, tmp_path, monkeypatch, config, queued=frozenset()):
+        from types import SimpleNamespace as NS
+
+        logs = {}
+        for job in evaluate.plan(config)[0]:
+            job.log_dir.mkdir(parents=True)
+            logs[job.log_dir] = [job.log_dir / "x.json"]
+        monkeypatch.setattr(evaluate, "successful_logs", lambda d: logs.get(d, []))
+        monkeypatch.setattr(evaluate, "has_scorer", lambda log, scorer: False)
+        monkeypatch.setattr(evaluate, "queued_tags", lambda: set(queued))
+        commands = []
+        monkeypatch.setattr(evaluate, "run_command", lambda c, env: commands.append((c, env)) or (0, ""))
+        args = NS(models=["qwen"], benchmarks=None, rescore=False, site="mollete", wait=False)
+        evaluate.cmd_score(args, config)
+        return commands
+
+    def test_score_runs_them_without_a_judge_in_their_venv(self, tmp_path, monkeypatch):
+        config = self._config(tmp_path)
+        [(command, env)] = self._score(tmp_path, monkeypatch, config)
+        assert command[:2] == ["infra/runners/submit_score.sh", "mollete"]
+        assert command[command.index("--scorer") + 1] == self.QA
+        assert "--model-role" not in command
+        assert env["VENV_PATH"] == str(tmp_path / "act")
+
+    def test_a_group_already_queued_is_not_submitted_again(self, tmp_path, monkeypatch):
+        config = self._config(tmp_path)
+        tag = "melteval:score:qwen:mcif:mcif_official_qa_scorer"
+        assert self._score(tmp_path, monkeypatch, config, queued={tag}) == []
+
+    def test_a_missing_venv_skips_rather_than_scoring_in_the_wrong_one(self, tmp_path, monkeypatch):
+        jobs, _ = evaluate.plan(self._config(tmp_path, venv="nope"))
+        qa = next(j for j in jobs if j.model_name == "qwen" and j.task == "audio_chat")
+        scorers, problem = evaluate.post_scorers_of(qa)
+        assert scorers == [] and "not found" in problem
 
 
 class TestRun:
@@ -255,7 +395,7 @@ class TestReport:
         pytest.importorskip("pandas")
         return _load("baselines_report", "projects/baselines/report.py")
 
-    def _eval(self, log_dir, model, task, score=True, target="yes"):
+    def _eval(self, log_dir, model, task, score=True, target="yes", **metadata):
         from inspect_ai import Task
         from inspect_ai import eval as inspect_eval
         from inspect_ai.dataset import MemoryDataset, Sample
@@ -277,6 +417,7 @@ class TestReport:
                 "melteval_benchmark": "air-bench",
                 "melteval_slice": f"{task}-x",
                 "melteval_task": task,
+                **metadata,
             },
         )
         assert log.status == "success"
@@ -293,6 +434,13 @@ class TestReport:
         assert list(table.index) == ["model-a", "model-b"]
         assert table.loc["model-a", ("air-bench", "audio_chat-x", "accuracy")] == 1.0
         assert table.loc["model-b", ("air-bench", "audio_chat-x", "score")] == report.PENDING
+
+    def test_a_declared_post_scorer_not_run_yet_shows_pending_beside_the_scores(self, tmp_path, report):
+        self._eval(tmp_path / "a", "model-a", "audio_chat", target="Default output",
+                   melteval_post_scorers="melteval/mcif_scoring.py@mcif_official_qa_scorer")  # fmt: skip
+        table = report.summary_table(report.metrics_long(report.read_runs([tmp_path])))
+        assert table.loc["model-a", ("air-bench", "audio_chat-x", "accuracy")] == 1.0
+        assert table.loc["model-a", ("air-bench", "audio_chat-x", "mcif_official_qa_scorer")] == report.PENDING
 
     def test_the_newest_log_of_a_slice_wins(self, tmp_path, report):
         self._eval(tmp_path / "old", "model-a", "audio_chat", target="nope")
@@ -359,3 +507,76 @@ class TestWaitForRoom:
         calls = self._queue(monkeypatch, [])
         evaluate.wait_for_room()
         assert calls == []
+
+
+class TestPacks:
+    """Whole-node sites: one SLURM job per model (and model arguments), one worker per GPU."""
+
+    def test_no_site_setting_means_no_packs(self, monkeypatch):
+        monkeypatch.delenv("MELT_PACK_GPUS", raising=False)
+        assert evaluate.pack_settings({"pack": {"time": "06:00:00"}}) is None
+
+    def test_the_site_turns_packs_on_and_the_config_can_turn_them_off(self, monkeypatch):
+        monkeypatch.setenv("MELT_PACK_GPUS", "4")
+        assert evaluate.pack_settings({"pack": {"time": "06:00:00", "max_slices": 20}}) == {
+            "gpus": 4, "time": "06:00:00", "max_slices": 20,
+        }  # fmt: skip
+        assert evaluate.pack_settings({}) == {"gpus": 4, "time": None, "max_slices": 0}
+        assert evaluate.pack_settings({"pack": False}) is None
+        monkeypatch.setenv("MELT_PACK_GPUS", "0")
+        assert evaluate.pack_settings({"pack": {}}) is None
+        assert evaluate.pack_settings({"pack": {"gpus": 2}})["gpus"] == 2
+
+    def test_slices_that_would_load_a_different_model_go_in_different_packs(self, tmp_path):
+        """inspect memoizes a model on -M and generation flags: mixing them would load two copies on one GPU."""
+        jobs, _ = _jobs(tmp_path)
+        desta = [job for (name, _), job in jobs.items() if name == "desta"]
+        packs = evaluate.make_packs(desta)
+        # DeSTA's system prompt is a -M argument and differs between asr and the rest.
+        assert len(packs) == 2
+        assert all(len({evaluate.model_key(job) for job in pack}) == 1 for pack in packs)
+
+    def test_task_and_log_arguments_do_not_split_a_pack(self, tmp_path):
+        jobs, _ = _jobs(tmp_path)
+        smurf = [job for (name, _), job in jobs.items() if name == "smurf"]
+        assert len(smurf) > 1
+        assert len(evaluate.make_packs(smurf)) == 1
+        assert "--max-tokens" in evaluate.model_key(
+            evaluate.Job("m", "melt/hf/x", "b", "s", "asr", "e", tmp_path, ["-T", "a=1", "--max-tokens", "4096"])
+        )
+
+    def test_max_slices_splits_round_robin_longest_first(self, tmp_path):
+        def job(name, time=None):
+            env = {"MELT_TIME": time} if time else {}
+            return evaluate.Job("m", "smurf/x.ckpt", "b", name, "asr", "e", tmp_path / name, [], env)
+
+        jobs = [job("a"), job("b"), job("long1", "08:00:00"), job("c"), job("long2", "02:00:00")]
+        packs = evaluate.make_packs(jobs, max_slices=3)
+        assert [[j.slice for j in pack] for pack in packs] == [["long1", "a", "c"], ["long2", "b"]]
+
+    def test_a_queued_pack_stands_for_every_slice_it_holds(self, tmp_path):
+        jobs, _ = _jobs(tmp_path)
+        smurf = [job for (name, _), job in jobs.items() if name == "smurf"]
+        manifest = evaluate.write_pack(smurf, {"_output_dir": tmp_path / "out"})
+        tags = evaluate.expand_tags([f"{evaluate.PACK_PREFIX}{manifest}", "melteval:other:b:s", "unrelated"])
+        assert tags == {job.tag for job in smurf} | {"melteval:other:b:s"}
+        assert all(evaluate.job_state(job, tags)[0] == "queued" for job in smurf)
+
+    def test_a_pack_is_given_its_longest_slice_time(self, tmp_path, monkeypatch):
+        jobs, _ = _jobs(tmp_path)
+        smurf = [job for (name, _), job in jobs.items() if name == "smurf"]
+        seen = {}
+
+        def fake_run(command, env, log_file=None):
+            seen.update(env, command=command)
+            return 0, "Submitted batch job 42\n"
+
+        monkeypatch.setattr(evaluate, "run_command", fake_run)
+        monkeypatch.delenv("MAX_QUEUED", raising=False)
+        config = {"_output_dir": tmp_path / "out"}
+        settings = {"gpus": 4, "time": "01:00:00", "max_slices": 0}
+        assert evaluate.start_pack(smurf, "jupiter", settings, config) == "42"
+        assert seen["MELT_TIME"] == "02:00:00"  # librispeech's slice time beats the pack's 1 h
+        assert seen["MELT_GPUS"] == "4"
+        assert seen["command"][:2] == ["infra/runners/submit_pack.sh", "jupiter"]
+        assert seen["MELT_JOB_TAG"] == f"{evaluate.PACK_PREFIX}{seen['command'][2]}"

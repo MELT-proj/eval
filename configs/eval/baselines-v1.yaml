@@ -13,6 +13,13 @@ name: baselines-v1
 # Everything goes here: config.yaml, submissions.jsonl, logs/, results/.
 output_dir: ${EVAL_ROOT}/baselines-v1
 
+# Only read on a site that packs slices (MELT_PACK_GPUS, e.g. JUPITER): one
+# whole-node job per model (and per set of model arguments), one worker per GPU.
+# Elsewhere every slice is still its own job. See configs/eval/smurf-v1.yaml.
+pack:
+  time: "06:00:00"
+  max_slices: 20
+
 models:
   - name: qwen2-audio-7b-instruct
     model: melt/hf/qwen2_audio
@@ -20,29 +27,31 @@ models:
     args: [-M, batch_size=8]
     # Skipped: most clips run past the 30 s window (MCIF long, AIR-Bench music).
     skip: [mcif-long-*, air-bench-foundation-music]
-    # For benchmarks marked `needs_instruction` (their samples carry none of # their own). No entry for a slice's task: that slice is skipped.
+    # For `needs_instruction` benchmarks; no entry for a task skips its slices.
+    # Names the source language, as smurf-v1.yaml does ({lang}/{src_lang}/{tgt_lang} from the sample's tags).
     instruction:
       # Asks for the bare transcription: with "Transcribe this audio." it
       # prefixes many answers with "The original content of this audio is:", # which is scored as-is.
-      asr: "Transcribe this audio. Output only the transcription."
-      st: "Translate this audio into English."
+      asr: "Transcribe this {lang} audio. Output only the transcription."
+      st: "Translate this {src_lang} audio into {tgt_lang}."
 
   - name: qwen3-omni-30b-a3b-instruct
     model: melt/hf/qwen3_omni
     args: [-M, batch_size=4]
     instruction:
-      asr: "Transcribe this audio."
-      st: "Translate this audio into English."
+      asr: "Transcribe this {lang} audio."
+      st: "Translate this {src_lang} audio into {tgt_lang}."
 
   # Whisper is one checkpoint with two modes: it transcribes (ASR) or translates
   # into English (ST), selected per task with `task=`. It reads no instruction:
-  # neither the launcher nor the provider passes one.
+  # neither the launcher nor the provider passes one. It cannot translate out of
+  # English, so the FLEURS en->X slices are skipped.
   - name: whisper-large-v3
     model: melt/hf/whisper
     args: [-M, batch_size=8]
     args_by_task:
       st: [-M, task=translate]
-    skip: [air-bench-*, mcif-*]
+    skip: [air-bench-*, mcif-*, fleurs-en_*]
 
   - name: desta2.5-audio
     model: melt/hf/desta25
@@ -51,8 +60,8 @@ models:
     # Same 30 s window as Qwen2-Audio, so the same slices are skipped (see there).
     skip: [mcif-long-*, air-bench-foundation-music]
     instruction:
-      asr: "Transcribe this audio. Output only the transcription."
-      st: "Translate this audio into English."
+      asr: "Transcribe this {lang} audio. Output only the transcription."
+      st: "Translate this {src_lang} audio into {tgt_lang}."
     # System prompts per task as the DeSTA2.5 authors recommend (see docs/baseline-providers.md).
     # MCQ user turn follows their evaluation_tips.md.
     mcq_instruction: "{question}\nThe answer could be: {options}"
@@ -62,14 +71,6 @@ models:
       chunked_asr: "Focus on the audio clips and instruction. Respond directly without any other words"
       audio_mcq: "Focus on the audio clips and instruction. Choose one of the options without any explanation."
 
-  - name: smurf
-    # Always one .ckpt file in checkpoints/smurf/ (gitignored).
-    model: smurf/checkpoints/smurf/*.ckpt
-    args: [-M, batch_size=8]
-    # SMURF's trained prompt; no ST entry, so ST slices are skipped.
-    instruction:
-      asr: "Transcribe this English audio: "
-
   - name: melt
     # Always one run folder in checkpoints/melt/. The prompt format is read
     # from its training_config.yaml; without one the run fails rather than guess.
@@ -78,70 +79,4 @@ models:
     venv: ${MELT_VENV_PATH}
     args: [-M, batch_size=4]
 
-benchmarks:
-  - name: air-bench
-    spec: configs/hf/air-bench.yaml
-    # Judge for audio_chat (melteval's rubric, not AIR-Bench's); Qwen3-Omni also grades itself.
-    judge: melt/hf/qwen3_omni
-    slices:
-      - {task: audio_mcq, dataset_id: air-bench-foundation-speech}
-      - {task: audio_mcq, dataset_id: air-bench-foundation-sound}
-      - {task: audio_mcq, dataset_id: air-bench-foundation-music}
-      - {task: audio_chat, dataset_id: air-bench-chat-speech}
-      - {task: audio_chat, dataset_id: air-bench-chat-sound}
-      - {task: audio_chat, dataset_id: air-bench-chat-music}
-      - {task: audio_chat, dataset_id: air-bench-chat-mixed}
-
-  - name: mcif
-    spec: configs/hf/mcif.yaml
-    # Each dataset_id holds several task kinds; one job per kind.
-    slices:
-      - {task: chunked_asr, dataset_id: mcif-short-fixed-en}
-      - {task: chunked_st, dataset_id: mcif-short-fixed-de}
-      - {task: chunked_st, dataset_id: mcif-short-fixed-it}
-      - {task: chunked_st, dataset_id: mcif-short-fixed-zh}
-      - {task: chunked_asr, dataset_id: mcif-short-mixed-en}
-      - {task: chunked_st, dataset_id: mcif-short-mixed-de}
-      - {task: chunked_st, dataset_id: mcif-short-mixed-it}
-      - {task: chunked_st, dataset_id: mcif-short-mixed-zh}
-      # long: whole talks in one pass (README, "Running chunked-ASR MCIF eval").
-      - {task: chunked_asr, dataset_id: mcif-long-fixed-en, args: [-M, batch_size=1, --max-tokens, "4096"], time: "08:00:00"}
-      - {task: chunked_st, dataset_id: mcif-long-fixed-de, args: [-M, batch_size=1, --max-tokens, "4096"], time: "08:00:00"}
-      - {task: chunked_st, dataset_id: mcif-long-fixed-it, args: [-M, batch_size=1, --max-tokens, "4096"], time: "08:00:00"}
-      - {task: chunked_st, dataset_id: mcif-long-fixed-zh, args: [-M, batch_size=1, --max-tokens, "4096"], time: "08:00:00"}
-
-  - name: librispeech
-    spec: configs/librispeech-hf-test-clean.yaml
-    needs_instruction: true
-    slices:
-      # `time`: SLURM wall clock; Qwen3-Omni needs ~1h15 here, past the 1h10 default cap.
-      - {task: asr, dataset_id: librispeech-test-clean, time: "02:00:00"}
-
-  # X->en ST from the local CoVoST2 Shar tree (configs/st-eval-campaign-v1.yaml),
-  # what whisper-large-v3's `st` mode runs on. Read live: nothing to download.
-  - name: covost2
-    spec: configs/st-eval-campaign-v1.yaml
-    needs_instruction: true
-    slices:
-      - {task: st, dataset_id: covost2-de_en}
-      - {task: st, dataset_id: covost2-es_en}
-      - {task: st, dataset_id: covost2-fr_en}
-      - {task: st, dataset_id: covost2-it_en}
-      - {task: st, dataset_id: covost2-pt_en}
-
-  # Shar frozen sets: only where the corpora are. Their paths come from the
-  # environment; a machine without them skips these benchmarks.
-  - name: fleurs24-asr
-    frozen_set: ${FLEURS24_ASR_SET}
-    needs_instruction: true
-    slices:
-      - {task: asr}
-
-  - name: fleurs24-st-xen
-    frozen_set: ${FLEURS24_ST_XEN_SET}
-    needs_instruction: true
-    slices:
-      - {task: st, dataset_id: fleurs-de_en}
-      - {task: st, dataset_id: fleurs-es_en}
-      - {task: st, dataset_id: fleurs-fr_en}
-      - {task: st, dataset_id: fleurs-it_en}
+benchmarks: configs/eval/suites/v1.yaml
