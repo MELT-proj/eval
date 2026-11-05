@@ -145,6 +145,26 @@ Nothing in `melteval` imports torch, NeMo or transformers at module scope, so
 this half-populated environment imports the package (and registers both
 providers) without the MELT side present.
 
+Two version traps in that venv, both silent until a checkpoint loads:
+
+- **`pyarrow<26`.** `datasets` 5.x resolves pyarrow 26, which requires NumPy
+  2.0; NeMo and `fbk_speechllm` pin NumPy 1.26 (`scipy<1.14` too). The import
+  of `fbk_speechllm` then fails with "pyarrow requires NumPy 2.0 or newer,
+  found 1.26.4", inside the provider's "neither stack imported" message. Pin
+  `pyarrow==25.0.1` after installing.
+- **The encoder and tokenizer must be in the HF cache, refs included.** NeMo's
+  `ASRModel.from_pretrained("nvidia/canary-1b-v2")` (and the checkpoint's LLM
+  tokenizer, e.g. `utter-project/EuroLLM-9B-Instruct-2512`) resolves through
+  `try_to_load_from_cache`, which needs `refs/main` in
+  `$HF_HOME/hub/models--*/`. A cache entry copied in without `refs/main` sends
+  NeMo to the network, and an offline compute node then fails with
+  `OfflineModeIsEnabled` even though the file is there. Check before
+  submitting — a path, not `None`, means it will load offline:
+
+  ```bash
+  python -c "from huggingface_hub import try_to_load_from_cache as t; print(t('nvidia/canary-1b-v2', 'canary-1b-v2.nemo'))"
+  ```
+
 The `{lang}` placeholder in an instruction is the one thing that *does* reach
 for MELT's package — it resolves ISO codes to the same language names MELT
 prompts use. In a SMURF-only environment use `{lang_code}`, or write the
