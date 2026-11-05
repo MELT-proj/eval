@@ -271,7 +271,8 @@ Some metrics need a model of their own and are computed after generation, by `ev
 
 | Slices | Scorer | Metric in the report |
 | ------ | ------ | -------------------- |
-| MCIF SQA (`audio_chat`, en/de/it) | `mcif_scoring.py@mcif_official_qa_scorer` | `official_bertscore` |
+| MCIF SQA (`audio_chat`, short en/de/it) | `mcif_scoring.py@mcif_official_qa_scorer` | `official_bertscore` |
+| MCIF QA + SUM (`audio_chat`, long en) | `mcif_scoring.py@mcif_official_qa_scorer` and `@mcif_official_sum_scorer` | `official_bertscore` on the QA and the summarisation samples of one log |
 | MCIF ST (`chunked_st`, de/it) | `mcif_scoring.py@mcif_official_trans_scorer` | `official_trans_comet` |
 | FLEURS ST, both directions | `rescore.py@comet_scorer` | `comet`, and `comet_coverage` (share of samples COMET could score) |
 

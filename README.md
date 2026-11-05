@@ -475,6 +475,11 @@ inspect score path/to/log.eval \
 | `mcif_official_trans_scorer` | TRANS | COMET (downloads a checkpoint on first use) and `mweralign` (`mcif-bench` >= 2.0 pulls it in; `from mcif.evaluation import score_st` is how to check) |
 | `mcif_official_qa_scorer` / `mcif_official_sum_scorer` | QA / summarisation | `bert-score` (downloads a baseline-rescaling file per language on first use) |
 
+QA is `audio_chat` on every short-track `dataset_id`; SUM exists only in the
+`long` track, where `audio_chat` on `mcif-long-fixed-en` holds both QA and
+summarisation samples — the two scorers read disjoint subsets of one log. The
+suite declares both there (`configs/eval/suites/v1.yaml`).
+
 No `-S` arguments: every sample already carries which `(repo, revision,
 track, lang)` produced it, so the scorer re-downloads the exact reference file
 generation used straight from the log. **The log must cover every member of

@@ -32,6 +32,16 @@ benchmarks:
       - {task: audio_chat, dataset_id: mcif-short-fixed-en, post_scorers: [melteval/mcif_scoring.py@mcif_official_qa_scorer]}
       - {task: audio_chat, dataset_id: mcif-short-fixed-de, post_scorers: [melteval/mcif_scoring.py@mcif_official_qa_scorer]}
       - {task: audio_chat, dataset_id: mcif-short-fixed-it, post_scorers: [melteval/mcif_scoring.py@mcif_official_qa_scorer]}
+      # QA and SUM on the long track's English talks -- SUM exists only here,
+      # and these are whole talks, not short segments, hence batch 1 and a long
+      # wall clock. Two official BERTScore subsets from one log: QA over the QA
+      # samples, SUM over the summarisation ones.
+      - task: audio_chat
+        dataset_id: mcif-long-fixed-en
+        args: [-M, batch_size=1, --max-tokens, "4096"]
+        time: "08:00:00"
+        post_scorers: [melteval/mcif_scoring.py@mcif_official_qa_scorer,
+                       melteval/mcif_scoring.py@mcif_official_sum_scorer]
       - {task: chunked_st, dataset_id: mcif-short-fixed-zh}
       - {task: chunked_asr, dataset_id: mcif-short-mixed-en}
       - {task: chunked_st, dataset_id: mcif-short-mixed-de}
