@@ -74,7 +74,7 @@ with the training repo checked out as a sibling:
 # expects ../training to exist (sibling checkout); see [tool.uv.sources] in
 # pyproject.toml if you keep it somewhere else
 uv venv --python 3.12 /path/to/venvs/melteval
-VIRTUAL_ENV=/path/to/venvs/melteval uv pip install --prerelease=allow -e ".[shar,metrics,dev]"
+VIRTUAL_ENV=/path/to/venvs/melteval uv pip install --prerelease=allow -e ".[shar,metrics,dev,analysis]"
 ```
 
 `--prerelease=allow` is needed because `melt-proj` pins a pre-release lhotse
@@ -82,7 +82,8 @@ VIRTUAL_ENV=/path/to/venvs/melteval uv pip install --prerelease=allow -e ".[shar
 corpora, pulls in the training package), `hf` (remote HuggingFace test
 splits), `metrics` (jiwer, sacrebleu, sentencepiece -- the last for spBLEU, which
 also needs a model file that is staged separately: see
-[ST metrics](#st-metrics-bleu-spbleu-chrf)).
+[ST metrics](#st-metrics-bleu-spbleu-chrf)), and `analysis` (pandas, openpyxl
+and the plotting stack `scripts/evaluate.py report` and `projects/` need).
 
 ## Usage
 
@@ -238,7 +239,7 @@ reader (`melteval/readers/mcif.py`) and two grouped scorers instead of reusing
 | Task | Where | Scored by |
 |---|---|---|
 | `chunked_asr` | ASR, target language `en` | WER/CER, computed once per group after joining that group's completions in order -- see `melteval.scorers.chunked_asr_scorer` |
-| `chunked_st` | translation, the other three target languages | BLEU/chrF++, same grouping (no spBLEU). The paper's own metric is COMET after a resegmentation step this harness does not perform |
+| `chunked_st` | translation, the other three target languages | BLEU/chrF++, same grouping (no spBLEU). The paper's own metric is COMET after a resegmentation step, computed post-hoc (see "Reproducing MCIF's official metrics") |
 | `audio_chat` | QA (every language) and summarisation (`long` track only) | a judge model, same as AIR-Bench Chat -- `--model-role grader=<provider/model>` |
 
 In the `short` track a `chunked_asr`/`chunked_st` reference is a whole talk's
@@ -449,8 +450,12 @@ and it doesn't exist unless a source config asked for it (see
 approximations that run inline during generation. The MCIF paper's own
 numbers — WER against its exact normalizer, COMET, BERTScore — are a
 **separate, post-hoc** step via `inspect score`, calling straight into the
-official [`mcif`](https://github.com/hlt-mt/mcif) package
-(`pip install mcif-bench`) rather than reimplementing any of it:
+official [`mcif`](https://github.com/hlt-mt/mcif) package rather than
+reimplementing any of it. Install it from git, not PyPI: `mcif-bench` 1.x (the
+latest release) drives RWTH's x86-only `mwerSegmenter` binary for translation,
+while the 2.0 line resegments in-process with `mweralign`, so it needs no
+external tool and runs on any architecture (see
+[infra/setup/metrics_venv.sh](infra/setup/metrics_venv.sh)):
 
 ```bash
 # generate first (as above); --no-score if this environment cannot also
@@ -458,9 +463,9 @@ official [`mcif`](https://github.com/hlt-mt/mcif) package
 infra/runners/submit_eval.sh artemis melt/<path-to-checkpoint> configs/hf/mcif.yaml \
   -T task_filter=chunked_asr -T dataset_id=mcif-short-fixed-en --no-score
 
-# then, from an environment with `pip install mcif-bench` and this package
-# (no extras of its own needed -- just inspect_ai and huggingface_hub, both
-# base dependencies):
+# then, from an environment with that mcif-bench and this package (no extras
+# of its own needed -- just inspect_ai and huggingface_hub, both base
+# dependencies):
 inspect score path/to/log.eval \
   --scorer melteval/mcif_scoring.py@mcif_official_asr_scorer
 ```
@@ -468,8 +473,13 @@ inspect score path/to/log.eval \
 | Scorer | Macro-task | Needs |
 |---|---|---|
 | `mcif_official_asr_scorer` | ASR | `jiwer` + `whisper-normalizer` (both pulled in by `mcif-bench`) |
-| `mcif_official_trans_scorer` | TRANS | COMET (downloads a checkpoint on first use) **and** the external `mwerSegmenter` tool the official pipeline itself depends on — see `mcif.evaluation.MwerSegmenter`'s docstring for where to get it and `MWERSEGMENTER_ROOT` |
+| `mcif_official_trans_scorer` | TRANS | COMET (downloads a checkpoint on first use) and `mweralign` (`mcif-bench` >= 2.0 pulls it in; `from mcif.evaluation import score_st` is how to check) |
 | `mcif_official_qa_scorer` / `mcif_official_sum_scorer` | QA / summarisation | `bert-score` (downloads a baseline-rescaling file per language on first use) |
+
+QA is `audio_chat` on every short-track `dataset_id`; SUM exists only in the
+`long` track, where `audio_chat` on `mcif-long-fixed-en` holds both QA and
+summarisation samples — the two scorers read disjoint subsets of one log. The
+suite declares both there (`configs/eval/suites/v1.yaml`).
 
 No `-S` arguments: every sample already carries which `(repo, revision,
 track, lang)` produced it, so the scorer re-downloads the exact reference file
@@ -484,6 +494,46 @@ alone) — keep it in its own venv, the same reasoning as the COMET/MetricX venv
 above. Its own pin of `torchmetrics` also expects `pkg_resources`, which a
 fresh venv's `setuptools` may not provide anymore; `pip install "setuptools<81"`
 if `import mcif.evaluation` fails with `ModuleNotFoundError: pkg_resources`.
+`mweralign` ships x86_64 wheels only; on aarch64 pip builds it from its sdist,
+which needs nothing beyond a C++17 compiler.
+
+Build that venv with [infra/setup/metrics_venv.sh](infra/setup/metrics_venv.sh)
+— it pins the `mcif-bench` commit and runs the import check scoring jobs need:
+
+```bash
+METRICS_VENV_PATH=/path/to/venvs/metrics-eval/bin/activate infra/setup/metrics_venv.sh
+```
+
+Then warm the cache from a machine with internet before scoring on a cluster
+whose compute nodes are offline: the MCIF reference file and the COMET
+checkpoint. `mcif_scoring` downloads `MCIF.<track>.<lang>.ref.xml.gz` itself
+from the keys in the log, so this works on logs someone else generated:
+
+```bash
+export HF_HUB_OFFLINE=0
+python - <<'EOF'
+import glob, json
+from melteval.readers.mcif import download_reference_gz
+keys = set()
+for path in glob.glob(f"{EVAL_ROOT}/{CAMPAIGN}/logs/*/mcif/chunked_st-*/*"):
+    if not path.endswith((".json", ".eval")):      # .out files live there too
+        continue
+    meta = json.load(open(path))["samples"][0]["metadata"]
+    keys.add((meta["repo"], meta["revision"], meta["track"], meta["lang"]))
+for key in sorted(keys):
+    print("fetch", key, download_reference_gz(*key))
+EOF
+huggingface-cli download Unbabel/wmt22-comet-da xlm-roberta-large
+export HF_HUB_OFFLINE=1
+```
+
+Site-specific steps (the JUPITER metrics venv, offline caches, and a
+scoring-only campaign config for backfilling `official_trans_comet` on
+finished logs) are in
+[docs/jupiter-continuous-eval.md](docs/jupiter-continuous-eval.md#25-post-hoc-scoring).
+On artemis, `infra/sites/artemis.sh` already points `METRICS_VENV_PATH` at
+`/mnt/scratch-artemis/giuseppe/venvs/metrics-eval/bin/activate`, so
+`evaluate.py score ... --site artemis` needs nothing else.
 
 ## Development
 

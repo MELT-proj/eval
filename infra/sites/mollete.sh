@@ -20,10 +20,8 @@ _mollete_root="/export/usuarios_ml4ds/${USER}"
 export VENV_PATH="${VENV_PATH:-${_mollete_root}/venvs/smurf-eval/bin/activate}"
 # Post-hoc metrics (MCIF's official scorers, COMET): mcif-bench + unbabel-comet +
 # melt-eval, kept apart because they pin their own transformers.
+# infra/setup/metrics_venv.sh builds it (mcif-bench 2.0, no mwerSegmenter binary).
 export METRICS_VENV_PATH="${METRICS_VENV_PATH:-${_mollete_root}/venvs/metrics-eval/bin/activate}"
-# mwerSegmenter, needed by MCIF's official translation scorer (a 32-bit x86
-# binary: runs here, not on an aarch64 machine).
-export MWERSEGMENTER_ROOT="${MWERSEGMENTER_ROOT:-${_mollete_root}/tools/mwerSegmenter}"
 
 # --- storage (host paths) ------------------------------------------------------
 # Keep the login shell on the same HF cache (`export HF_HOME=...` in ~/.bashrc),

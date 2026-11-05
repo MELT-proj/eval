@@ -494,6 +494,15 @@ class TestReport:
         assert table.loc["model-a", ("air-bench", "audio_chat-x", "accuracy")] == 1.0
         assert table.loc["model-a", ("air-bench", "audio_chat-x", "mcif_official_qa_scorer")] == report.PENDING
 
+    def test_several_declared_post_scorers_are_pending_without_stray_punctuation(self, tmp_path, report):
+        """``inspect`` turns a two-name ``--metadata`` value into a list; both names must survive intact."""
+        self._eval(tmp_path / "a", "model-a", "audio_chat", target="Default output",
+                   melteval_post_scorers=["melteval/mcif_scoring.py@mcif_official_qa_scorer",
+                                          "melteval/mcif_scoring.py@mcif_official_sum_scorer"])  # fmt: skip
+        table = report.summary_table(report.metrics_long(report.read_runs([tmp_path])))
+        assert table.loc["model-a", ("air-bench", "audio_chat-x", "mcif_official_qa_scorer")] == report.PENDING
+        assert table.loc["model-a", ("air-bench", "audio_chat-x", "mcif_official_sum_scorer")] == report.PENDING
+
     def test_the_newest_log_of_a_slice_wins(self, tmp_path, report):
         self._eval(tmp_path / "old", "model-a", "audio_chat", target="nope")
         self._eval(tmp_path / "new", "model-a", "audio_chat", target="Default output")
