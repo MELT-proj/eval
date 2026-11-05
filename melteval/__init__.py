@@ -29,7 +29,16 @@ from melteval.providers.qwen3_omni import Qwen3OmniAPI
 from melteval.providers.router import melt
 from melteval.providers.smurf import SmurfAPI
 from melteval.providers.whisper import WhisperAPI
-from melteval.scorers import asr_scorer, corpus_bleu, corpus_cer, corpus_chrf, corpus_wer_raw, st_scorer
+from melteval.scorers import (
+    asr_scorer,
+    corpus_bleu,
+    corpus_cer,
+    corpus_chrf,
+    corpus_spbleu,
+    corpus_wer_raw,
+    st_scorer,
+    st_scorer_no_spbleu,
+)
 from melteval.solver import instruction_prompt, melt_prompt, smurf_prompt
 from melteval.tasks import asr, speech, st
 
@@ -52,6 +61,7 @@ __all__ = [
     "corpus_bleu",
     "corpus_cer",
     "corpus_chrf",
+    "corpus_spbleu",
     "corpus_wer_raw",
     "frozen_dataset",
     "instruction_prompt",
@@ -63,4 +73,5 @@ __all__ = [
     "speech",
     "st",
     "st_scorer",
+    "st_scorer_no_spbleu",
 ]

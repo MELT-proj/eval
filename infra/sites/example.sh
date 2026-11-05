@@ -19,6 +19,9 @@ export HF_HOME="${HF_HOME:-/path/to/hf_cache}"
 export OUTPUT_DIR="${OUTPUT_DIR:-/path/to/eval-logs}"    # where inspect writes .eval logs
 # Where scripts/evaluate.py puts each campaign (configs/eval/*.yaml: output_dir).
 export EVAL_ROOT="${EVAL_ROOT:-/path/to/eval-runs}"
+# sacrebleu's cache; must contain models/flores200sacrebleuspm (the SentencePiece
+# model behind spBLEU), staged from a machine with internet -- README.md, "spBLEU".
+export SACREBLEU="${SACREBLEU:-/path/to/sacrebleu}"
 
 # --- misc --------------------------------------------------------------------
 export HF_HUB_OFFLINE="${HF_HUB_OFFLINE:-1}"

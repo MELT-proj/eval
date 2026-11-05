@@ -80,7 +80,9 @@ VIRTUAL_ENV=/path/to/venvs/melteval uv pip install --prerelease=allow -e ".[shar
 `--prerelease=allow` is needed because `melt-proj` pins a pre-release lhotse
 (`2.0.0a3`). Extras are split by what you actually need: `shar` (local lhotse
 corpora, pulls in the training package), `hf` (remote HuggingFace test
-splits), `metrics` (jiwer, sacrebleu).
+splits), `metrics` (jiwer, sacrebleu, sentencepiece -- the last for spBLEU, which
+also needs a model file that is staged separately: see
+[ST metrics](#st-metrics-bleu-spbleu-chrf)).
 
 ## Usage
 
@@ -137,7 +139,11 @@ appended after the two required paths:
 one run per language (`-T lang=de`, then a separate run with `-T lang=ar`,
 ...). BLEU's tokenizer is chosen per target language, so a corpus mixing
 languages has no single correct tokenizer for the mix — `corpus_bleu` raises
-rather than silently pick one.
+rather than silently pick one. A multi-target set (the en→X FLEURS set) is
+therefore generated with `--no-score` and scored per direction afterwards with
+`melteval st-metrics`, below. Building the `st` task also checks, before any
+generation, that the SentencePiece model spBLEU needs is staged; on a site that
+does not have it, pass `-T spbleu=false` (see below).
 
 A debug run before a full one — few samples, short QoS:
 
@@ -232,7 +238,7 @@ reader (`melteval/readers/mcif.py`) and two grouped scorers instead of reusing
 | Task | Where | Scored by |
 |---|---|---|
 | `chunked_asr` | ASR, target language `en` | WER/CER, computed once per group after joining that group's completions in order -- see `melteval.scorers.chunked_asr_scorer` |
-| `chunked_st` | translation, the other three target languages | BLEU/chrF, same grouping. The paper's own metric is COMET after a resegmentation step this harness does not perform |
+| `chunked_st` | translation, the other three target languages | BLEU/chrF++, same grouping (no spBLEU). The paper's own metric is COMET after a resegmentation step this harness does not perform |
 | `audio_chat` | QA (every language) and summarisation (`long` track only) | a judge model, same as AIR-Bench Chat -- `--model-role grader=<provider/model>` |
 
 In the `short` track a `chunked_asr`/`chunked_st` reference is a whole talk's
@@ -321,9 +327,96 @@ instruction can also be read from the SMURF data config it was trained with
 [docs/smurf-provider.md](docs/smurf-provider.md) for the environment, the
 parity argument and a cross-check recipe against `fbk_speechllm.inference`.
 
+## ST metrics: BLEU, spBLEU, chrF++
+
+`st_scorer` reports three corpus metrics, each pooled over the run and grouped
+by the samples' `lang`. All are sacrebleu 2.5.1, cased, and every metric logs its
+signature at INFO.
+
+| Log key | Metric | Signature (version aside) |
+|---|---|---|
+| `corpus_bleu`, `bleu_<lang>` | BLEU, tokenizer chosen by target language (13a unless `zh`/`ja`) | `nrefs:1\|case:mixed\|eff:no\|tok:13a\|smooth:exp` |
+| `corpus_spbleu`, `spbleu_<lang>` | spBLEU: BLEU over text tokenized by the multilingual SentencePiece model of sacrebleu's `flores200` tokenizer | `nrefs:1\|case:mixed\|eff:no\|tok:flores200\|smooth:exp` |
+| `corpus_chrf`, `chrf_<lang>` | **chrF++** (`word_order=2`) -- the name predates the distinction, and is kept because logs and `projects/` read it | `nrefs:1\|case:mixed\|eff:yes\|nc:6\|nw:2\|space:no` |
+
+`corpus_chrf` is chrF++, not plain chrF (`nw:0`); a test pins its signature.
+Numbers from before this distinction -- the self-distillation tables, which call
+sacrebleu's plain `corpus_chrf` and `corpus_bleu` (13a) on lowercased text -- are
+neither chrF++ nor spBLEU; `melteval st-metrics` reports both chrF variants and
+`--lowercase` so they can be bridged. spBLEU is language-independent, so unlike
+`corpus_bleu` it does not raise on a corpus with several targets -- but a pooled
+number over several directions is not worth reporting; use per-direction values.
+
+**`lang` is the target language.** On the FLEURS ST sets `lang` equals
+`tgt_lang`, so on X→en all 23 sources fall in one `en` bucket, and
+`bleu_en`/`chrf_en` equal the pooled values. What separates directions is
+`dataset_id` (`fleurs-de_en`, `fleurs-en_de`); `src_lang` and `tgt_lang` are also
+in each sample's metadata. Per-direction numbers come from `melteval st-metrics`.
+
+### Staging the spBLEU model (once, from a machine with internet)
+
+sacrebleu's `flores200` tokenizer loads a SentencePiece model from
+`$SACREBLEU/models/flores200sacrebleuspm` (default `~/.sacrebleu`) and
+**downloads it if it is missing**, inside the scoring step -- after the
+generation, possibly on a node with no internet. melt-eval never lets that
+happen: the `st` task checks, while it is built, that the file exists and loads,
+and stops with a message naming the file, `SACREBLEU` and this recipe;
+`corpus_spbleu` and `st-metrics` make the same check before touching sacrebleu.
+It is read once, when sacrebleu is imported, so set `SACREBLEU` in the
+environment of the process, not afterwards.
+
+```bash
+export SACREBLEU=/mnt/scratch-artemis/giuseppe/sacrebleu      # artemis.sh exports this
+mkdir -p $SACREBLEU/models
+curl -L -o $SACREBLEU/models/flores200sacrebleuspm https://tinyurl.com/flores200sacrebleuspm
+sha256sum $SACREBLEU/models/flores200sacrebleuspm              # compare with the table below
+```
+
+| | |
+|---|---|
+| URL sacrebleu uses | `https://tinyurl.com/flores200sacrebleuspm` |
+| Redirects to (2026-10-15) | `https://dl.fbaipublicfiles.com/large_objects/nllb/models/spm_200/flores200_sacrebleu_tokenizer_spm.model` |
+| Size | 4,852,054 bytes |
+| sha256 | `14bb8dfb35c0ffdea7bc01e56cea38b9e3d5efcdcb9c251d6b40538e1aab555a` |
+
+The model is not committed. `infra/sites/artemis.sh` exports `SACREBLEU` with the
+usual `${VAR:-default}` pattern; the container launchers pass it into the image
+(`--env`) and bind it. **MN5 has no internet; the model was copied there once over `mn5transfer`**
+to `/gpfs/scratch/epor48/sacrebleu/models/` (sha256 verified on arrival) and
+`infra/sites/mn5.sh` exports `SACREBLEU`. A site that lacks the model opts out
+explicitly:
+
+```bash
+infra/runners/submit_eval.sh <site> melt/<ckpt> <frozen-set> -T task_filter=st -T spbleu=false
+```
+
+`-T spbleu=false` selects `st_scorer_no_spbleu`: BLEU and chrF++ as usual and no
+spBLEU keys in the log -- absent, not substituted. Use it on `--no-score` runs
+at a site without the model too (the check cannot know scoring is off), then
+compute spBLEU from the log wherever the model is staged.
+
+### Scoring finished logs: `melteval st-metrics`
+
+```bash
+melteval st-metrics log.eval                          # one row per dataset_id (direction)
+melteval st-metrics log.eval --lowercase              # lowercase every metric (signatures: case:lc)
+melteval st-metrics a.eval b.eval --group-by tgt_lang # or src_lang, or none to pool
+melteval st-metrics log.eval --spm flores101 --json   # JSON on stdout instead of the table
+```
+
+It reads `sample.output.completion` and `sample.target` from the log, so it
+works on `--no-score` logs and scored ones alike, on CPU, without torch, lhotse
+or `melt` (`melteval.st_metrics.score_logs` is the importable form). Per group
+it gives `n`, `bleu` (same tokenizer routing as `corpus_bleu`; `n/a` with a note
+when a group spans several targets), `spbleu`, `chrf` (plain, `nw:0`) and
+`chrfpp` (chrF++), and the sacrebleu signatures once per log. Samples that
+errored are skipped and counted; an empty completion is scored as empty (a miss)
+and counted too. `--lowercase` is for models that write lowercase against
+cased references. It needs the SentencePiece model like everything else here.
+
 ## Rescoring ST output with COMET/MetricX
 
-`inspect eval` reports BLEU/chrF; a neural MT metric is a separate step, run
+`inspect eval` reports BLEU/spBLEU/chrF++; a neural MT metric is a separate step, run
 from the `comet`/`metricx` venv rather than this one, so a GPU metric stack
 never has to install next to the model under evaluation. `infra/Singularity.def`
 bakes this in as a second venv (`unbabel-comet` pins `transformers<5`, which

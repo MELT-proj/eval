@@ -16,6 +16,8 @@ they all bypass the step that broke. Only a test that runs a real
 """
 
 import asyncio
+import logging
+import re
 
 import pytest
 from inspect_ai.model import ModelName, ModelOutput
@@ -36,6 +38,7 @@ from melteval.scorers import (
     corpus_bleu,
     corpus_cer,
     corpus_chrf,
+    corpus_spbleu,
     corpus_wer_raw,
     get_normalizer,
     resolve_choice,
@@ -311,11 +314,111 @@ class TestCorpusBleuChrf:
         assert isinstance(corpus_bleu()(scores), float)
 
 
+class TestCorpusSpbleu:
+    """spBLEU runs through sacrebleu's real ``flores200`` tokenizer, on a toy model (``spm_dir``)."""
+
+    PAIRS = [
+        ("Ich gehe nach Hause.", "Ich gehe heim."),
+        ("The quick brown fox jumps.", "The quick brown fox jumped."),
+        ("Guten Tag, wie geht es Ihnen?", "Guten Tag, wie geht es dir?"),
+    ]
+
+    def _scores(self, pairs, metadata=None):
+        return [_st_sample_score(ref, hyp, metadata) for ref, hyp in pairs]
+
+    def test_equals_sacrebleu_directly_and_logs_the_flores200_signature(self, spm_dir, caplog):
+        import sacrebleu
+
+        scores = self._scores(self.PAIRS, {"tgt_lang": "de"})
+        with caplog.at_level(logging.INFO, logger="melteval.scorers"):
+            value = corpus_spbleu()(scores)
+
+        direct = sacrebleu.BLEU(tokenize="flores200")
+        expected = direct.corpus_score([h for _, h in self.PAIRS], [[r for r, _ in self.PAIRS]]).score
+        assert value == pytest.approx(expected)
+        assert "tok:flores200" in caplog.text
+        assert "corpus_spbleu signature" in caplog.text
+
+    def test_differs_from_13a_bleu_on_the_same_strings(self, spm_dir):
+        """If it silently fell back to 13a the two would agree to the last digit."""
+        scores = self._scores(self.PAIRS, {"tgt_lang": "de"})
+        assert corpus_spbleu()(scores) != pytest.approx(corpus_bleu()(scores))
+
+    def test_flores101_is_selectable(self, spm_dir, caplog):
+        with caplog.at_level(logging.INFO, logger="melteval.scorers"):
+            corpus_spbleu(tokenizer="flores101")(self._scores(self.PAIRS))
+        assert "tok:flores101" in caplog.text
+
+    def test_unknown_tokenizer_is_rejected_when_built(self):
+        with pytest.raises(ValueError, match="flores200"):
+            corpus_spbleu(tokenizer="13a")
+
+    def test_does_not_raise_on_mixed_target_languages_where_corpus_bleu_does(self, spm_dir):
+        scores = [
+            _st_sample_score("Ich gehe.", "Ich gehe.", {"tgt_lang": "de"}),
+            _st_sample_score("Voy a casa.", "Voy a casa.", {"tgt_lang": "es"}),
+        ]
+        with pytest.raises(ValueError, match="Mixed target languages"):
+            corpus_bleu()(scores)
+        assert corpus_spbleu()(scores) > 99.0
+
+    def test_is_cased(self, spm_dir):
+        exact = self._scores([("Ich gehe nach Hause.", "Ich gehe nach Hause.")])
+        upper = self._scores([("Ich gehe nach Hause.", "ICH GEHE NACH HAUSE.")])
+        assert corpus_spbleu()(exact) > 99.0
+        assert corpus_spbleu()(upper) < 50.0
+
+    def test_an_empty_hypothesis_scores_zero_instead_of_crashing(self, spm_dir):
+        scores = self._scores([("Ich gehe nach Hause.", "")])
+        assert corpus_spbleu()(scores) == 0.0
+
+    def test_refuses_to_download_a_missing_model(self, no_spm_dir):
+        """The end-of-run scoring step must not reach for the network."""
+        from melteval.spm import SPMModelError
+
+        with pytest.raises(SPMModelError, match="flores200sacrebleuspm"):
+            corpus_spbleu()(self._scores(self.PAIRS))
+
+
+class TestChrfPlusPlus:
+    """``corpus_chrf`` is chrF++; the signature is pinned so nobody changes it unknowingly."""
+
+    def test_signature_is_the_chrf_plus_plus_one(self, caplog):
+        scores = [_st_sample_score("the cat sat on the mat", "the cat sat on a mat")]
+        with caplog.at_level(logging.INFO, logger="melteval.scorers"):
+            corpus_chrf()(scores)
+        match = re.search(r"corpus_chrf signature: (\S+)", caplog.text)
+        assert match, caplog.text
+        assert re.fullmatch(
+            r"nrefs:1\|case:mixed\|eff:yes\|nc:6\|nw:2\|space:no\|version:[\d.]+", match.group(1)
+        ), match.group(1)
+
+    def test_differs_from_plain_chrf(self):
+        import sacrebleu
+
+        hyp, ref = "the cat sat on a mat", "the cat sat on the mat"
+        plus_plus = corpus_chrf()([_st_sample_score(ref, hyp)])
+        plain = sacrebleu.CHRF(word_order=0).corpus_score([hyp], [[ref]]).score
+        assert plus_plus != pytest.approx(plain)
+
+
+class TestStScorerSelection:
+    def test_spbleu_false_selects_the_scorer_without_spbleu(self):
+        from inspect_ai._util.registry import registry_info
+
+        assert registry_info(default_scorer("st")).name.endswith("st_scorer")
+        assert registry_info(default_scorer("st", spbleu=False)).name.endswith("st_scorer_no_spbleu")
+
+    def test_spbleu_false_is_only_for_st(self):
+        with pytest.raises(ValueError, match="only applies to task_filter='st'"):
+            default_scorer("asr", spbleu=False)
+
+
 class TestStScorerThroughRealInspect:
     """Runs a real `inspect_ai.eval()` -- the only way to exercise inspect's
     own score-reduction step, which is what actually broke last time."""
 
-    def test_corpus_bleu_survives_a_real_eval_run(self, tmp_path):
+    def test_corpus_bleu_survives_a_real_eval_run(self, tmp_path, spm_dir):
         from inspect_ai import Task
         from inspect_ai import eval as inspect_eval
         from inspect_ai.dataset import MemoryDataset, Sample
@@ -358,6 +461,64 @@ class TestStScorerThroughRealInspect:
         metrics = log.results.scores[0].metrics
         assert "corpus_bleu" in metrics
         assert isinstance(metrics["corpus_bleu"].value, float)
+
+    def _run_german(self, tmp_path, scorer):
+        from inspect_ai import Task
+        from inspect_ai import eval as inspect_eval
+        from inspect_ai.dataset import MemoryDataset, Sample
+        from inspect_ai.model import ModelOutput as _ModelOutput
+
+        pairs = [
+            ("00-0", "Ich gehe nach Hause.", "Ich gehe heim.", "de"),
+            ("00-1", "Guten Tag, wie geht es Ihnen?", "Guten Tag, wie geht es dir?", "de"),
+            ("00-2", "Ich bin müde.", "Ich bin sehr müde.", "de"),
+        ]
+        dataset = MemoryDataset(
+            samples=[
+                Sample(input="translate", target=ref, id=sid, metadata={"tgt_lang": lang, "lang": lang})
+                for sid, ref, _, lang in pairs
+            ]
+        )
+        [log] = inspect_eval(
+            Task(dataset=dataset, scorer=scorer),
+            model="mockllm/model",
+            model_args={
+                "custom_outputs": [
+                    _ModelOutput.from_content(model="mockllm/model", content=hyp) for _, _, hyp, _ in pairs
+                ]
+            },
+            display="none",
+            log_dir=str(tmp_path),
+        )
+        return log, pairs
+
+    def test_spbleu_and_chrf_pp_survive_a_real_eval_run_and_match_sacrebleu(self, tmp_path, spm_dir):
+        import sacrebleu
+
+        from melteval.scorers import st_scorer
+
+        log, pairs = self._run_german(tmp_path, st_scorer())
+
+        assert log.status == "success"
+        metrics = log.results.scores[0].metrics
+        assert {"corpus_bleu", "corpus_chrf", "corpus_spbleu", "spbleu_de"} <= set(metrics)
+
+        expected = sacrebleu.BLEU(tokenize="flores200").corpus_score(
+            [p[2] for p in pairs], [[p[1] for p in pairs]]
+        )
+        assert isinstance(metrics["corpus_spbleu"].value, float)
+        assert metrics["corpus_spbleu"].value == pytest.approx(expected.score)
+        assert metrics["spbleu_de"].value == pytest.approx(expected.score)
+
+    def test_the_opt_out_scorer_logs_no_spbleu_keys_and_needs_no_model(self, tmp_path, no_spm_dir):
+        from melteval.scorers import st_scorer_no_spbleu
+
+        log, _ = self._run_german(tmp_path, st_scorer_no_spbleu())
+
+        assert log.status == "success"
+        metrics = set(log.results.scores[0].metrics)
+        assert {"corpus_bleu", "corpus_chrf", "bleu_de", "chrf_de"} <= metrics
+        assert not {m for m in metrics if "spbleu" in m}
 
 
 def _grouped_score(
