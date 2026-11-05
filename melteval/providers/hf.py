@@ -18,7 +18,6 @@ from __future__ import annotations
 
 import logging
 from collections.abc import Callable
-from typing import Any
 
 from inspect_ai.model import GenerateConfig
 
@@ -60,10 +59,9 @@ class HFSpeechChatAPI(BatchedSpeechAPI):
         batch_size: int = DEFAULT_BATCH_SIZE,
         batch_window: int = DEFAULT_BATCH_WINDOW,
         text_only: bool = False,
-        truncate_long_audio: bool = False,
         path: str | None = None,
         revision: str | None = None,
-        **model_args: Any,
+        **model_args: object,
     ) -> None:
         """Load the model and its processor.
 
@@ -87,12 +85,6 @@ class HFSpeechChatAPI(BatchedSpeechAPI):
                 refused in this mode: in a speech eval, a sample that lost its
                 audio would otherwise be answered from the text alone, with a
                 plausible score.
-            truncate_long_audio: Cut clips longer than the processor's window
-                down to it instead of refusing the batch -- what the model does
-                out of the box. Off by default. When on, each truncated sample
-                says so in its output metadata (``audio_truncated_from_seconds``)
-                and the run logs a warning with the count, so the choice is
-                visible in the log rather than silent.
             path: Hub id or local directory to load the weights from.
             revision: Hub commit to load; ``None`` for a local directory.
             **model_args: Forwarded to ``from_pretrained``. ``attn_implementation``
@@ -110,10 +102,9 @@ class HFSpeechChatAPI(BatchedSpeechAPI):
         # -M/model_args values arrive YAML-parsed, but a quoted "false" would
         # be a truthy string; compare explicitly rather than trusting bool().
         self.text_only = _truthy(text_only)
-        self.truncate_long_audio = _truthy(truncate_long_audio)
         self._logged_prompt = False
 
-    def _load_classes(self) -> tuple[Any, Any]:
+    def _load_classes(self) -> tuple[type, type]:
         """Return ``(model_class, processor_class)`` to load the checkpoint with."""
         raise NotImplementedError
 
@@ -124,15 +115,31 @@ class HFSpeechChatAPI(BatchedSpeechAPI):
         """Longest clip the processor takes without truncating it (default: no limit)."""
         return None
 
-    def _processor_kwargs(self) -> dict[str, Any]:
+    def _reject(self, request: _Request) -> str | None:
+        """Return why this clip cannot be run, or ``None`` if it can.
+
+        Some models cannot take audio past a fixed window (30 s for Qwen2-Audio).
+        Truncating it silently would score the first 30 s against the full
+        reference, so the caller fails that one sample and logs the reason; the
+        other samples still run.
+        """
+        limit = self._max_audio_seconds()
+        if self.text_only or limit is None or request.duration <= limit:
+            return None
+        return (
+            f"{self.family}: audio of {request.duration:.1f} s exceeds its {limit:g} s window; "
+            "sample not evaluated (it would be scored against the full reference from a truncated input)."
+        )
+
+    def _processor_kwargs(self) -> dict[str, object]:
         """Extra keyword arguments for the processor's audio call (default: none)."""
         return {}
 
-    def _gen_kwargs(self, config: GenerateConfig) -> dict[str, Any]:
+    def _gen_kwargs(self, config: GenerateConfig) -> dict[str, object]:
         """Translate an inspect generate config into this model's ``generate()`` kwargs."""
         return _generate_kwargs(config)
 
-    def _sequences(self, output: Any) -> Any:
+    def _sequences(self, output: object) -> object:
         """Extract the token ids from what ``generate()`` returned (default: it is them)."""
         return output
 
@@ -155,15 +162,13 @@ class HFSpeechChatAPI(BatchedSpeechAPI):
             prompts,
             gen_kwargs=self._gen_kwargs(batch[0].config),
             family=self.family,
-            max_seconds=self._max_audio_seconds(),
             sequences=self._sequences,
             with_audio=not self.text_only,
-            truncate=self.truncate_long_audio,
             processor_kwargs=self._processor_kwargs(),
         )
 
 
-def _truthy(value: Any) -> bool:
+def _truthy(value: object) -> bool:
     """A model arg as a bool. -M values arrive YAML-parsed, but a quoted
     "false" would be a truthy string, so compare explicitly."""
     return str(value).strip().lower() in ("true", "1", "yes")
@@ -176,7 +181,7 @@ def load(
     device: str | None,
     dtype: str,
     revision: str | None = None,
-    **model_args: Any,
+    **model_args: object,
 ):
     """Load a model and its processor, ready for batched generation.
 
@@ -235,13 +240,11 @@ def generate(
     device: str,
     batch: list[_Request],
     prompts: list[str],
-    gen_kwargs: dict[str, Any],
+    gen_kwargs: dict[str, object],
     family: str,
-    max_seconds: float | None = None,
-    sequences: Callable[[Any], Any] = lambda output: output,
+    sequences: Callable[[object], object] = lambda output: output,
     with_audio: bool = True,
-    truncate: bool = False,
-    processor_kwargs: dict[str, Any] | None = None,
+    processor_kwargs: dict[str, object] | None = None,
 ) -> list[str]:
     """Generate one completion per request from already-rendered *prompts*.
 
@@ -253,14 +256,10 @@ def generate(
         prompts: One chat-templated prompt per request, in order.
         gen_kwargs: Keyword arguments for ``model.generate``.
         family: Model family, for error messages.
-        max_seconds: Longest clip the processor takes whole, if it truncates.
         sequences: Pulls the token ids out of ``generate()``'s return value.
         with_audio: Whether the prompts carry audio. Off only for a judge
             (see ``text_only`` on :class:`HFSpeechChatAPI`); then every
             request must carry none.
-        truncate: Cut audio longer than *max_seconds* to it instead of
-            refusing the batch; each cut request gets
-            ``audio_truncated_from_seconds`` in its metadata.
         processor_kwargs: Extra keyword arguments for the processor call
             that carries the audio.
 
@@ -272,9 +271,7 @@ def generate(
     if with_audio:
         feature_extractor = processor.feature_extractor
         audios = [r.audio for r in batch]
-        if truncate and max_seconds is not None:
-            audios = _truncate(batch, max_seconds, family)
-        check_audio(batch, feature_extractor.sampling_rate, None if truncate else max_seconds, family)
+        check_audio(batch, feature_extractor.sampling_rate, family)
         inputs = processor(
             text=prompts,
             audio=audios,
@@ -311,37 +308,13 @@ def generate(
     ]
 
 
-def _truncate(batch: list[_Request], max_seconds: float, family: str) -> list[Any]:
-    """Cut each request's audio to *max_seconds*, recording which were cut and from how long."""
-    audios = []
-    for r in batch:
-        if r.audio is not None and r.duration > max_seconds:
-            r.metadata["audio_truncated_from_seconds"] = round(r.duration, 3)
-            audios.append(r.audio[: int(max_seconds * r.sample_rate)])
-        else:
-            audios.append(r.audio)
-    cut = [r.duration for r in batch if "audio_truncated_from_seconds" in r.metadata]
-    if cut:
-        logger.warning(
-            "%s: truncated %d clip(s) to its %s s window (longest %.1f s); the tail is not transcribed "
-            "but is still in the reference (truncate_long_audio=true).",
-            family,
-            len(cut),
-            max_seconds,
-            max(cut),
-        )
-    return audios
-
-
-def check_audio(batch: list[_Request], sampling_rate: int, max_seconds: float | None, family: str) -> None:
+def check_audio(batch: list[_Request], sampling_rate: int, family: str) -> None:
     """Reject a batch the processor would otherwise accept and quietly get wrong.
 
     Raises:
-        ValueError: If a request has no audio, is not at the feature
-            extractor's sampling rate, or is longer than *max_seconds*. A
-            processor that pads every clip to a fixed window cuts the rest
-            off, so a 40 s clip is transcribed as its first 30 s and scored
-            against the full reference, with nothing in the log to say so.
+        ValueError: If a request has no audio or is not at the feature
+            extractor's sampling rate. (A clip past the model's window never
+            gets here: :meth:`HFSpeechChatAPI._reject` fails it on its own.)
     """
     missing = [i for i, r in enumerate(batch) if r.audio is None]
     if missing:
@@ -356,15 +329,4 @@ def check_audio(batch: list[_Request], sampling_rate: int, max_seconds: float | 
             f"Audio at {sorted(wrong_rate)} Hz, but {family}'s feature extractor expects "
             f"{sampling_rate} Hz. Readers resample on load; a mismatch here means the frozen set "
             "references audio a reader passed through untouched."
-        )
-
-    if max_seconds is None:
-        return
-    too_long = [r.duration for r in batch if r.duration > max_seconds]
-    if too_long:
-        raise ValueError(
-            f"{len(too_long)} sample(s) longer than {family}'s {max_seconds} s window (longest "
-            f"{max(too_long):.1f} s). The processor would silently truncate them to {max_seconds} s "
-            "and the hypothesis would be scored against the full reference. Filter or segment "
-            "such samples before evaluating this model."
         )

@@ -255,6 +255,8 @@ class HFReader:
                     choices=choices,
                     cut_id=row_id,
                     duration=duration,
+                    # The question on its own, for a model that lays the options out itself.
+                    extra={"question": str(question).strip()} if choices else {},
                 )
             )
 

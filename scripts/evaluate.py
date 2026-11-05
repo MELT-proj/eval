@@ -190,7 +190,7 @@ def plan(
         The jobs, and one line per (model, benchmark or slice) that cannot run
         on this machine or is excluded, with why.
     """
-    from melteval.providers import family_of
+    from melteval.providers import family_of, ignores_instruction
 
     jobs: list[Job] = []
     skipped: list[str] = []
@@ -237,8 +237,13 @@ def plan(
                     args += ["-T", f"dataset_id={dataset_id}"]
                 # A benchmark whose samples carry no instruction of their own
                 # needs one from the model entry -- except for MELT, whose
-                # prompt comes from the checkpoint's training config.
-                if bench.get("needs_instruction") and family in ("hf", "smurf"):
+                # prompt comes from the checkpoint's training config, and for
+                # a provider that ignores the prompt altogether (Whisper).
+                if (
+                    bench.get("needs_instruction")
+                    and family in ("hf", "smurf")
+                    and not ignores_instruction(model)
+                ):
                     instruction = (model_cfg.get("instruction") or {}).get(task)
                     if instruction is None:
                         skipped.append(f"{label}: no instruction for task {task!r} in the model entry")
@@ -246,7 +251,21 @@ def plan(
                     # -T values are parsed as YAML; a JSON string is a quoted YAML string.
                     args += ["-T", f"instruction={json.dumps(instruction)}"]
 
+                # Optional per-model MCQ prompt template ({question}, {options}), e.g. DeSTA2.5's.
+                mcq_instruction = model_cfg.get("mcq_instruction")
+                if mcq_instruction and task == "audio_mcq" and family == "hf":
+                    args += ["-T", f"mcq_instruction={json.dumps(mcq_instruction)}"]
+
                 args += [str(a) for a in model_cfg.get("args", [])]
+                # Per-task model arguments, e.g. Whisper's `task=translate` for ST
+                # slices only, so one entry covers both its modes.
+                args += [str(a) for a in (model_cfg.get("args_by_task") or {}).get(task, [])]
+                # Optional per-task system prompts (`system:` map, `default` as fallback), e.g. DeSTA2.5's.
+                # Passed as a model argument so inspect records it in the log.
+                system = model_cfg.get("system") or {}
+                system_prompt = system.get(task, system.get("default"))
+                if system_prompt is not None:
+                    args += ["-M", f"system_prompt={json.dumps(system_prompt)}"]
                 args += [str(a) for a in slice_cfg.get("args", [])]
                 if task in JUDGE_TASKS:
                     args.append("--no-score")

@@ -400,11 +400,14 @@ class TestQwen2Audio:
 
         assert model.seen["do_sample"] is False
 
-    def test_audio_longer_than_the_window_is_rejected_not_truncated(self):
-        """The processor pads to max_length and cuts the rest off: a 40 s clip
-        would be transcribed as its first 30 s and scored as the whole thing."""
-        with pytest.raises(ValueError, match="30 s window"):
-            self._run([_QwenRequest(duration=10.0), _QwenRequest(duration=40.0)])
+    def test_the_window_is_the_processors(self):
+        """The refusal past it is tested in TestAudioPastTheWindow."""
+        from melteval.providers.qwen2_audio import Qwen2AudioAPI
+
+        api = object.__new__(Qwen2AudioAPI)  # bypass __init__, which loads a checkpoint
+        api.processor = _FakeQwenProcessor()
+
+        assert api._max_audio_seconds() == 30
 
     def test_missing_audio_is_an_error(self):
         with pytest.raises(ValueError, match="no audio"):
@@ -493,51 +496,185 @@ class TestTextOnlyJudge:
             self._run([_QwenRequest()])
 
 
-class TestTruncateLongAudio:
-    """``truncate_long_audio``: an explicit opt-in to the processor's own cut, recorded per sample."""
+class TestAudioPastTheWindow:
+    """A clip past the model's window fails that sample alone, loudly, before it is batched."""
+
+    def _api(self, limit):
+        from melteval.providers.hf import HFSpeechChatAPI
+
+        # Bypass __init__ (it loads a checkpoint): _reject reads only these.
+        api = object.__new__(HFSpeechChatAPI)
+        api.family, api.text_only = "Qwen2-Audio", False
+        api._max_audio_seconds = lambda: limit
+        return api
+
+    def test_a_clip_past_the_window_is_refused_with_its_length(self):
+        reason = self._api(30)._reject(_QwenRequest(duration=40.0))
+        assert "40.0 s" in reason and "30 s window" in reason
+
+    def test_a_clip_within_the_window_or_a_model_without_one_is_served(self):
+        assert self._api(30)._reject(_QwenRequest(duration=30.0)) is None
+        assert self._api(None)._reject(_QwenRequest(duration=600.0)) is None
+
+    def test_generate_fails_only_the_long_sample_and_logs_it(self, monkeypatch, caplog):
+        import anyio
+        import numpy as np
+        from inspect_ai.model import ChatMessageUser, ContentData, ContentText
+
+        from melteval.dataset import AUDIO_DATA_KEY
+        from melteval.providers import base
+
+        api = self._api(30)
+        api._ensure_worker = lambda: None
+        api._queue = base.Queue()
+        monkeypatch.setattr(base, "_load_audio", lambda locator: (np.zeros(40 * 16000, dtype=np.float32), 16000))
+        message = ChatMessageUser(
+            content=[ContentText(text="Transcribe."), ContentData(data={AUDIO_DATA_KEY: {"path": "x"}})]
+        )
+
+        with pytest.raises(base.AudioTooLongError, match="40.0 s"):
+            anyio.run(lambda: api.generate([message], [], "none", GenerateConfig()))
+        assert api._queue.empty()  # never queued, so no batch is affected
+        assert "SAMPLE SKIPPED" in caplog.text
+
+
+class TestWhisper:
+    """Whisper's batch logic with a fake processor and model -- no weights."""
+
+    class _Processor:
+        def __init__(self):
+            import types
+
+            self.feature_extractor = types.SimpleNamespace(sampling_rate=16000)
+            self.calls: list[dict] = []
+
+        def __call__(self, audios, sampling_rate, return_tensors, **kwargs):
+            import torch
+
+            self.calls.append({"n": len(audios), "kwargs": kwargs})
+            return {"input_features": torch.zeros(len(audios), 2, dtype=torch.float32)}
+
+        def batch_decode(self, ids, skip_special_tokens):
+            assert skip_special_tokens
+            return [f" text{int(i)} " for i in ids]
+
+    class _Model:
+        def __init__(self):
+            import torch
+
+            self.dtype = torch.bfloat16
+            self.seen: dict = {}
+
+        def generate(self, input_features, **kwargs):
+            import torch
+
+            self.seen = {"input_features": input_features, **kwargs}
+            return torch.arange(input_features.shape[0])
+
+    def _run(self, batch, task="transcribe"):
+        pytest.importorskip("torch")
+        from melteval.providers.whisper import _transcribe
+
+        processor, model = self._Processor(), self._Model()
+        return _transcribe(model, processor, "cpu", batch, task=task), processor, model
+
+    def test_completions_come_back_in_order_and_stripped(self):
+        completions, _, _ = self._run([_QwenRequest(), _QwenRequest()])
+        assert completions == ["text0", "text1"]
+
+    def test_the_task_is_passed_and_language_is_left_to_detection(self):
+        _, _, model = self._run([_QwenRequest()], task="translate")
+        assert model.seen["task"] == "translate"
+        assert "language" not in model.seen
+        assert model.seen["do_sample"] is False
+
+    def test_short_audio_takes_the_plain_path(self):
+        _, processor, model = self._run([_QwenRequest(duration=29.0)])
+        assert processor.calls[0]["kwargs"] == {}
+        assert "return_timestamps" not in model.seen
+
+    def test_audio_past_30_s_is_decoded_long_form_not_cut(self):
+        """The processor must not truncate, and generate() must walk the windows."""
+        _, processor, model = self._run([_QwenRequest(duration=5.0), _QwenRequest(duration=95.0)])
+        assert processor.calls[0]["kwargs"]["truncation"] is False
+        assert processor.calls[0]["kwargs"]["return_attention_mask"] is True
+        assert model.seen["return_timestamps"] is True
+
+    def test_an_unknown_task_is_refused(self):
+        from melteval.providers.whisper import WhisperAPI
+
+        with pytest.raises(ValueError, match="task must be one of"):
+            WhisperAPI("melt/hf/whisper", task="detect")
+
+
+class TestDesta25:
+    """DeSTA2.5's request handling with a fake model -- the real one needs the `desta` package."""
+
+    class _Model:
+        def __init__(self):
+            self.calls: list[dict] = []
+
+        def generate(self, messages, **kwargs):
+            import types
+            from pathlib import Path
+
+            texts = []
+            for system, turn in messages:  # a list of conversations: one batched call
+                assert system["role"] == "system"
+                # The WAV must exist while generate() runs: desta reads it from the path.
+                assert Path(turn["audios"][0]["audio"]).exists()
+                self.calls.append({"system": system["content"], "turn": turn, **kwargs})
+                texts.append(f" answer{len(self.calls)} ")
+            return types.SimpleNamespace(text=texts)
 
     def _run(self, batch):
-        pytest.importorskip("torch")
-        from melteval.providers.hf import generate, render
+        pytest.importorskip("soundfile")
+        from melteval.providers.desta25 import _generate
 
-        processor, model = _FakeQwenProcessor(), _FakeQwenModel()
-        prompts = [render(processor, r.text) for r in batch]
-        completions = generate(
-            model, processor, "cpu", batch, prompts, gen_kwargs={}, family="Qwen2-Audio",
-            max_seconds=30, truncate=True,
-        )
-        return completions, processor
+        model = self._Model()
+        return _generate(model, batch), model
 
-    def _long_and_short(self):
+    def _request(self, text="Transcribe this audio.", **kw):
         import numpy as np
 
-        long = _QwenRequest(audio=np.zeros(40 * 16000, dtype=np.float32), duration=40.0)
-        short = _QwenRequest(audio=np.zeros(5 * 16000, dtype=np.float32), duration=5.0)
-        return long, short
+        return _QwenRequest(text=text, audio=np.zeros(1600, dtype=np.float32), **kw)
 
-    def test_a_long_clip_is_cut_to_the_window_and_the_rest_left_alone(self):
-        long, short = self._long_and_short()
-        completions, processor = self._run([long, short])
+    def test_a_batch_is_one_call_with_completions_in_order(self):
+        completions, model = self._run([self._request("a"), self._request("b")])
+        assert completions == ["answer1", "answer2"]
+        assert [c["turn"]["content"] for c in model.calls] == ["<|AUDIO|>\na", "<|AUDIO|>\nb"]
 
-        assert completions == ["a", "b"]
-        assert [len(a) for a in processor.calls[0]["audio"]] == [30 * 16000, 5 * 16000]
+    def test_every_request_carries_the_authors_default_system_prompt(self):
+        from melteval.providers.desta25 import DEFAULT_SYSTEM_PROMPT
 
-    def test_the_cut_is_recorded_on_that_sample_only(self):
-        """So the log says which hypotheses cover only part of their reference."""
-        long, short = self._long_and_short()
-        self._run([long, short])
+        _, model = self._run([self._request()])
+        assert model.calls[0]["system"] == DEFAULT_SYSTEM_PROMPT == "Focus on the audio clips and instruction."
 
-        assert long.metadata == {"audio_truncated_from_seconds": 40.0}
-        assert short.metadata == {}
+    def test_numpy_2_gets_the_sctypes_desta_reads(self, monkeypatch):
+        """desta tests `samples.dtype in np.sctypes['int']`, removed in NumPy 2."""
+        import numpy as np
 
-    def test_without_the_option_a_long_clip_is_still_refused(self):
-        from melteval.providers.qwen2_audio import _generate, _render
+        from melteval.providers.desta25 import _restore_numpy_sctypes
 
-        pytest.importorskip("torch")
-        long, _ = self._long_and_short()
-        processor, model = _FakeQwenProcessor(), _FakeQwenModel()
-        with pytest.raises(ValueError, match="30 s window"):
-            _generate(model, processor, "cpu", [long], [_render(processor, long.text)])
+        monkeypatch.delattr(np, "sctypes", raising=False)
+        _restore_numpy_sctypes()
+        assert np.dtype("int16") in np.sctypes["int"]
+        assert np.dtype("float32") in np.sctypes["float"]
+        monkeypatch.delattr(np, "sctypes")
+
+    def test_a_clip_past_30_seconds_is_refused_on_its_own(self):
+        from melteval.providers.desta25 import Desta25API
+
+        api = Desta25API.__new__(Desta25API)  # _reject reads nothing from __init__
+        assert "30 s window" in api._reject(_QwenRequest(duration=40.0))
+        assert api._reject(_QwenRequest(duration=30.0)) is None
+
+    def test_missing_audio_is_an_error(self):
+        pytest.importorskip("soundfile")
+        from melteval.providers.desta25 import _generate
+
+        with pytest.raises(ValueError, match="no audio"):
+            _generate(self._Model(), [_QwenRequest(audio=None)])
 
 
 @dataclass
@@ -601,7 +738,7 @@ class TestRouter:
         from melteval.providers.router import create_model
 
         with pytest.raises(ValueError, match="known: melt/hf/qwen2_audio"):
-            create_model("hf/whisper")
+            create_model("hf/nonexistent")
         with pytest.raises(ValueError, match="not implemented"):
             create_model("vllm/some/model")
 

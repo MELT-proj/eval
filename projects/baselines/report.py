@@ -9,8 +9,9 @@
 * ``results_long.csv``: one row per (model, benchmark, slice, metric).
 * ``results.xlsx``: a ``summary`` sheet (models x headline metric per slice),
   one sheet per benchmark with every metric, and a ``runs`` sheet listing
-  which log each number came from.  It includes, for a model run with
-  ``truncate_long_audio``, how many of its samples were cut to its window.
+  which log each number came from.  It includes, for a local HF
+  baseline, how many of its samples were not evaluated because their audio
+  was past its window.
 
 Every number is read off the log header. Only successful logs count; when a
 slice has more than one, the newest wins and the others are reported.
@@ -91,7 +92,7 @@ def read_runs(roots: list[str | Path]) -> pd.DataFrame:
                 "_mtime": path.stat().st_mtime_ns,
                 "samples": (log.results.completed_samples if log.results else None),
                 "scored": bool(log.results and log.results.scores),
-                "truncated_samples": _count_truncated(path, log),
+                "skipped_samples": _count_skipped(path, log),
                 "log_path": str(path),
                 "_log": log,
             }
@@ -101,10 +102,10 @@ def read_runs(roots: list[str | Path]) -> pd.DataFrame:
         return runs
 
     runs = runs.sort_values(["created", "_mtime"])
-    for run in runs[runs["truncated_samples"].fillna(0) > 0].to_dict("records"):
+    for run in runs[runs["skipped_samples"].fillna(0) > 0].to_dict("records"):
         logger.warning(
-            "%s × %s/%s: %d sample(s) had their audio truncated to the model's window (see the runs sheet)",
-            run["model"], run["benchmark"], run["slice"], run["truncated_samples"],
+            "%s × %s/%s: %d sample(s) were not evaluated (audio past the model's window; see the runs sheet)",
+            run["model"], run["benchmark"], run["slice"], run["skipped_samples"],
         )
     duplicated = runs.duplicated(["model", "benchmark", "slice"], keep="last")
     for path in runs.loc[duplicated, "log_path"]:
@@ -112,19 +113,19 @@ def read_runs(roots: list[str | Path]) -> pd.DataFrame:
     return runs[~duplicated].reset_index(drop=True)
 
 
-def _count_truncated(path: Path, log) -> int | None:
-    """How many samples had their audio cut to the model's window, or None if the run could not cut any.
+def _count_skipped(path: Path, log) -> int | None:
+    """How many samples a provider refused for audio past its window, or None if the run could not refuse any.
 
-    Only a run started with ``truncate_long_audio`` can have cut anything (see
-    ``melteval/providers/hf.py``), so only those logs are read sample by sample;
-    every other log stays a header-only read.
+    Only a local HF baseline fails a sample that way (``AudioTooLongError`` in
+    ``melteval/providers/base.py``), so only those logs are read sample by
+    sample; every other log stays a header-only read.
     """
-    if str((log.eval.model_args or {}).get("truncate_long_audio", "")).lower() not in ("true", "1", "yes"):
+    if "/hf/" not in str(log.eval.model):
         return None
     return sum(
         1
         for sample in read_eval_log_samples(str(path), all_samples_required=False)
-        if sample.output and (sample.output.metadata or {}).get("audio_truncated_from_seconds")
+        if sample.error and "exceeds its" in sample.error.message
     )
 
 

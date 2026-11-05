@@ -26,7 +26,7 @@ e.g. to merge logs from several machines after an rsync:
 python projects/baselines/report.py --log-root <dir> --log-root <dir> --out report-out
 ```
 
-Models: the Qwen baselines are `melt/hf/qwen2_audio` and `melt/hf/qwen3_omni`,
+Models: the baselines are `melt/hf/qwen2_audio`, `melt/hf/qwen3_omni`, `melt/hf/whisper` and `melt/hf/desta25`,
 at the revisions pinned in [docs/baseline-providers.md](../../docs/baseline-providers.md).
 SMURF comes from the one `.ckpt` in `checkpoints/smurf/`, MELT from the one run
 folder in `checkpoints/melt/` (both gitignored, paths relative to the repo

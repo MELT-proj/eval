@@ -26,13 +26,15 @@ from melteval.prompt import (
     FormatSpec,
     SmurfPromptSpec,
     apply_generation_format,
+    escape_literal,
     load_format_spec,
     load_smurf_prompt_spec,
+    quoted_options,
     render_smurf_prompt,
     render_user_prompt,
     strip_audio_token,
 )
-from melteval.providers import model_family
+from melteval.providers import ignores_instruction, model_family
 
 
 @solver
@@ -169,7 +171,7 @@ def smurf_prompt(
 
 
 @solver
-def instruction_prompt(instruction: str | None = None) -> Solver:
+def instruction_prompt(instruction: str | None = None, mcq_instruction: str | None = None) -> Solver:
     """Build the model input for a baseline that applies its own chat template.
 
     For off-the-shelf speech LLMs whose provider wraps the prompt in the model's
@@ -178,7 +180,13 @@ def instruction_prompt(instruction: str | None = None) -> Solver:
     file.
 
     Args:
-        instruction: The instruction template.
+        instruction: The instruction template. Models whose provider ignores the
+            prompt (Whisper) may run without one.
+        mcq_instruction: Replaces the instruction of a multiple-choice sample
+            with this template, filled with ``{question}`` and ``{options}``
+            (``"a", "b" or "c"``, see :func:`melteval.prompt.quoted_options`),
+            for a model whose authors lay the options out their own way
+            (currently only DeSTA2.5, in ``baselines-v1.yaml``).
 
     Returns:
         A solver that replaces the message list and generates.
@@ -192,6 +200,7 @@ def instruction_prompt(instruction: str | None = None) -> Solver:
             instruction,
             "argument" if instruction is not None else None,
             {"provider": "hf", "source": "argument"},
+            mcq_instruction,
         )
 
     return solve
@@ -204,6 +213,7 @@ async def _instruction_solve(
     template: str | None,
     source: str | None,
     recorded: dict,
+    mcq_template: str | None = None,
 ) -> TaskState:
     """Render a bare instruction for *state*, attach its audio, and generate.
 
@@ -217,16 +227,37 @@ async def _instruction_solve(
         template: The instruction template for samples that carry none.
         source: Where *template* came from, for the log.
         recorded: Base of what is stored as ``melteval:format_spec``.
+        mcq_template: Replaces the instruction of a sample that has options.
 
     Raises:
-        ValueError: If the sample carries no instruction and *template* is unset.
+        ValueError: If the sample carries no instruction and *template* is unset,
+            or *mcq_template* is set and the sample has options but no ``question``.
     """
     _require_provider(state, *providers)
     metadata = state.metadata or {}
+    model = f"{getattr(state.model, 'api', '')}/{getattr(state.model, 'name', '')}"
+    instruction_ignored = ignores_instruction(model)
 
     sample_instruction = metadata.get("instruction")
     sample_template = sample_instruction or template
-    if not sample_template:
+    if mcq_template and state.choices:
+        question = metadata.get("question")
+        if not question:
+            raise ValueError(
+                f"Sample {state.sample_id} has options but no `question` in its metadata, which "
+                "mcq_instruction needs. Rebuild the frozen set, or read the source live."
+            )
+        options = quoted_options([choice.value for choice in state.choices])
+        sample_template = mcq_template.replace("{question}", escape_literal(str(question))).replace(
+            "{options}", escape_literal(options)
+        )
+        source = "mcq_instruction"
+    if not sample_template and instruction_ignored:
+        # Whisper reads only the audio: an empty user turn is the honest input,
+        # and the provider accepts it (BatchedSpeechAPI.ignores_instruction).
+        sample_template = ""
+        source = "provider_ignores_instruction"
+    elif not sample_template:
         raise ValueError(
             f"No instruction for sample {state.sample_id}: it carries none of its own, and none was "
             f"given to the solver. An empty user turn is a valid input to a speech LLM "
@@ -253,7 +284,9 @@ async def _instruction_solve(
 
     recorded = dict(recorded)
     recorded["instruction"] = sample_template
-    recorded["instruction_source"] = "sample" if sample_instruction else (source or "sample")
+    recorded["instruction_source"] = (
+        source if source == "mcq_instruction" else "sample" if sample_instruction else (source or "sample")
+    )
     # The chat template is the model's, applied in the provider. Recorded so
     # a log makes clear that its absence here is a decision, not an omission.
     recorded["apply_chat_template"] = False
