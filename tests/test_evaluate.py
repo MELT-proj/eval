@@ -193,6 +193,58 @@ class TestPlan:
         assert not any(a.startswith("instruction=") for job in (asr, st) for a in job.args)
         assert not any("whisper" in line and "no instruction" in line for line in skipped)
 
+    def test_a_slices_language_is_part_of_its_name_and_filter(self, tmp_path):
+        benchmarks = [
+            {
+                "name": "librispeech",
+                "spec": "configs/hf/librispeech-hf-test-clean.yaml",
+                "needs_instruction": True,
+                "slices": [{"task": "asr", "lang": "de"}],
+            }
+        ]
+        jobs, _ = _jobs(tmp_path, benchmarks=benchmarks)
+
+        job = jobs["qwen", "asr-de"]
+        assert "-T" in job.args and "lang=de" in job.args
+        assert evaluate.slice_name({"task": "st", "dataset_id": "covost2-de_en", "lang": "de"}) == (
+            "st-covost2-de_en-de"
+        )
+
+    def test_a_models_languages_allowlist_skips_other_language_slices(self, tmp_path):
+        benchmarks = [
+            {
+                "name": "librispeech",
+                "spec": "configs/hf/librispeech-hf-test-clean.yaml",
+                "needs_instruction": True,
+                "slices": [{"task": "asr", "lang": "de"}, {"task": "asr", "lang": "fr"}],
+            }
+        ]
+        qwen = {
+            "name": "qwen",
+            "model": "melt/hf/qwen3_omni",
+            "languages": ["de"],
+            "instruction": {"asr": "Transcribe this audio."},
+        }
+        jobs, skipped = _jobs(tmp_path, models=[qwen], benchmarks=benchmarks)
+
+        assert ("qwen", "asr-de") in jobs
+        assert ("qwen", "asr-fr") not in jobs
+        assert any("language 'fr' is not in the model's languages list" in line for line in skipped)
+
+    def test_an_instruction_with_a_comma_travels_in_a_file(self, tmp_path):
+        """inspect splits -T values at commas, so such an instruction cannot be passed inline."""
+        qwen = {
+            "name": "qwen",
+            "model": "melt/hf/qwen3_omni",
+            "instruction": {"asr": {"librispeech-test-clean": "Transcribe, then output: text"}},
+        }
+        jobs, _ = _jobs(tmp_path, models=[qwen])
+        args = jobs["qwen", "asr-librispeech-test-clean"].args
+
+        file_arg = next(a for a in args if a.startswith("instruction_file="))
+        path = Path(file_arg.removeprefix("instruction_file="))
+        assert path.read_text(encoding="utf-8") == "Transcribe, then output: text"
+
     def test_judge_tasks_are_generated_unscored(self, tmp_path):
         jobs, _ = _jobs(tmp_path)
         assert "--no-score" in jobs["qwen", "audio_chat-air-bench-chat-speech"].args

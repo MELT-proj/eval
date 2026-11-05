@@ -63,10 +63,37 @@ infra/runners/submit_eval.sh <site> melt/hf/qwen3_omni configs/hf/air-bench.yaml
 
 - **A different rendered prompt.** No default system turn and no `Audio 1:` prefix; the audio goes in as `<|audio_start|><|audio_pad|><|audio_end|>` right before the instruction, and the processor expands `<|audio_pad|>`. For "Transcribe this audio." the template renders:
   `<|im_start|>user\n<|audio_start|><|audio_pad|><|audio_end|>Transcribe this audio.<|im_end|>\n<|im_start|>assistant\n`
-- **Text only.** The model is a thinker (the LLM) plus a talker that speaks the answer. The talker is dropped after loading and `return_audio=False` is passed; `generate()` then returns `(token_ids, None)`.
-- **Decoding arguments carry a `thinker_` prefix.** Its `generate()` does not reject a plain `max_new_tokens`; it drops it for its own `thinker_max_new_tokens=1024`, so `--max-tokens 256` would silently decode up to 1024. The provider prefixes every argument (tested in `tests/test_provider.py::TestQwen3Omni`).
-- **No 30 s window, but only because the provider asks.** The encoder takes any length, but the feature extractor still truncates to 30 s by default (`truncation=True`), without a warning. The provider passes `truncation=False`, so long clips (MCIF `long`) go in whole. Size `batch_size` for the longest audio.
-- Needs `transformers` with the `qwen3_omni_moe` model type (checked against 4.57.6).
+- **Text only.** The model is a thinker (the LLM) plus a talker that speaks the
+  answer. The talker is dropped after loading and `return_audio=False` is
+  passed; `generate()` then returns `(token_ids, None)`.
+- **Decoding arguments carry a `thinker_` prefix.** Its `generate()` does not
+  reject a plain `max_new_tokens` — it drops it in favour of its own
+  `thinker_max_new_tokens=1024`, so `--max-tokens 256` would silently decode
+  up to 1024. The provider prefixes every argument (tested in
+  `tests/test_provider.py::TestQwen3Omni`).
+- **No 30 s window, but only because the provider asks for it.** The encoder
+  takes audio of any length. The processor's feature extractor, however,
+  still truncates to 30 s by default (`truncation=True`), again without a
+  warning. The provider passes `truncation=False`, so long clips (MCIF
+  `long`) go in whole. Size `batch_size` for the longest audio.
+- Needs `transformers` with the `qwen3_omni_moe` model type (checked against
+  4.57.6).
+
+## Text-only translation baseline
+
+`scripts/text_translate.py` gives a text LLM the reference transcript of each clip of a frozen ST set (the manifest's
+`source_text`) and scores its translation against `target`, per language pair, with chrF++ and spBLEU (cased and
+lowercased) from `melteval.st_metrics`. No audio is involved, so the numbers are a ceiling for a speech model built on
+the same backbone, not a speech result. Prompt: "Translate the following content into {tgt_lang}, and write nothing
+else." followed by the text, one chat turn (thinking off where the template has it), greedy decoding, 384 new tokens at
+most. Outputs that hit the cap are counted in `scores.json` and still scored. Per pair it writes
+`<dataset_id>.hyp.jsonl`; `scores.json` holds the metrics and the sacrebleu signatures.
+
+```
+source infra/sites/artemis.sh
+sbatch --partition=a6000 --qos=gpu-short --gres=gpu:1 --time=04:00:00 infra/run_text_translate.sbatch \
+    Qwen/Qwen3.5-2B /path/to/eval-sets/fleurs24-st-xen-test /path/to/out/qwen/xen --batch-size 64
+```
 
 ## Whisper large-v3
 

@@ -11,6 +11,8 @@ see :mod:`melteval.registry`.
 
 from __future__ import annotations
 
+from pathlib import Path
+
 from inspect_ai import Task, task
 from inspect_ai.model import GenerateConfig
 from inspect_ai.scorer import Scorer
@@ -50,6 +52,7 @@ def speech(
     format_config: str | None = None,
     tokenizer: str | None = None,
     instruction: str | None = None,
+    instruction_file: str | None = None,
     mcq_instruction: str | None = None,
     prompt_config: str | None = None,
     normalizer: str | None = None,
@@ -88,6 +91,11 @@ def speech(
             Defaults to the checkpoint being evaluated.
         instruction: ``smurf`` and ``hf``. Fixed instruction text for
             samples that do not carry their own.
+        instruction_file: ``smurf`` and ``hf``. Path of a text file holding the
+            instruction, read as it is. For an instruction ``-T instruction=``
+            cannot carry: inspect splits every ``-T`` value at commas, so a
+            sentence with a comma arrives as a list. Mutually exclusive with
+            *instruction*.
         mcq_instruction: ``hf`` only. Template (``{question}``, ``{options}``)
             that replaces the instruction of samples with options.
         prompt_config: ``smurf`` only. SMURF data/inference config to read the
@@ -160,6 +168,11 @@ def speech(
             # asked for the model in the end-of-run scoring step.
             require_spm_model()
         resolved_scorer = default_scorer(task_filter, spbleu=spbleu)
+
+    if instruction_file is not None:
+        if instruction is not None:
+            raise ValueError("Pass instruction or instruction_file, not both.")
+        instruction = Path(instruction_file).read_text(encoding="utf-8")
 
     filters = {"task": task_filter, "lang": lang, "dataset_id": dataset_id, "limit": limit}
     dataset = (
