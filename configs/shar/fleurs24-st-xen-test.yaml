@@ -29,7 +29,7 @@
 # transcript for `melteval rescore`'s COMET triples, same convention as
 # st-eval-campaign-v1.yaml's CoVoST2 sources. ga (Irish) has no
 # `custom.pnc_text` on FLEURS test/validation (fleurs24-asr-test.yaml's
-# header) so its source_text comes out empty; harmless for chrF/BLEU
+# header) so its source_text comes out empty; harmless for chrF++/BLEU
 # (scored against the English reference only) but means no COMET source can
 # be built for ga until that gap is closed.
 #
@@ -37,7 +37,7 @@
 # get_tags_from_cut (training repo, helpers.py) sets the returned `lang` to
 # `tgt_lang` for any `task: st` cut ("kept as target for backward compat"),
 # so every record in this file reports lang=en regardless of its audio's
-# locale -- the `grouped(..., "lang", ...)` BLEU/chrF metric would collapse
+# locale -- the `grouped(..., "lang", ...)` BLEU/spBLEU/chrF++ metric would collapse
 # all 23 languages into one "en" bucket. dataset_id is unique per source
 # (`fleurs-<src>_en`) for exactly this reason: isolate one language with
 # `-T dataset_id=fleurs-de_en`, matching how st-eval-campaign-v1.yaml already

@@ -214,7 +214,7 @@ Iif `tmux attach` says `no sessions`, the process is gone. Start it again: it re
 
   ```yaml
   baselines_config: configs/eval/baselines-v1.yaml
-  baselines_models: [qwen2-audio-7b-instruct, qwen3-omni-30b-a3b-instruct, whisper-large-v3, whisper-large-v3-translate, desta2.5-audio]
+  baselines_models: [qwen2-audio-7b-instruct, qwen3-omni-30b-a3b-instruct, whisper-large-v3, desta2.5-audio]
   ```
 
   Logs already written stay in `logs/` and keep showing in the report.

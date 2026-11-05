@@ -42,21 +42,16 @@ models:
       asr: "Transcribe this {lang} audio."
       st: "Translate this {src_lang} audio into {tgt_lang}."
 
-  # Whisper takes no instruction: it transcribes, or (task=translate) translates into English, and the language is auto-detected. The `instruction` below is ignored by the provider
+  # Whisper is one checkpoint with two modes: it transcribes (ASR) or translates
+  # into English (ST), selected per task with `task=`. It reads no instruction:
+  # neither the launcher nor the provider passes one. It cannot translate out of
+  # English, so the FLEURS en->X slices are skipped.
   - name: whisper-large-v3
     model: melt/hf/whisper
     args: [-M, batch_size=8]
-    skip: [air-bench-*, mcif-*]
-    instruction:
-      asr: "Transcribe this audio."
-
-  - name: whisper-large-v3-translate
-    model: melt/hf/whisper
-    args: [-M, batch_size=8, -M, task=translate]
-    # Whisper only translates into English: no en->X.
+    args_by_task:
+      st: [-M, task=translate]
     skip: [air-bench-*, mcif-*, fleurs-en_*]
-    instruction:
-      st: "Translate this audio into {tgt_lang}."
 
   - name: desta2.5-audio
     model: melt/hf/desta25

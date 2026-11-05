@@ -30,7 +30,7 @@
 #     this becomes a genuine single-shot long-form transcription test -- a
 #     real conference talk, not a short clip, fed to the model in one turn.
 #   TRANS -> `chunked_st`, same grouping, for the other three target
-#     languages. Local BLEU/chrF only; the paper's own metric is COMET after a
+#     languages. Local BLEU/chrF++ only; the paper's own metric is COMET after a
 #     sentence-resegmentation step this harness does not perform -- see
 #     `melteval/rescore.py` and `chunked_st_scorer`'s docstring.
 #   QA and SUM -> `audio_chat`. Free-text answers, gradeable only by a judge:

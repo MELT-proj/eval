@@ -1,4 +1,4 @@
-# ST test sets for the checkpoint-comparison eval campaign: BLEU/chrF (and,
+# ST test sets for the checkpoint-comparison eval campaign: BLEU/spBLEU/chrF++ (and,
 # after rescoring, COMET) for CoVoST2 in six directions. Full `test` splits,
 # no max_samples.
 #
@@ -10,7 +10,7 @@
 #
 # Each direction gets its own dataset_id (covost2-<src>_<tgt>), not a shared
 # "covost2": five of six directions share target language "en", and BLEU's
-# tokenizer is chosen per target language -- corpus_bleu/corpus_chrf raise
+# tokenizer is chosen per target language -- corpus_bleu raises
 # rather than silently pick one for a run that mixes languages (see
 # melteval/scorers.py, `_target_lang`). Run ONE `inspect eval` per direction:
 #

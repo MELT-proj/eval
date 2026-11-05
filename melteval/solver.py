@@ -34,7 +34,7 @@ from melteval.prompt import (
     render_user_prompt,
     strip_audio_token,
 )
-from melteval.providers import model_family
+from melteval.providers import ignores_instruction, model_family
 
 
 @solver
@@ -180,7 +180,8 @@ def instruction_prompt(instruction: str | None = None, mcq_instruction: str | No
     file.
 
     Args:
-        instruction: The instruction template.
+        instruction: The instruction template. Models whose provider ignores the
+            prompt (Whisper) may run without one.
         mcq_instruction: Replaces the instruction of a multiple-choice sample
             with this template, filled with ``{question}`` and ``{options}``
             (``"a", "b" or "c"``, see :func:`melteval.prompt.quoted_options`),
@@ -234,6 +235,8 @@ async def _instruction_solve(
     """
     _require_provider(state, *providers)
     metadata = state.metadata or {}
+    model = f"{getattr(state.model, 'api', '')}/{getattr(state.model, 'name', '')}"
+    instruction_ignored = ignores_instruction(model)
 
     sample_instruction = metadata.get("instruction")
     sample_template = sample_instruction or template
@@ -249,7 +252,12 @@ async def _instruction_solve(
             "{options}", escape_literal(options)
         )
         source = "mcq_instruction"
-    if not sample_template:
+    if not sample_template and instruction_ignored:
+        # Whisper reads only the audio: an empty user turn is the honest input,
+        # and the provider accepts it (BatchedSpeechAPI.ignores_instruction).
+        sample_template = ""
+        source = "provider_ignores_instruction"
+    elif not sample_template:
         raise ValueError(
             f"No instruction for sample {state.sample_id}: it carries none of its own, and none was "
             f"given to the solver. An empty user turn is a valid input to a speech LLM "

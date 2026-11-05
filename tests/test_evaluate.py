@@ -175,6 +175,24 @@ class TestPlan:
         for key in (("desta", "asr-librispeech-test-clean"), ("qwen", "audio_mcq-air-bench-foundation-speech")):
             assert not any(a.startswith("mcq_instruction=") for a in jobs[key].args)
 
+    def test_a_provider_that_ignores_the_prompt_gets_no_instruction_and_can_switch_by_task(self, tmp_path):
+        """Whisper is one entry: transcribe for ASR, translate for ST, no instruction."""
+        whisper = {
+            "name": "whisper",
+            "model": "melt/hf/whisper",
+            "args": ["-M", "batch_size=8"],
+            "args_by_task": {"st": ["-M", "task=translate"]},
+        }
+        jobs, skipped = _jobs(tmp_path, models=[whisper])
+
+        asr = jobs["whisper", "asr-librispeech-test-clean"]
+        st = jobs["whisper", "st"]
+        assert "batch_size=8" in asr.args and "batch_size=8" in st.args
+        assert "task=translate" not in asr.args
+        assert "task=translate" in st.args
+        assert not any(a.startswith("instruction=") for job in (asr, st) for a in job.args)
+        assert not any("whisper" in line and "no instruction" in line for line in skipped)
+
     def test_judge_tasks_are_generated_unscored(self, tmp_path):
         jobs, _ = _jobs(tmp_path)
         assert "--no-score" in jobs["qwen", "audio_chat-air-bench-chat-speech"].args

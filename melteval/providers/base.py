@@ -83,6 +83,12 @@ class BatchedSpeechAPI(ModelAPI):
     audio decoding, the batching worker and its failure handling -- is shared.
     """
 
+    #: Whether the prompt text is ignored: the model consumes only the audio.
+    #: Whisper is the one case (it transcribes/translates whatever it hears).
+    #: Such a provider may legally receive an empty prompt; every other provider
+    #: refuses one, because generating from no instruction measures nothing.
+    ignores_instruction: bool = False
+
     def __init__(
         self,
         model_name: str,
@@ -149,7 +155,7 @@ class BatchedSpeechAPI(ModelAPI):
             AudioTooLongError: If the model cannot take this sample's audio.
         """
         text, locator = _extract(input)
-        if not text:
+        if not text and not self.ignores_instruction:
             raise ValueError(
                 "No text content in the message. The solver renders the prompt; "
                 "generating without one would measure an empty input."

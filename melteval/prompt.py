@@ -502,22 +502,28 @@ SMURF_LANGUAGE_NAMES: dict[str, str] = {
 def _language_name(code: str, key: str) -> str:
     """Resolve an ISO code to the language name the training code uses.
 
-    The training package's table wins when it is importable; otherwise
-    :data:`SMURF_LANGUAGE_NAMES` stands in for it.
+    The training package's table wins for every code it has, because that is
+    what the checkpoint was trained with. :data:`SMURF_LANGUAGE_NAMES` fills
+    the gaps -- a code the installed checkpoint predates (``ga`` in older
+    checkouts) would otherwise fail only for the benchmarks that use it -- and
+    stands in entirely when melt-proj is unavailable.
 
     Raises:
         ValueError: If the code is in neither table.
     """
+    names = dict(SMURF_LANGUAGE_NAMES)
     try:
-        from melt.training.data.audio.lhotse.helpers import LANGUAGE_ISO_TO_NAME # type: ignore
+        from melt.training.data.audio.lhotse.helpers import LANGUAGE_ISO_TO_NAME  # type: ignore
     except ImportError:
-        LANGUAGE_ISO_TO_NAME = SMURF_LANGUAGE_NAMES  # noqa: N806 - same name as the table it stands in for
+        pass
+    else:
+        names.update(LANGUAGE_ISO_TO_NAME)
 
-    name = LANGUAGE_ISO_TO_NAME.get((code or "").lower())
+    name = names.get((code or "").lower())
     if name is None:
         raise ValueError(
             f"Unsupported language ISO code {code!r} for {{{key}}}. "
-            f"Expected one of: {', '.join(sorted(LANGUAGE_ISO_TO_NAME))}"
+            f"Expected one of: {', '.join(sorted(names))}"
         )
     return name
 

@@ -19,7 +19,6 @@ baselines_models:
   - qwen2-audio-7b-instruct
   - qwen3-omni-30b-a3b-instruct
   - whisper-large-v3
-  - whisper-large-v3-translate
   - desta2.5-audio
 
 every_n: 2            # evaluate the 1st, 3rd, 5th... checkpoint found (1 = all of them)

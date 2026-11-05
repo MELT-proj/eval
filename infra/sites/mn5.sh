@@ -30,7 +30,11 @@ export VENV_PATH="${VENV_PATH:-/gpfs/scratch/epor48/venvs/melteval/bin/activate}
 # the container path works today -- build infra/Singularity.def elsewhere
 # (it needs internet) and copy the .sif here. Overridable per-run:
 #   MELT_SIF=/path/to/other.sif sbatch infra/run_eval_container_mn5.sbatch …
-export MELT_SIF="${MELT_SIF:-/gpfs/scratch/epor48/melt_eval_cuda126.sif}"
+# Default is the image rebuilt with sentencepiece and httpx<1 (sha256 6a5db58d...7fa1);
+# proven 2026-10-16 by an ST smoke run (job 47377055). It is referenced by its own
+# name rather than by re-pointing melt_eval_cuda126.sif, which queued jobs may be
+# reading.
+export MELT_SIF="${MELT_SIF:-/gpfs/scratch/epor48/melt_eval_cuda126_spbleu.sif}"
 
 # --- storage (host paths) -----------------------------------------------------
 # The project is shared by several accounts; a directory here belongs to
@@ -47,6 +51,15 @@ export EVAL_ROOT="${EVAL_ROOT:-/gpfs/scratch/epor48/eval-runs}"
 # either tree -- this only bites at `inspect eval` time (smoke-tested
 # 2026-09-22/23, see the campaign board).
 export LOCAL_DATASETS_DIR="${LOCAL_DATASETS_DIR:-/gpfs/projects/epor48/melt-data/shar-indexed}"
+
+# --- spBLEU ----------------------------------------------------------------------
+# sacrebleu's cache, holding models/flores200sacrebleuspm (the SentencePiece model
+# behind spBLEU). Staged 2026-10-15 from nyx, sha256 14bb8dfb...b555a (README.md,
+# "Staging the spBLEU model"):
+#   ssh mn5transfer 'mkdir -p /gpfs/scratch/epor48/sacrebleu/models'
+#   rsync -av <model> mn5transfer:/gpfs/scratch/epor48/sacrebleu/models/
+# The container scripts pass SACREBLEU into the image and bind it.
+export SACREBLEU="${SACREBLEU:-/gpfs/scratch/epor48/sacrebleu}"
 
 # --- code sync (see training/infra/sync_repo.sh for the pattern) -------------
 export REMOTE_SSH=mn5
