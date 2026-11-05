@@ -26,7 +26,7 @@
 #                melt-eval[hf,metrics], the paso-1 venv)
 #
 # Optional env (forwarded to scripts/run_crosscheck.sh):
-#   CONFIG               freeze config      [configs/librispeech-hf-smoke.yaml]
+#   CONFIG               freeze config      [configs/hf/librispeech-hf-smoke.yaml]
 #   SMURF_GEN_DIR        upstream gen-config dir  [../speechllm/working_config/generate]
 #   SMURF_GEN_NAME       --config-name            [asr_inference]
 #   INSTRUCTION          prompt text        ["Transcribe this English audio: "]

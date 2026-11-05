@@ -141,3 +141,4 @@ indent-style = "space"
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+markers = ["hub: needs a model from the HuggingFace hub (MetricX also a GPU); deselect with -m 'not hub'"]

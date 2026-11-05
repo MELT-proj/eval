@@ -33,7 +33,9 @@ from melteval.spm import require_spm_model
 SOLVERS = {
     "melt": (melt_prompt, {"format_config", "tokenizer"}),
     "smurf": (smurf_prompt, {"instruction", "prompt_config"}),
-    "hf": (instruction_prompt, {"instruction"}),
+    # The prompt is just the instruction text: the model's provider wraps it in the chat template and adds the audio.
+    # `mcq_instruction` is optional: it lets a model show multiple-choice questions in its own format (DeSTA2.5 does).
+    "hf": (instruction_prompt, {"instruction", "mcq_instruction"}),
 }
 
 
@@ -51,6 +53,7 @@ def speech(
     tokenizer: str | None = None,
     instruction: str | None = None,
     instruction_file: str | None = None,
+    mcq_instruction: str | None = None,
     prompt_config: str | None = None,
     normalizer: str | None = None,
     scorer: Scorer | None = None,
@@ -93,6 +96,8 @@ def speech(
             cannot carry: inspect splits every ``-T`` value at commas, so a
             sentence with a comma arrives as a list. Mutually exclusive with
             *instruction*.
+        mcq_instruction: ``hf`` only. Template (``{question}``, ``{options}``)
+            that replaces the instruction of samples with options.
         prompt_config: ``smurf`` only. SMURF data/inference config to read the
             instruction (``tags.context``) from.
         normalizer: ``task_filter="asr"`` only. Text normalizer for the WER/CER
@@ -195,6 +200,7 @@ def speech(
             tokenizer=tokenizer,
             instruction=instruction,
             prompt_config=prompt_config,
+            mcq_instruction=mcq_instruction,
         ),
         scorer=resolved_scorer,
         config=GenerateConfig(max_tokens=default_max_tokens(task_filter)),
@@ -208,6 +214,7 @@ def _prompt_solver(
     tokenizer: str | None,
     instruction: str | None,
     prompt_config: str | None,
+    mcq_instruction: str | None = None,
 ) -> Solver:
     """Build the prompt solver for *prompt_style*.
 
@@ -230,6 +237,7 @@ def _prompt_solver(
         "tokenizer": tokenizer,
         "instruction": instruction,
         "prompt_config": prompt_config,
+        "mcq_instruction": mcq_instruction,
     }
 
     misplaced = [

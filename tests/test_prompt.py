@@ -6,6 +6,7 @@ The parity test is the point of this file. Everything else here supports it.
 import pytest
 
 from melteval.prompt import (
+    quoted_options,
     FormatSpec,
     apply_generation_format,
     find_training_config,
@@ -202,3 +203,18 @@ class TestFormatSpecLoading:
         """Silently defaulting the format is exactly how training#58 happened."""
         with pytest.raises(FileNotFoundError, match="--format-config"):
             load_format_spec(tmp_path)
+
+
+class TestQuotedOptions:
+    """DeSTA2.5's option listing: quoted, commas, ``or`` before the last."""
+
+    @pytest.mark.parametrize(
+        "choices, expected",
+        [
+            (["a", "b", "c", "d"], '"a", "b", "c" or "d"'),
+            (["Male", "Female"], '"Male" or "Female"'),
+            (["a"], '"a"'),
+        ],
+    )
+    def test_listing(self, choices, expected):
+        assert quoted_options(choices) == expected

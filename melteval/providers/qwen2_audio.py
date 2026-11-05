@@ -67,5 +67,4 @@ def _generate(model, processor, device: str, batch: list[_Request], prompts: lis
         prompts,
         gen_kwargs=_generate_kwargs(batch[0].config),
         family=FAMILY,
-        max_seconds=processor.feature_extractor.chunk_length,
     )

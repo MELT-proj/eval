@@ -26,7 +26,7 @@
 #     scripts/run_crosscheck.sh <checkpoint>
 #
 # Knobs (env):
-#   CONFIG               melteval freeze config            [configs/librispeech-hf-smoke.yaml]
+#   CONFIG               melteval freeze config            [configs/hf/librispeech-hf-smoke.yaml]
 #   SMURF_GEN_DIR        dir with the upstream gen config  [../speechllm/working_config/generate]
 #   SMURF_GEN_NAME       --config-name for that config     [asr_inference]
 #   INSTRUCTION          prompt text (must match upstream) ["Transcribe this English audio: "]
@@ -63,7 +63,7 @@ die()     { printf '%s\n' "${R}✗ $*${X}" >&2; exit 1; }
 run()     { printf '%s\n' "${DIM}\$ $*${X}"; "$@"; }
 
 # ------------------------------------------------------------------ config ----
-CONFIG="${CONFIG:-configs/librispeech-hf-smoke.yaml}"
+CONFIG="${CONFIG:-configs/hf/librispeech-hf-smoke.yaml}"
 MODEL_CKPT="${1:-${MODEL_CKPT:-}}"
 SMURF_GEN_DIR="${SMURF_GEN_DIR:-$(pwd)/../speechllm/working_config/generate}"
 SMURF_GEN_NAME="${SMURF_GEN_NAME:-asr_inference}"

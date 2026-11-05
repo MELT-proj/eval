@@ -4,15 +4,27 @@ That is, extracting prompts and audio locators from messages and converting
 ``GenerateConfig`` into generation kwargs.
 """
 
+import sys
+import types
 from dataclasses import dataclass, field
 
 import pytest
 from inspect_ai.model import ChatMessageUser, ContentAudio, ContentData, ContentText, GenerateConfig
 
 from melteval.dataset import AUDIO_DATA_KEY
+from melteval.providers import smurf
 from melteval.providers.base import _extract
 from melteval.providers.melt import _batched_audio, _generate_kwargs
-from melteval.providers.smurf import _collate_audio, _generation_kwargs, _plan_device_map, _with_audio_tag
+from melteval.providers.smurf import (
+    _check_system_placement,
+    _collate_audio,
+    _generation_kwargs,
+    _merge_config,
+    _plan_device_map,
+    _speechllm_class,
+    _turns,
+    _with_audio_tag,
+)
 
 
 class TestExtract:
@@ -204,6 +216,144 @@ class TestSmurfAudioTag:
         and must not end up with two placeholders for one audio."""
         prompt = f"Given {self.TAG}, answer the question."
         assert _with_audio_tag(prompt, self.TAG, "suffix") == prompt
+
+
+class TestSmurfTurns:
+    """A system prompt is a turn of its own, as SMURF's training dataloader builds it."""
+
+    def test_without_a_system_prompt_the_conversation_is_one_user_turn(self):
+        assert _turns("Transcribe: <tag>") == [{"role": "user", "content": "Transcribe: <tag>"}]
+
+    def test_a_system_prompt_goes_first_and_is_not_merged_into_the_instruction(self):
+        assert _turns("Transcribe: <tag>", "Respond directly.") == [
+            {"role": "system", "content": "Respond directly."},
+            {"role": "user", "content": "Transcribe: <tag>"},
+        ]
+
+    def test_an_empty_system_prompt_sends_no_system_turn(self):
+        assert _turns("Transcribe: <tag>", "") == [{"role": "user", "content": "Transcribe: <tag>"}]
+
+    def test_user_placement_opens_the_user_turn_with_the_system_prompt(self):
+        """For a prompt_format with no system role, which would reject a system turn."""
+        assert _turns("Transcribe: <tag>", "Respond directly.", "user") == [
+            {"role": "user", "content": "Respond directly.\n\nTranscribe: <tag>"},
+        ]
+
+    def test_user_placement_without_a_system_prompt_leaves_the_turn_alone(self):
+        assert _turns("Transcribe: <tag>", None, "user") == [{"role": "user", "content": "Transcribe: <tag>"}]
+
+
+class TestSmurfSystemPlacement:
+    """A system turn the checkpoint's prompt format cannot render is refused at load, not mid-eval."""
+
+    QWEN = {"user": {}, "assistant": {}}
+    EUROLLM = {"system": {}, "user": {}, "assistant": {}}
+
+    def test_a_system_turn_on_a_format_without_a_system_role_is_refused(self):
+        with pytest.raises(ValueError, match="system_placement=user"):
+            _check_system_placement(self.QWEN, "qwen", "Respond directly.", "turn")
+
+    @pytest.mark.parametrize(
+        ("template", "system_prompt", "placement"),
+        [
+            (QWEN, "Respond directly.", "user"),
+            (QWEN, None, "turn"),
+            (EUROLLM, "Respond directly.", "turn"),
+        ],
+    )
+    def test_what_the_format_can_render_passes(self, template, system_prompt, placement):
+        _check_system_placement(template, "fmt", system_prompt, placement)
+
+
+class TestSmurfSpeechllmClass:
+    """The project's prompt formats are registered before loading, as fbk_speechllm.inference does."""
+
+    @staticmethod
+    def _fake_fbk(monkeypatch, *, with_prompts: bool) -> list[str]:
+        calls: list[str] = []
+        speech_llm = types.ModuleType("fbk_speechllm.models.speech_llm")
+        speech_llm.SpeechLLM = type("SpeechLLM", (), {})
+        utils = types.ModuleType("fbk_speechllm.utils")
+        utils.register_custom_perception_modules = lambda: calls.append("perception")
+        prompts = None
+        if with_prompts:
+            prompts = types.ModuleType("fbk_speechllm.prompts")
+            prompts.register_custom_prompt_formats = lambda: calls.append("prompts")
+        for name, module in [
+            ("fbk_speechllm", types.ModuleType("fbk_speechllm")),
+            ("fbk_speechllm.models", types.ModuleType("fbk_speechllm.models")),
+            ("fbk_speechllm.models.speech_llm", speech_llm),
+            ("fbk_speechllm.utils", utils),
+            ("fbk_speechllm.prompts", prompts),  # None makes the import fail
+        ]:
+            monkeypatch.setitem(sys.modules, name, module)
+        return calls
+
+    def test_both_registries_are_filled_before_the_class_is_returned(self, monkeypatch):
+        calls = self._fake_fbk(monkeypatch, with_prompts=True)
+        assert _speechllm_class().__name__ == "SpeechLLM"
+        assert sorted(calls) == ["perception", "prompts"]
+
+    def test_an_fbk_speechllm_without_prompts_is_refused_rather_than_swapped_for_salm(self, monkeypatch):
+        """SALM would load, and then fail on the first batch over an unknown prompt format."""
+        self._fake_fbk(monkeypatch, with_prompts=False)
+        with pytest.raises(ImportError, match="fbk_speechllm.prompts"):
+            _speechllm_class()
+
+
+class TestSmurfConfigOverride:
+    """model_config_override is merged onto the checkpoint's stored config, not swapped in for it."""
+
+    STORED = {
+        "cfg": {
+            "pretrained_llm": "utter-project/EuroLLM-9B-Instruct-2512",
+            "prompt_format": "qwen",
+            "freeze_params": ["^llm\\..+$", "^embed_tokens\\..+$"],
+            "perception": {"output_dim": 4096, "modality_adapter": {"hidden_dim": 5120, "num_layers": 6}},
+        }
+    }
+
+    def test_mappings_merge_and_everything_else_is_replaced(self):
+        merged = _merge_config(
+            self.STORED["cfg"],
+            {"freeze_params": ["^llm\\..+$"], "perception": {"modality_adapter": {"hidden_dim": 7424}}},
+        )
+        assert merged["freeze_params"] == ["^llm\\..+$"]
+        assert merged["perception"] == {"output_dim": 4096, "modality_adapter": {"hidden_dim": 7424, "num_layers": 6}}
+        assert merged["prompt_format"] == "qwen"
+
+    def test_only_what_the_override_names_changes(self, tmp_path, monkeypatch):
+        torch = pytest.importorskip("torch")
+        pytest.importorskip("lightning")
+        ckpt = tmp_path / "step=1000.ckpt"
+        torch.save({"state_dict": {}, "hyper_parameters": self.STORED}, ckpt)
+        override = tmp_path / "override.yaml"
+        override.write_text("cfg:\n  prompt_format: eurollm\n")
+
+        loaded: dict = {}
+
+        class FakeSpeechLLM:
+            @classmethod
+            def load_from_checkpoint(cls, path, **kwargs):
+                loaded.update(kwargs)
+
+        monkeypatch.setattr(smurf, "_speechllm_class", lambda: FakeSpeechLLM)
+        smurf._load_speechllm(str(ckpt), model_config_override=str(override))
+
+        expected = _merge_config(self.STORED["cfg"], {"prompt_format": "eurollm"})
+        assert loaded["cfg"] == expected
+        assert loaded["cfg"]["perception"]["modality_adapter"]["hidden_dim"] == 5120
+
+    def test_a_checkpoint_without_stored_hparams_is_refused(self, tmp_path, monkeypatch):
+        torch = pytest.importorskip("torch")
+        pytest.importorskip("lightning")
+        ckpt = tmp_path / "bare.ckpt"
+        torch.save({"state_dict": {}}, ckpt)
+        override = tmp_path / "override.yaml"
+        override.write_text("cfg:\n  prompt_format: eurollm\n")
+        monkeypatch.setattr(smurf, "_speechllm_class", lambda: object)
+        with pytest.raises(ValueError, match="no hyperparameters"):
+            smurf._load_speechllm(str(ckpt), model_config_override=str(override))
 
 
 class TestSmurfGenerationKwargs:
@@ -400,11 +550,14 @@ class TestQwen2Audio:
 
         assert model.seen["do_sample"] is False
 
-    def test_audio_longer_than_the_window_is_rejected_not_truncated(self):
-        """The processor pads to max_length and cuts the rest off: a 40 s clip
-        would be transcribed as its first 30 s and scored as the whole thing."""
-        with pytest.raises(ValueError, match="30 s window"):
-            self._run([_QwenRequest(duration=10.0), _QwenRequest(duration=40.0)])
+    def test_the_window_is_the_processors(self):
+        """The refusal past it is tested in TestAudioPastTheWindow."""
+        from melteval.providers.qwen2_audio import Qwen2AudioAPI
+
+        api = object.__new__(Qwen2AudioAPI)  # bypass __init__, which loads a checkpoint
+        api.processor = _FakeQwenProcessor()
+
+        assert api._max_audio_seconds() == 30
 
     def test_missing_audio_is_an_error(self):
         with pytest.raises(ValueError, match="no audio"):
@@ -493,51 +646,185 @@ class TestTextOnlyJudge:
             self._run([_QwenRequest()])
 
 
-class TestTruncateLongAudio:
-    """``truncate_long_audio``: an explicit opt-in to the processor's own cut, recorded per sample."""
+class TestAudioPastTheWindow:
+    """A clip past the model's window fails that sample alone, loudly, before it is batched."""
+
+    def _api(self, limit):
+        from melteval.providers.hf import HFSpeechChatAPI
+
+        # Bypass __init__ (it loads a checkpoint): _reject reads only these.
+        api = object.__new__(HFSpeechChatAPI)
+        api.family, api.text_only = "Qwen2-Audio", False
+        api._max_audio_seconds = lambda: limit
+        return api
+
+    def test_a_clip_past_the_window_is_refused_with_its_length(self):
+        reason = self._api(30)._reject(_QwenRequest(duration=40.0))
+        assert "40.0 s" in reason and "30 s window" in reason
+
+    def test_a_clip_within_the_window_or_a_model_without_one_is_served(self):
+        assert self._api(30)._reject(_QwenRequest(duration=30.0)) is None
+        assert self._api(None)._reject(_QwenRequest(duration=600.0)) is None
+
+    def test_generate_fails_only_the_long_sample_and_logs_it(self, monkeypatch, caplog):
+        import anyio
+        import numpy as np
+        from inspect_ai.model import ChatMessageUser, ContentData, ContentText
+
+        from melteval.dataset import AUDIO_DATA_KEY
+        from melteval.providers import base
+
+        api = self._api(30)
+        api._ensure_worker = lambda: None
+        api._queue = base.Queue()
+        monkeypatch.setattr(base, "_load_audio", lambda locator: (np.zeros(40 * 16000, dtype=np.float32), 16000))
+        message = ChatMessageUser(
+            content=[ContentText(text="Transcribe."), ContentData(data={AUDIO_DATA_KEY: {"path": "x"}})]
+        )
+
+        with pytest.raises(base.AudioTooLongError, match="40.0 s"):
+            anyio.run(lambda: api.generate([message], [], "none", GenerateConfig()))
+        assert api._queue.empty()  # never queued, so no batch is affected
+        assert "SAMPLE SKIPPED" in caplog.text
+
+
+class TestWhisper:
+    """Whisper's batch logic with a fake processor and model -- no weights."""
+
+    class _Processor:
+        def __init__(self):
+            import types
+
+            self.feature_extractor = types.SimpleNamespace(sampling_rate=16000)
+            self.calls: list[dict] = []
+
+        def __call__(self, audios, sampling_rate, return_tensors, **kwargs):
+            import torch
+
+            self.calls.append({"n": len(audios), "kwargs": kwargs})
+            return {"input_features": torch.zeros(len(audios), 2, dtype=torch.float32)}
+
+        def batch_decode(self, ids, skip_special_tokens):
+            assert skip_special_tokens
+            return [f" text{int(i)} " for i in ids]
+
+    class _Model:
+        def __init__(self):
+            import torch
+
+            self.dtype = torch.bfloat16
+            self.seen: dict = {}
+
+        def generate(self, input_features, **kwargs):
+            import torch
+
+            self.seen = {"input_features": input_features, **kwargs}
+            return torch.arange(input_features.shape[0])
+
+    def _run(self, batch, task="transcribe"):
+        pytest.importorskip("torch")
+        from melteval.providers.whisper import _transcribe
+
+        processor, model = self._Processor(), self._Model()
+        return _transcribe(model, processor, "cpu", batch, task=task), processor, model
+
+    def test_completions_come_back_in_order_and_stripped(self):
+        completions, _, _ = self._run([_QwenRequest(), _QwenRequest()])
+        assert completions == ["text0", "text1"]
+
+    def test_the_task_is_passed_and_language_is_left_to_detection(self):
+        _, _, model = self._run([_QwenRequest()], task="translate")
+        assert model.seen["task"] == "translate"
+        assert "language" not in model.seen
+        assert model.seen["do_sample"] is False
+
+    def test_short_audio_takes_the_plain_path(self):
+        _, processor, model = self._run([_QwenRequest(duration=29.0)])
+        assert processor.calls[0]["kwargs"] == {}
+        assert "return_timestamps" not in model.seen
+
+    def test_audio_past_30_s_is_decoded_long_form_not_cut(self):
+        """The processor must not truncate, and generate() must walk the windows."""
+        _, processor, model = self._run([_QwenRequest(duration=5.0), _QwenRequest(duration=95.0)])
+        assert processor.calls[0]["kwargs"]["truncation"] is False
+        assert processor.calls[0]["kwargs"]["return_attention_mask"] is True
+        assert model.seen["return_timestamps"] is True
+
+    def test_an_unknown_task_is_refused(self):
+        from melteval.providers.whisper import WhisperAPI
+
+        with pytest.raises(ValueError, match="task must be one of"):
+            WhisperAPI("melt/hf/whisper", task="detect")
+
+
+class TestDesta25:
+    """DeSTA2.5's request handling with a fake model -- the real one needs the `desta` package."""
+
+    class _Model:
+        def __init__(self):
+            self.calls: list[dict] = []
+
+        def generate(self, messages, **kwargs):
+            import types
+            from pathlib import Path
+
+            texts = []
+            for system, turn in messages:  # a list of conversations: one batched call
+                assert system["role"] == "system"
+                # The WAV must exist while generate() runs: desta reads it from the path.
+                assert Path(turn["audios"][0]["audio"]).exists()
+                self.calls.append({"system": system["content"], "turn": turn, **kwargs})
+                texts.append(f" answer{len(self.calls)} ")
+            return types.SimpleNamespace(text=texts)
 
     def _run(self, batch):
-        pytest.importorskip("torch")
-        from melteval.providers.hf import generate, render
+        pytest.importorskip("soundfile")
+        from melteval.providers.desta25 import _generate
 
-        processor, model = _FakeQwenProcessor(), _FakeQwenModel()
-        prompts = [render(processor, r.text) for r in batch]
-        completions = generate(
-            model, processor, "cpu", batch, prompts, gen_kwargs={}, family="Qwen2-Audio",
-            max_seconds=30, truncate=True,
-        )
-        return completions, processor
+        model = self._Model()
+        return _generate(model, batch), model
 
-    def _long_and_short(self):
+    def _request(self, text="Transcribe this audio.", **kw):
         import numpy as np
 
-        long = _QwenRequest(audio=np.zeros(40 * 16000, dtype=np.float32), duration=40.0)
-        short = _QwenRequest(audio=np.zeros(5 * 16000, dtype=np.float32), duration=5.0)
-        return long, short
+        return _QwenRequest(text=text, audio=np.zeros(1600, dtype=np.float32), **kw)
 
-    def test_a_long_clip_is_cut_to_the_window_and_the_rest_left_alone(self):
-        long, short = self._long_and_short()
-        completions, processor = self._run([long, short])
+    def test_a_batch_is_one_call_with_completions_in_order(self):
+        completions, model = self._run([self._request("a"), self._request("b")])
+        assert completions == ["answer1", "answer2"]
+        assert [c["turn"]["content"] for c in model.calls] == ["<|AUDIO|>\na", "<|AUDIO|>\nb"]
 
-        assert completions == ["a", "b"]
-        assert [len(a) for a in processor.calls[0]["audio"]] == [30 * 16000, 5 * 16000]
+    def test_every_request_carries_the_authors_default_system_prompt(self):
+        from melteval.providers.desta25 import DEFAULT_SYSTEM_PROMPT
 
-    def test_the_cut_is_recorded_on_that_sample_only(self):
-        """So the log says which hypotheses cover only part of their reference."""
-        long, short = self._long_and_short()
-        self._run([long, short])
+        _, model = self._run([self._request()])
+        assert model.calls[0]["system"] == DEFAULT_SYSTEM_PROMPT == "Focus on the audio clips and instruction."
 
-        assert long.metadata == {"audio_truncated_from_seconds": 40.0}
-        assert short.metadata == {}
+    def test_numpy_2_gets_the_sctypes_desta_reads(self, monkeypatch):
+        """desta tests `samples.dtype in np.sctypes['int']`, removed in NumPy 2."""
+        import numpy as np
 
-    def test_without_the_option_a_long_clip_is_still_refused(self):
-        from melteval.providers.qwen2_audio import _generate, _render
+        from melteval.providers.desta25 import _restore_numpy_sctypes
 
-        pytest.importorskip("torch")
-        long, _ = self._long_and_short()
-        processor, model = _FakeQwenProcessor(), _FakeQwenModel()
-        with pytest.raises(ValueError, match="30 s window"):
-            _generate(model, processor, "cpu", [long], [_render(processor, long.text)])
+        monkeypatch.delattr(np, "sctypes", raising=False)
+        _restore_numpy_sctypes()
+        assert np.dtype("int16") in np.sctypes["int"]
+        assert np.dtype("float32") in np.sctypes["float"]
+        monkeypatch.delattr(np, "sctypes")
+
+    def test_a_clip_past_30_seconds_is_refused_on_its_own(self):
+        from melteval.providers.desta25 import Desta25API
+
+        api = Desta25API.__new__(Desta25API)  # _reject reads nothing from __init__
+        assert "30 s window" in api._reject(_QwenRequest(duration=40.0))
+        assert api._reject(_QwenRequest(duration=30.0)) is None
+
+    def test_missing_audio_is_an_error(self):
+        pytest.importorskip("soundfile")
+        from melteval.providers.desta25 import _generate
+
+        with pytest.raises(ValueError, match="no audio"):
+            _generate(self._Model(), [_QwenRequest(audio=None)])
 
 
 @dataclass
@@ -601,7 +888,7 @@ class TestRouter:
         from melteval.providers.router import create_model
 
         with pytest.raises(ValueError, match="known: melt/hf/qwen2_audio"):
-            create_model("hf/whisper")
+            create_model("hf/nonexistent")
         with pytest.raises(ValueError, match="not implemented"):
             create_model("vllm/some/model")
 

@@ -3,7 +3,7 @@
     python scripts/evaluate.py plan     CONFIG [--site SITE] [-v]     # what would run; runs nothing
     python scripts/evaluate.py run      CONFIG (--site SITE | --local) [--wait] [--limit N]
     python scripts/evaluate.py status   CONFIG [--site SITE]          # done / queued / failed / missing
-    python scripts/evaluate.py score    CONFIG (--site SITE | --local) [--rescore]   # judge for audio_chat
+    python scripts/evaluate.py score    CONFIG (--site SITE | --local) [--rescore]   # post-hoc: judges, BERTScore, COMET
     python scripts/evaluate.py report   CONFIG                        # CSV + Excel into <output_dir>/results
     python scripts/evaluate.py prefetch CONFIG [--site SITE]          # datasets + baseline weights, from a login node
 
@@ -12,7 +12,10 @@ Every command also takes --out DIR (instead of the config's output_dir) and
 
 One job is one (model, benchmark slice). ``run`` only starts jobs that have no
 successful log yet, so running it again after a failure retries exactly what is
-missing. The config format and the output folder are described in
+missing. On a site that sets ``MELT_PACK_GPUS`` (JUPITER: whole 4-GPU nodes), or
+with a ``pack:`` block naming ``gpus``, the pending jobs go to SLURM as packs
+instead: one job per node, one worker per GPU, the model loaded once per worker
+(see "Packs" below). The config format and the output folder are described in
 docs/running-evaluations.md; configs/eval/baselines-v1.yaml is an example.
 """
 
@@ -49,6 +52,9 @@ API_KEYS = {
     "openai": "OPENAI_API_KEY",
     "anthropic": "ANTHROPIC_API_KEY",
 }
+
+#: SLURM --comment of a pack job, followed by its manifest's absolute path.
+PACK_PREFIX = "melteval-pack:"
 
 _UNSET_VAR = re.compile(r"\$\{?\w+\}?")
 
@@ -136,9 +142,31 @@ def resolve_model(model: str) -> tuple[str | None, str | None]:
     return None, f"{model!r} is not a melt/..., melt/hf/... or smurf/... model"
 
 
+def load_benchmarks(value) -> list[dict]:
+    """A config's ``benchmarks``: a list as written, or the path of a suite file holding one.
+
+    A suite path is relative to the repo root, like every other path in a config.
+    """
+    if not isinstance(value, str):
+        return value
+    path = Path(expand(value) or value)
+    if not path.is_absolute():
+        path = REPO_ROOT / path
+    if not path.exists():
+        raise SystemExit(f"Benchmark suite {value!r} not found ({path}).")
+    return yaml.safe_load(path.read_text(encoding="utf-8"))["benchmarks"]
+
+
+def skipped_by(patterns: list[str], benchmark: str, dataset_id: str | None) -> bool:
+    """Whether a ``skip:`` list excludes a slice: a glob matching its benchmark's name or its dataset_id."""
+    names = [benchmark, dataset_id] if dataset_id else [benchmark]
+    return any(fnmatch.fnmatch(name, pattern) for name in names for pattern in patterns)
+
+
 def load_config(path: Path, out: str | None) -> dict:
     """Read a config and settle its output directory (``--out`` wins over ``output_dir``)."""
     config = yaml.safe_load(path.read_text(encoding="utf-8"))
+    config["benchmarks"] = load_benchmarks(config["benchmarks"])
     output_dir = expand(out or config.get("output_dir"))
     if not output_dir:
         raise SystemExit(
@@ -180,6 +208,10 @@ class Job:
     args: list[str]
     env: dict[str, str] = field(default_factory=dict)
     judge: dict | None = None  #: The benchmark's judge settings, for audio_chat slices.
+    #: Judge-free scorers run after generation by ``score`` (MCIF's official
+    #: metrics, COMET): the slice's ``post_scorers``, in the benchmark's ``post_venv``.
+    post_scorers: list[str] = field(default_factory=list)
+    post_venv: str | None = None
 
     @property
     def label(self) -> str:
@@ -200,7 +232,7 @@ def plan(
         The jobs, and one line per (model, benchmark or slice) that cannot run
         on this machine or is excluded, with why.
     """
-    from melteval.providers import family_of
+    from melteval.providers import family_of, ignores_instruction
 
     jobs: list[Job] = []
     skipped: list[str] = []
@@ -223,6 +255,14 @@ def plan(
                 skipped.append(f"model {name}: venv {model_cfg['venv']!r} not found on this machine")
                 continue
             env["VENV_PATH"] = venv
+        model_args = [str(a) for a in model_cfg.get("args", [])]
+        if "model_config_override" in model_cfg:
+            # Absolute: inspect chdirs into melteval/ while it builds the task.
+            override, reason = resolve_path(model_cfg["model_config_override"], "model_config_override")
+            if override is None:
+                skipped.append(f"model {name}: {reason}")
+                continue
+            model_args += ["-M", f"model_config_override={override}"]
 
         for bench in config["benchmarks"]:
             if benchmarks and bench["name"] not in benchmarks:
@@ -238,7 +278,10 @@ def plan(
             for slice_cfg in bench["slices"]:
                 task, dataset_id, sname = slice_cfg["task"], slice_cfg.get("dataset_id"), slice_name(slice_cfg)
                 label = f"{name} x {bench['name']}/{sname}"
-                if dataset_id and any(fnmatch.fnmatch(dataset_id, p) for p in model_cfg.get("skip", [])):
+                if skipped_by(config.get("skip", []), bench["name"], dataset_id):
+                    skipped.append(f"{label}: excluded by the config's skip list")
+                    continue
+                if skipped_by(model_cfg.get("skip", []), bench["name"], dataset_id):
                     skipped.append(f"{label}: excluded by the model's skip list")
                     continue
 
@@ -253,8 +296,13 @@ def plan(
                     args += ["-T", f"lang={lang}"]
                 # A benchmark whose samples carry no instruction of their own
                 # needs one from the model entry -- except for MELT, whose
-                # prompt comes from the checkpoint's training config.
-                if bench.get("needs_instruction") and family in ("hf", "smurf"):
+                # prompt comes from the checkpoint's training config, and for
+                # a provider that ignores the prompt altogether (Whisper).
+                if (
+                    bench.get("needs_instruction")
+                    and family in ("hf", "smurf")
+                    and not ignores_instruction(model)
+                ):
                     instruction = (model_cfg.get("instruction") or {}).get(task)
                     if isinstance(instruction, dict):
                         # One literal instruction per dataset_id, for a model whose environment
@@ -271,10 +319,30 @@ def plan(
                     else:
                         args += ["-T", f"instruction={json.dumps(instruction)}"]
 
-                args += [str(a) for a in model_cfg.get("args", [])]
+                # Optional per-model MCQ prompt template ({question}, {options}), e.g. DeSTA2.5's.
+                mcq_instruction = model_cfg.get("mcq_instruction")
+                if mcq_instruction and task == "audio_mcq" and family == "hf":
+                    args += ["-T", f"mcq_instruction={json.dumps(mcq_instruction)}"]
+
+                args += model_args
+                # Per-task model arguments, e.g. Whisper's `task=translate` for ST
+                # slices only, so one entry covers both its modes.
+                args += [str(a) for a in (model_cfg.get("args_by_task") or {}).get(task, [])]
+                # Optional per-task system prompts (`system:` map, `default` as fallback), e.g. DeSTA2.5's.
+                # Passed as a model argument so inspect records it in the log.
+                system = model_cfg.get("system") or {}
+                system_prompt = system.get(task, system.get("default"))
+                if system_prompt is not None:
+                    args += ["-M", f"system_prompt={json.dumps(system_prompt)}"]
                 args += [str(a) for a in slice_cfg.get("args", [])]
                 if task in JUDGE_TASKS:
                     args.append("--no-score")
+                # `skip_post_scorers`: scorers that cannot run where this config is used
+                post_scorers = [str(s) for s in slice_cfg.get("post_scorers", [])
+                                if str(s) not in config.get("skip_post_scorers", [])]  # fmt: skip
+                if post_scorers:
+                    # So the report can show a missing post-hoc metric as pending.
+                    args += ["--metadata", f"melteval_post_scorers={','.join(post_scorers)}"]
                 args += ["--log-format", log_format]
                 args += [
                     "--metadata", f"melteval_model={name}",
@@ -290,8 +358,9 @@ def plan(
                     job_env["MELT_TIME"] = str(slice_cfg["time"])
                 judge = {k: bench[k] for k in ("judge", "judge_args", "judge_venv", "scorers") if k in bench}
                 jobs.append(
-                    Job(name, model, bench["name"], sname, task, eval_set, log_dir, args, job_env, judge or None)
-                )
+                    Job(name, model, bench["name"], sname, task, eval_set, log_dir, args, job_env, judge or None,
+                        post_scorers, bench.get("post_venv"))
+                )  # fmt: skip
     return jobs, skipped
 
 
@@ -318,13 +387,32 @@ def squeue_available() -> bool:
 
 
 def queued_tags() -> set[str]:
-    """Tags of this user's SLURM jobs still pending or running."""
+    """Tags of this user's SLURM jobs still pending or running.
+
+    A pack is queued under one comment, ``melteval-pack:<manifest>``; it stands
+    for the tag of every slice its manifest lists.
+    """
     if not squeue_available():
         return set()
     result = subprocess.run(
         ["squeue", "-h", "-u", os.environ.get("USER", ""), "-o", "%k"], capture_output=True, text=True, check=False
     )
-    return {line.strip() for line in result.stdout.splitlines() if line.strip().startswith("melteval:")}
+    return expand_tags(line.strip() for line in result.stdout.splitlines())
+
+
+def expand_tags(comments) -> set[str]:
+    """Slice tags from SLURM comments: a slice job's own tag, or every slice of a pack's manifest."""
+    tags = set()
+    for comment in comments:
+        if comment.startswith(PACK_PREFIX):
+            manifest = Path(comment.removeprefix(PACK_PREFIX))
+            try:
+                tags.update(entry["tag"] for entry in json.loads(manifest.read_text(encoding="utf-8"))["slices"])
+            except (OSError, ValueError, KeyError) as exc:
+                print(f"  ! unreadable pack manifest {manifest}: {exc}", file=sys.stderr)
+        elif comment.startswith("melteval:"):
+            tags.add(comment)
+    return tags
 
 
 def job_state(job: Job, queued: set[str]) -> tuple[str, str]:
@@ -438,11 +526,141 @@ def start(job: Job, site: str | None, config: dict) -> str | None:
     return None
 
 
+# --------------------------------------------------------------------------- packs
+#
+# A site that only hands out whole nodes (JUPITER: 4 GH200 each) would bill a
+# 4-GPU node for every 1-GPU slice job. A pack is one SLURM job holding many
+# slices of one model: infra/run_eval_pack.sbatch starts one worker per GPU,
+# each loads the model once and takes slices from the pack until none are left
+# (melteval/pack.py). Every slice still writes its own log into its own
+# log_dir, so status, report and the watcher see exactly what they see without
+# packs, and an unfinished slice is simply missing on the next ``run``.
+
+
+def pack_settings(config: dict) -> dict | None:
+    """The config's ``pack:`` block, completed from the site; ``None`` when slices go one job each.
+
+    ``gpus`` comes from the config or, failing that, ``$MELT_PACK_GPUS`` (the
+    site file sets it where nodes are whole); without either there are no
+    packs. ``pack: false`` turns them off whatever the site says.
+    """
+    raw = config.get("pack")
+    if raw is False:
+        return None
+    raw = dict(raw or {})
+    gpus = int(raw.get("gpus") or os.environ.get("MELT_PACK_GPUS") or 0)
+    if gpus < 1:
+        return None
+    return {"gpus": gpus, "time": raw.get("time"), "max_slices": int(raw.get("max_slices") or 0)}
+
+
+#: Arguments that only shape the task or the log, never the model inspect resolves.
+_TASK_ONLY_ARGS = {"-T": 1, "--metadata": 1, "--log-format": 1, "--no-score": 0}
+
+
+def model_key(job: Job) -> tuple[str, ...]:
+    """The arguments of *job* that reach ``get_model()``: ``-M`` and generation flags like ``--max-tokens``.
+
+    inspect memoizes a model on these, so two slices that differ here would
+    load a second copy of the checkpoint onto the same GPU: they go in
+    different packs.
+    """
+    key, i = [], 0
+    while i < len(job.args):
+        width = _TASK_ONLY_ARGS.get(job.args[i])
+        if width is None:
+            key.append(job.args[i])
+            i += 1
+        else:
+            i += 1 + width
+    return tuple(key)
+
+
+def _seconds(value: str | None) -> int:
+    """``HH:MM:SS`` (or ``MM:SS``, or ``D-HH:MM:SS``) in seconds; 0 if unset."""
+    if not value:
+        return 0
+    days, _, clock = str(value).rpartition("-")
+    seconds = 0
+    for part in clock.split(":"):
+        seconds = seconds * 60 + int(part)
+    return seconds + int(days or 0) * 86400
+
+
+def make_packs(jobs: list[Job], max_slices: int = 0) -> list[list[Job]]:
+    """Group *jobs* into packs: one model, one venv, one set of model arguments each.
+
+    Longest slices first (by their ``time:``), so a worker that draws one does
+    not leave the others idle at the end; a group bigger than *max_slices* is
+    dealt round-robin into as many packs as it needs, which keeps the long
+    slices spread across them.
+    """
+    groups: dict[tuple, list[Job]] = {}
+    for job in jobs:
+        groups.setdefault((job.model, job.env.get("VENV_PATH"), model_key(job)), []).append(job)
+    packs = []
+    for group in groups.values():
+        group = sorted(group, key=lambda job: -_seconds(job.env.get("MELT_TIME")))
+        count = -(-len(group) // max_slices) if max_slices else 1
+        packs += [group[k::count] for k in range(count)]
+    return packs
+
+
+def write_pack(pack: list[Job], config: dict) -> Path:
+    """Write the manifest melteval/pack.py reads: what each slice runs, and where its log goes."""
+    first = pack[0]
+    stamp = datetime.now().strftime("%Y%m%d-%H%M%S-%f")
+    pack_id = re.sub(r"[^\w.-]", "_", f"{first.model_name}-{stamp}")
+    path = config["_output_dir"] / "packs" / f"{pack_id}.json"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    manifest = {
+        "pack_id": pack_id,
+        "model": first.model,
+        "slices": [
+            {"label": job.label, "tag": job.tag, "eval_set": job.eval_set, "log_dir": str(job.log_dir),
+             "args": job.args}
+            for job in pack
+        ],
+    }  # fmt: skip
+    path.write_text(json.dumps(manifest, indent=1), encoding="utf-8")
+    return path
+
+
+def start_pack(pack: list[Job], site: str, settings: dict, config: dict) -> str | None:
+    """Submit *pack* as one whole-node SLURM job; return its job id."""
+    for job in pack:
+        job.log_dir.mkdir(parents=True, exist_ok=True)
+    manifest = write_pack(pack, config)
+    command = ["infra/runners/submit_pack.sh", site, str(manifest)]
+    env = {
+        "MELT_GPUS": str(settings["gpus"]),
+        "MELT_JOB_TAG": f"{PACK_PREFIX}{manifest}",
+        "MELT_SLURM_OUT": str(manifest.with_suffix("")) + "-slurm-%j.out",
+    }
+    if pack[0].env.get("VENV_PATH"):
+        env["VENV_PATH"] = pack[0].env["VENV_PATH"]
+    # Never shorter than the pack's longest slice, whatever `pack: time` says.
+    times = [settings["time"], *(job.env.get("MELT_TIME") for job in pack)]
+    longest = max((t for t in times if t), key=_seconds, default=None)
+    if longest:
+        env["MELT_TIME"] = str(longest)
+    wait_for_room()
+    code, out = run_command(command, env)
+    job_id = next(iter(re.findall(r"Submitted batch job (\d+)", out)), None)
+    record(config, {"runner": f"slurm:{site}", "pack": str(manifest), "jobs": [job.label for job in pack],
+                    "model": pack[0].model, "command": command, "slurm_job_id": job_id, "exit_code": code})  # fmt: skip
+    return job_id
+
+
 def snapshot_config(config: dict) -> None:
-    """Keep a copy of the config in the output folder, so the folder says what it holds."""
+    """Keep a copy of the config in the output folder, so the folder says what it holds.
+
+    Written with its benchmarks expanded: a suite file can change after the run.
+    """
     out = config["_output_dir"]
     out.mkdir(parents=True, exist_ok=True)
-    shutil.copyfile(config["_path"], out / "config.yaml")
+    resolved = {k: v for k, v in config.items() if not k.startswith("_")}
+    (out / "config.yaml").write_text(yaml.safe_dump(resolved, sort_keys=False), encoding="utf-8")
 
 
 def cmd_plan(args, config) -> None:
@@ -451,11 +669,21 @@ def cmd_plan(args, config) -> None:
     for line in skipped:
         print(f"skip     {line}")
     queued = queued_tags()
+    pending = []
     for job in jobs:
         state, detail = job_state(job, queued)
         print(f"{state:<8} {job.label}  {detail}")
         if args.verbose and state in ("missing", "failed"):
             print(f"         {job.model} {job.eval_set} {' '.join(job.args)}")
+        if state in ("missing", "failed"):
+            pending.append(job)
+    settings = pack_settings(config) if args.site else None
+    if settings and pending:
+        packs = make_packs(pending, settings["max_slices"])
+        print(f"\n`run` would submit {len(pending)} slice(s) as {len(packs)} pack(s), "
+              f"{settings['gpus']} GPU(s) each:")  # fmt: skip
+        for pack in packs:
+            print(f"  pack of {len(pack)}: {pack[0].model_name}  ({', '.join(job.slice for job in pack)})")
     print(f"\noutput folder: {config['_output_dir']}")
 
 
@@ -485,7 +713,7 @@ def cmd_run(args, config) -> None:
     snapshot_config(config)
 
     queued = queued_tags()
-    job_ids, started = [], 0
+    pending = []
     for job in jobs:
         state, _ = job_state(job, queued)
         if state in ("done", "queued"):
@@ -493,13 +721,30 @@ def cmd_run(args, config) -> None:
             continue
         if args.limit:
             job.args += ["-T", f"limit={args.limit}"]
-        print(f"\n==== start {job.label}", flush=True)
-        job_id = start(job, args.site, config)
-        started += 1
-        if job_id:
-            job_ids.append(job_id)
+        pending.append(job)
 
-    print(f"\nstarted {started} job(s); output folder: {config['_output_dir']}")
+    job_ids, started = [], 0
+    settings = pack_settings(config) if args.site else None
+    if settings:
+        for pack in make_packs(pending, settings["max_slices"]):
+            print(f"\n==== start pack of {len(pack)} slice(s) on {settings['gpus']} GPU(s): {pack[0].model_name}",
+                  flush=True)  # fmt: skip
+            for job in pack:
+                print(f"     {job.label}")
+            job_id = start_pack(pack, args.site, settings, config)
+            started += len(pack)
+            if job_id:
+                job_ids.append(job_id)
+    else:
+        for job in pending:
+            print(f"\n==== start {job.label}", flush=True)
+            job_id = start(job, args.site, config)
+            started += 1
+            if job_id:
+                job_ids.append(job_id)
+
+    in_jobs = f" in {len(job_ids)} SLURM job(s)" if args.site else ""
+    print(f"\nstarted {started} slice(s){in_jobs}; output folder: {config['_output_dir']}")
     if args.site and args.wait:
         wait_for_jobs(job_ids)
     if args.local or args.wait:
@@ -551,45 +796,100 @@ def has_scorer(log: Path, scorer: str) -> bool:
     return bool(results) and any(s.name.split("/")[-1] == wanted for s in results.scores)
 
 
-def cmd_score(args, config) -> None:
-    """Grade the finished judge-only slices (audio_chat) with their benchmark's judge.
+@dataclass
+class PendingScore:
+    """One finished log still missing one post-hoc scorer."""
 
-    One job per (model under test, benchmark, scorer), so the judge is loaded
-    once per group. An API judge needs no GPU and is run right here; a local
-    judge is GPU work and goes through SLURM (or runs here with --local).
+    job: Job
+    scorer: str
+    log: Path
+    extra: list[str]  #: ``--model-role grader=...`` for a judge, nothing otherwise.
+    kind: str  #: ``api`` (runs here) or ``local`` (loads a model: GPU work, SLURM).
+    venv: str | None  #: Activate script to score in; ``None``: this script's own.
+
+    @property
+    def group(self) -> tuple[str, str, str]:
+        """What one scoring job covers: a model's logs on one benchmark, for one scorer."""
+        return self.job.model_name, self.job.benchmark, self.scorer
+
+    @property
+    def tag(self) -> str:
+        """The SLURM --comment of the scoring job for this group."""
+        return f"melteval:score:{self.job.model_name}:{self.job.benchmark}:{self.scorer.split('@')[-1]}"
+
+
+def post_scorers_of(job: Job) -> tuple[list[tuple[str, list[str], str, str | None]], str | None]:
+    """The post-hoc scorers *job*'s logs need, as ``(scorer, extra args, kind, venv)``.
+
+    Returns:
+        The scorers, and why some could not be resolved (``None`` if all could).
+    """
+    out = []
+    if job.task in JUDGE_TASKS and job.judge and "judge" in job.judge:
+        extra, kind, venv = resolve_judge(job.judge)
+        out += [(s, extra, kind, venv) for s in job.judge.get("scorers", [DEFAULT_JUDGE_SCORER])]
+    if job.post_scorers:
+        venv = expand(job.post_venv) if job.post_venv else None
+        if job.post_venv and (venv is None or not Path(venv).exists()):
+            return out, f"post_venv {job.post_venv!r} not found on this machine"
+        # BERTScore and COMET load a model of their own: GPU work.
+        out += [(s, [], "local", venv) for s in job.post_scorers]
+    return out, None
+
+
+def pending_scores(jobs: list[Job], rescore: bool = False, verbose: bool = False) -> list[PendingScore]:
+    """Every (successful log, post-hoc scorer) of *jobs* not scored yet (all of them with *rescore*)."""
+    pending = []
+    for job in jobs:
+        if job.task in JUDGE_TASKS and not (job.judge and "judge" in job.judge) and not job.post_scorers:
+            if verbose:
+                print(f"skip     {job.label}: its benchmark names no judge and the slice no post_scorers")
+            continue
+        scorers, problem = post_scorers_of(job)
+        if problem and verbose:
+            print(f"skip     {job.label}: {problem}")
+        for scorer, extra, kind, venv in scorers:
+            for log in successful_logs(job.log_dir) if job.log_dir.exists() else []:
+                if has_scorer(log, scorer) and not rescore:
+                    if verbose:
+                        print(f"scored   {job.label} ({scorer})")
+                    continue
+                pending.append(PendingScore(job, scorer, log, extra, kind, venv))
+    return pending
+
+
+def cmd_score(args, config) -> None:
+    """Run the post-hoc scorers on finished logs: judges (audio_chat), MCIF's official metrics, COMET.
+
+    One job per (model under test, benchmark, scorer), so a judge or metric
+    model is loaded once per group. An API judge needs no GPU and is run right
+    here; anything that loads a model is GPU work and goes through SLURM (or
+    runs here with --local). A group whose scoring job is still queued is not
+    submitted again, so this can be called repeatedly (the watcher does).
     """
     jobs, _ = plan(config, args.models, args.benchmarks)
+    queued = queued_tags()
     groups: dict[tuple, dict] = {}
-    for job in jobs:
-        if job.task not in JUDGE_TASKS:
+    for item in pending_scores(jobs, args.rescore, verbose=True):
+        if item.tag in queued:
+            print(f"queued   {item.job.label} ({item.scorer})")
             continue
-        if not job.judge or "judge" not in job.judge:
-            print(f"skip     {job.label}: its benchmark names no judge")
-            continue
-        extra, kind, venv = resolve_judge(job.judge)
-        for scorer in job.judge.get("scorers", [DEFAULT_JUDGE_SCORER]):
-            for log in successful_logs(job.log_dir) if job.log_dir.exists() else []:
-                if has_scorer(log, scorer) and not args.rescore:
-                    print(f"scored   {job.label} ({scorer})")
-                    continue
-                key = (job.model_name, job.benchmark, scorer)
-                group = groups.setdefault(
-                    key, {"label": f"{job.model_name} x {job.benchmark} [{scorer}]", "logs": [], "kind": kind,
-                          "venv": venv, "log_dir": job.log_dir.parent,
-                          # --model mockllm/model: `inspect score` rebuilds the log's own
-                          # model otherwise, and our providers load weights on construction.
-                          "args": ["--model", "mockllm/model", "--scorer", scorer,
-                                   "--action", "overwrite" if args.rescore else "append", *extra]},
-                )  # fmt: skip
-                group["logs"].append(str(log))
+        group = groups.setdefault(
+            item.group, {"label": f"{item.job.model_name} x {item.job.benchmark} [{item.scorer}]", "logs": [],
+                         "kind": item.kind, "venv": item.venv, "tag": item.tag, "log_dir": item.job.log_dir.parent,
+                         # --model mockllm/model: `inspect score` rebuilds the log's own
+                         # model otherwise, and our providers load weights on construction.
+                         "args": ["--model", "mockllm/model", "--scorer", item.scorer,
+                                  "--action", "overwrite" if args.rescore else "append", *item.extra]},
+        )  # fmt: skip
+        group["logs"].append(str(item.log))
 
     job_ids = []
     for group in groups.values():
-        print(f"\n==== score {group['label']}: {len(group['logs'])} log(s) ({group['kind']} judge)", flush=True)
+        print(f"\n==== score {group['label']}: {len(group['logs'])} log(s) ({group['kind']})", flush=True)
         env = {"VENV_PATH": group["venv"]} if group["venv"] else {}
         if group["kind"] == "local" and args.site:
-            env |= {"MELT_JOB_TAG": f"melteval:score:{group['label']}",
-                    "MELT_SLURM_OUT": str(group["log_dir"] / "score-slurm-%j.out")}  # fmt: skip
+            env |= {"MELT_JOB_TAG": group["tag"], "MELT_SLURM_OUT": str(group["log_dir"] / "score-slurm-%j.out")}
             command = ["infra/runners/submit_score.sh", args.site, *group["logs"], "--", *group["args"]]
             wait_for_room()
         else:

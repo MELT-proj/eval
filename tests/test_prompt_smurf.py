@@ -1,5 +1,7 @@
 """Tests for the SMURF prompt handling in the melteval package."""
 
+import sys
+
 import pytest
 
 from melteval.prompt import load_smurf_prompt_spec, render_smurf_prompt
@@ -116,21 +118,49 @@ class TestRenderSmurfPrompt:
         with pytest.raises(ValueError, match="Unknown placeholder"):
             render_smurf_prompt("Transcribe {speaker}: ", task="asr", lang="en")
 
-    @pytest.mark.skipif(not HAS_MELT, reason="needs the training package's language table")
     def test_language_name_matches_the_one_melt_prompts_use(self):
         assert render_smurf_prompt("Transcribe this {lang} audio: ", lang="en") == (
             "Transcribe this English audio: "
         )
 
-    @pytest.mark.skipif(not HAS_MELT, reason="needs the training package's language table")
     def test_unsupported_language_code_is_an_error(self):
         with pytest.raises(ValueError, match="Unsupported language ISO code"):
             render_smurf_prompt("Transcribe this {lang} audio: ", lang="zz")
 
-    @pytest.mark.skipif(HAS_MELT, reason="table available, so the fallback path is not reachable")
-    def test_language_name_without_the_table_says_what_to_do_instead(self):
-        with pytest.raises(ValueError, match="lang_code"):
-            render_smurf_prompt("Transcribe this {lang} audio: ", lang="en")
+    def test_without_the_training_package_the_fallback_table_names_the_language(self, monkeypatch):
+        """A SMURF-only venv has no melt-proj; ``{lang}`` must still render, not fail."""
+        monkeypatch.setitem(sys.modules, "melt.training.data.audio.lhotse.helpers", None)
+        assert render_smurf_prompt("Transcribe this {lang} audio: ", lang="pl") == "Transcribe this Polish audio: "
+        assert render_smurf_prompt("Translate this {src_lang} audio into English: ", src_lang="de") == (
+            "Translate this German audio into English: "
+        )
+        with pytest.raises(ValueError, match="Unsupported language ISO code"):
+            render_smurf_prompt("Transcribe this {lang} audio: ", lang="zz")
+
+    @pytest.mark.skipif(not HAS_MELT, reason="needs the training package's language table to compare against")
+    def test_the_fallback_table_agrees_with_the_training_package(self):
+        from melt.training.data.audio.lhotse.helpers import LANGUAGE_ISO_TO_NAME
+
+        from melteval.prompt import SMURF_LANGUAGE_NAMES
+
+        for code, name in SMURF_LANGUAGE_NAMES.items():
+            if code in LANGUAGE_ISO_TO_NAME:
+                assert LANGUAGE_ISO_TO_NAME[code] == name
+
+    @pytest.mark.skipif(not HAS_MELT, reason="needs the training package's language table")
+    def test_a_code_the_training_package_lacks_still_renders(self):
+        """The fallback fills gaps in an older melt-proj checkout; ga is one today."""
+        from melt.training.data.audio.lhotse.helpers import LANGUAGE_ISO_TO_NAME
+
+        from melteval.prompt import SMURF_LANGUAGE_NAMES
+
+        missing = sorted(set(SMURF_LANGUAGE_NAMES) - set(LANGUAGE_ISO_TO_NAME))
+        if not missing:
+            pytest.skip("the installed training package already has every code")
+        code = missing[0]
+        assert render_smurf_prompt("Translate into {tgt_lang}: ", tgt_lang=code) == (
+            f"Translate into {SMURF_LANGUAGE_NAMES[code]}: "
+        )
 
 
 class TestStripAudioToken:
@@ -371,6 +401,20 @@ class TestModelFamily:
 
         assert family_of(model) == family
 
+    @pytest.mark.parametrize(
+        ("model", "ignored"),
+        [
+            ("melt/hf/whisper", True),
+            ("melt/hf/qwen2_audio", False),
+            ("melt//abs/ckpt", False),
+            ("mockllm/model", False),
+        ],
+    )
+    def test_ignores_instruction(self, model, ignored):
+        from melteval.providers import ignores_instruction
+
+        assert ignores_instruction(model) is ignored
+
 
 class TestProviderGuard:
     """Crossing a model with another family's solver produces fluent, wrong text."""
@@ -405,6 +449,54 @@ class TestProviderGuard:
         _require_provider(self._state("mockllm/model"), *_INSTRUCTION_PROVIDERS)
 
 
+class TestInstructionIgnoredByProvider:
+    """Whisper reads only the audio, so a benchmark without a prompt must not stop it."""
+
+    class _Store:
+        def __init__(self):
+            self.data = {}
+
+        def set(self, key, value):
+            self.data[key] = value
+
+    def _state(self, model, metadata=None):
+        from types import SimpleNamespace
+
+        api, _, name = model.partition("/")
+        return SimpleNamespace(
+            model=SimpleNamespace(api=api, name=name),
+            sample_id="s-0",
+            metadata=metadata or {"task": "asr"},
+            choices=[],
+            store=self._Store(),
+            messages=[],
+        )
+
+    def _run(self, state):
+        import asyncio
+
+        from melteval.solver import _instruction_solve
+
+        async def generate(current):
+            return current
+
+        return asyncio.run(_instruction_solve(state, generate, ("hf",), None, None, {}))
+
+    def test_an_empty_prompt_reaches_a_provider_that_ignores_it(self):
+        state = self._run(self._state("melt/hf/whisper"))
+
+        [message] = state.messages
+        text = "".join(c.text for c in message.content if getattr(c, "type", None) == "text")
+        assert text == ""
+        spec = state.store.data["melteval:format_spec"]
+        assert spec["instruction"] == ""
+        assert spec["instruction_source"] == "provider_ignores_instruction"
+
+    def test_a_provider_that_uses_the_prompt_still_refuses_an_empty_one(self):
+        with pytest.raises(ValueError, match="No instruction for sample"):
+            self._run(self._state("melt/hf/qwen2_audio"))
+
+
 class TestInstructionSolverThroughRealInspect(TestSmurfSolverThroughRealInspect):
     """The same contract as SMURF's, run through :func:`instruction_prompt`."""
 
@@ -421,6 +513,43 @@ class TestInstructionSolverThroughRealInspect(TestSmurfSolverThroughRealInspect)
             log_dir=str(tmp_path),
         )
         return log
+
+    def _mcq_sample(self, question="What is {x}?"):
+        from inspect_ai.dataset import MemoryDataset, Sample
+
+        meta = {
+            "task": "audio_mcq",
+            "instruction": "{audio_token}\nignored\nA. Male\nB. Female\nAnswer with the letter.",
+            "question": question,
+            "audio": {"kind": "file", "path": "/tmp/a.wav"},
+        }
+        return MemoryDataset(
+            samples=[Sample(input="p", target="Male", choices=["Male", "Female"], id="s-0", metadata=meta)]
+        )
+
+    def test_mcq_instruction_replaces_the_options_layout_and_escapes_the_question(self, tmp_path):
+        log = self._run(
+            tmp_path, self._mcq_sample(), mcq_instruction="{question}\nThe answer could be: {options}"
+        )
+
+        [message] = log.samples[0].messages[:1]
+        text = "".join(c.text for c in message.content if getattr(c, "type", None) == "text")
+        assert text == 'What is {x}?\nThe answer could be: "Male" or "Female"'
+        assert log.samples[0].store["melteval:format_spec"]["instruction_source"] == "mcq_instruction"
+
+    def test_mcq_instruction_leaves_a_sample_without_options_alone(self, tmp_path):
+        log = self._run(
+            tmp_path, self._sample(instruction="Answer."), mcq_instruction="{question} {options}"
+        )
+
+        [message] = log.samples[0].messages[:1]
+        text = "".join(c.text for c in message.content if getattr(c, "type", None) == "text")
+        assert text == "Answer."
+
+    def test_mcq_instruction_without_the_question_in_the_sample_is_refused(self, tmp_path):
+        log = self._run(tmp_path, self._mcq_sample(question=""), mcq_instruction="{question}{options}")
+
+        assert log.status == "error" or "question" in str(log.samples[0].error)
 
     def test_the_log_records_the_instruction_and_its_source(self, tmp_path):
         log = self._run(tmp_path, self._sample(), instruction="Transcribe this audio.")

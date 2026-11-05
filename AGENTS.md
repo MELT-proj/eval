@@ -26,7 +26,7 @@ forces it.
 - `melteval/readers/` — one module per source type. The only code that knows
   about corpus formats.
 - `melteval/providers/` — one module per model (`melt`, `smurf`, `qwen2_audio`,
-  `qwen3_omni` over `hf.py`), over a shared `base.py` that owns batching and
+  `qwen3_omni` over `hf.py`; `whisper`, `desta25`), over a shared `base.py` that owns batching and
   audio resolution. `router.py` registers the `melt` provider and maps a name
   (`melt/<ckpt>`, `melt/hf/<model>`) to its class; `__init__.py` documents the
   naming scheme. The seam that lets a NeMo/SMURF model be evaluated without
