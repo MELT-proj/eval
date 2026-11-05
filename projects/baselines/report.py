@@ -132,8 +132,18 @@ def checkpoint_id(path: str) -> str:
 
 
 def _missing_post_scorers(log, meta: dict) -> list[str]:
-    """Post-hoc scorers named in ``melteval_post_scorers`` that have not scored *log* yet."""
-    wanted = [s.split("@")[-1] for s in str(meta.get("melteval_post_scorers") or "").split(",") if s]
+    """Post-hoc scorers named in ``melteval_post_scorers`` that have not scored *log* yet.
+
+    ``scripts/evaluate.py`` writes the names as one comma-separated ``--metadata``
+    value, which ``inspect`` parses into a *list* as soon as there is more than
+    one of them. Normalise both shapes here: ``str()``-ing the list first would
+    leave a stray quote and bracket on the last name, so a slice scored by two
+    post-hoc scorers reported both as still pending.
+    """
+    declared = meta.get("melteval_post_scorers") or []
+    if isinstance(declared, str):
+        declared = declared.split(",")
+    wanted = [s.split("@")[-1].strip() for s in declared if s.strip()]
     have = {score.name.split("/")[-1] for score in (log.results.scores if log.results else [])}
     return [s for s in wanted if s not in have]
 
