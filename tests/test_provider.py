@@ -900,3 +900,57 @@ class TestRouter:
 
         get_model("melt/hf/qwen2_audio", memoize=False)
         assert built[0][:2] == ("qwen2_audio", "hf/qwen2_audio")
+
+
+class TestApertus:
+    """Apertus takes 24 kHz audio; the readers deliver 16 kHz."""
+
+    def test_the_router_names_it(self):
+        from melteval.providers.apertus import ApertusAPI
+        from melteval.providers.router import HF_MODELS
+
+        assert HF_MODELS["apertus"] is ApertusAPI
+        assert ApertusAPI.cast_audio_features is False
+        assert ApertusAPI.revision
+
+    def test_attention_implementation_is_left_to_transformers(self, monkeypatch):
+        from melteval.providers import apertus
+        from melteval.providers.hf import HFSpeechChatAPI
+
+        seen = {}
+
+        def fake_init(self, *args, **kwargs):
+            seen.update(kwargs)
+
+        monkeypatch.setattr(HFSpeechChatAPI, "__init__", fake_init)
+        apertus.ApertusAPI("apertus")
+        assert seen["attn_implementation"] is None
+        apertus.ApertusAPI("apertus", attn_implementation="eager")
+        assert seen["attn_implementation"] == "eager"
+
+    def test_audio_is_resampled_keeping_its_duration_and_the_waiting_future(self):
+        pytest.importorskip("librosa")
+        import numpy as np
+
+        from melteval.providers.apertus import to_sample_rate
+        from melteval.providers.base import _Request
+
+        request = _Request(
+            text="t", audio=np.zeros(16000, dtype=np.float32), sample_rate=16000, config=GenerateConfig(), duration=1.0
+        )
+        out = to_sample_rate(request, 24000)
+
+        assert out.sample_rate == 24000
+        assert len(out.audio) == 24000
+        assert out.duration == pytest.approx(1.0)
+        assert out.future is request.future and out.metadata is request.metadata
+
+    def test_a_request_already_at_the_rate_or_without_audio_is_returned_as_is(self):
+        import numpy as np
+
+        from melteval.providers.apertus import to_sample_rate
+
+        at_rate = _QwenRequest(audio=np.zeros(8, dtype=np.float32), sample_rate=24000)
+        assert to_sample_rate(at_rate, 24000) is at_rate
+        no_audio = _QwenRequest(audio=None)
+        assert to_sample_rate(no_audio, 24000) is no_audio
