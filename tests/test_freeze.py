@@ -267,7 +267,7 @@ class TestSpeechvalDevSpecs:
 
     def test_xen_uses_the_dev_english_reference(self, monkeypatch):
         sources = self._load("fleurs24-st-xen-dev-full.yaml", monkeypatch)
-        assert len(sources) == 23
+        assert len(sources) == 17  # jupiter has no FLEURS for el/pl/ro/sk/sl/sv
         assert {s["reference_map"] for s in sources} == {"configs/refs/fleurs-en-reference-dev.json"}
 
     def test_covost_dev_covers_the_suite_directions(self, monkeypatch):
