@@ -34,8 +34,6 @@ benchmarks:
       - {task: asr, dataset_id: voxpopuli-hr-dev}
       - {task: asr, dataset_id: voxpopuli-sk-dev}
       - {task: asr, dataset_id: voxpopuli-sl-dev}
-      - {task: asr, dataset_id: voxpopuli-et-dev}
-      - {task: asr, dataset_id: voxpopuli-lt-dev}
 
   # configs/shar/fleurs24-st-xen-dev-full.yaml: full FLEURS validation, X->en, English reference from configs/refs/fleurs-en-reference-dev.json.
   # MetricX-24 hybrid XXL post-hoc, from the source transcript.

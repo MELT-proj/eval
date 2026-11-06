@@ -229,7 +229,7 @@ class TestEuroparlStSpecs:
 
 
 class TestSpeechvalDevSpecs:
-    """The speechval-dev specs: full validation/dev splits, no cap, and every suite slice has a source."""
+    """The speechval-dev specs: validation/dev splits (capped only where CAPS says so), and every suite slice has a source."""
 
     ROOT = Path(__file__).parent.parent
     SHAR = {
@@ -238,6 +238,8 @@ class TestSpeechvalDevSpecs:
         "fleurs24-st-enx-dev.yaml": "validation",
         "st-eval-campaign-v1-dev.yaml": "dev",
     }
+    #: Specs capped for run time; the rest are the full split.
+    CAPS = {"voxpopuli-dev.yaml": 1000, "st-eval-campaign-v1-dev.yaml": 2000}
 
     def _load(self, name: str, monkeypatch) -> list[dict]:
         monkeypatch.setenv("LOCAL_DATASETS_DIR", "/shar")
@@ -247,10 +249,12 @@ class TestSpeechvalDevSpecs:
     @pytest.mark.parametrize("name,split", SHAR.items())
     def test_full_split_and_dev_ids(self, name, split, monkeypatch):
         sources = self._load(name, monkeypatch)
+        text = (self.ROOT / "configs" / "shar" / name).read_text()
+        assert text.count("max_samples:") == (len(sources) if name in self.CAPS else 0)  # no duplicated keys
         ids = [s["tags"]["dataset_id"] for s in sources]
         assert len(ids) == len(set(ids))
         for s in sources:
-            assert "max_samples" not in s
+            assert s.get("max_samples") == self.CAPS.get(name)
             assert s["shar_path"].endswith(f"/{split}")
             assert s["tags"]["dataset_id"].endswith("-dev")
             if "reference_map" in s:

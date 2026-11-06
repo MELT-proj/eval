@@ -1,12 +1,12 @@
 # speechval-dev
 
-The dev half of the speechval validation/test partition: full `validation`/`dev` splits (no `max_samples`),
+The dev half of the speechval validation/test partition: full `validation`/`dev` splits, except where noted (VoxPopuli and CoVoST2 are capped, see below),
 listed in `configs/eval/suites/speechval-dev.yaml`.
 
 | benchmark | spec | source | dataset_ids | env var |
 |---|---|---|---|---|
 | LibriSpeech | `configs/hf/librispeech-hf-validation-{clean,other}.yaml` | HF, read live | `librispeech-validation-{clean,other}` | - |
-| VoxPopuli | `configs/shar/voxpopuli-dev.yaml` | frozen | `voxpopuli-<lang>-dev` (16) | `VOXPOPULI_DEV_SET` |
+| VoxPopuli | `configs/shar/voxpopuli-dev.yaml` | frozen | `voxpopuli-<lang>-dev` (14) | `VOXPOPULI_DEV_SET` |
 | FLEURS X->en | `configs/shar/fleurs24-st-xen-dev-full.yaml` | frozen | `fleurs-<lang>_en-dev` (23) | `FLEURS24_ST_XEN_DEV_SET` |
 | FLEURS en->X | `configs/shar/fleurs24-st-enx-dev.yaml` | frozen | `fleurs-en_<lang>-dev` (23) | `FLEURS24_ST_ENX_DEV_SET` |
 | CoVoST2 | `configs/shar/st-eval-campaign-v1-dev.yaml` | frozen | `covost2-<src>_en-dev` (de/es/fr/it/pt) | `COVOST2_DEV_SET` |
@@ -58,7 +58,7 @@ What was run (2026-11-06). `$LOCAL_DATASETS_DIR` is not set in a jupiter login s
 export AZEROS_DIR=/e/data1/smurf4eu-data/speech/azeros AZEROS_INDEXED_DIR=$SCRATCH/attanasio1/azeros-indexed-dev
 python scripts/index_shar.py $AZEROS_DIR $AZEROS_INDEXED_DIR \
     fleurs/{en_us,es_419,fr_fr,de_de,it_it,nl_nl,pt_br,hu_hu,fi_fi,cs_cz,hr_hr,bg_bg,lv_lv,da_dk,lt_lt,et_ee,ga_ie,mt_mt}/validation \
-    voxpopuli/{en,de,fr,es,pl,it,ro,hu,cs,nl,fi,hr,sk,sl,et,lt}/validation
+    voxpopuli/{en,de,fr,es,pl,it,ro,hu,cs,nl,fi,hr,sk,sl}/validation
 export LOCAL_DATASETS_DIR=$AZEROS_INDEXED_DIR F=$PROJECT/attanasio1/frozen-dev
 for s in fleurs24-st-xen-dev-full fleurs24-st-enx-dev voxpopuli-dev; do melteval freeze configs/shar/$s.yaml -o $F/$s; done
 
@@ -84,3 +84,16 @@ fi 687, hr 789, sk 669, sl 889, et 47, lt 3); the freezer drops cuts with empty 
 untranscribed cuts: hr loses 496 of 1285). FLEURS X->en 6234 (17 directions); FLEURS en->X 8819 (23 directions;
 see `dropped_no_reference` per source, expected); CoVoST2 53692 (de 13474, es 13221,
 fr 14749, it 8930, pt 3318).
+
+## Caps
+
+Running the full dev splits (CoVoST2 53.7k samples, VoxPopuli 18k) takes too long, so those two are capped with
+`max_samples` in the spec; the freezer's seeded shuffle picks the samples, so a cap is reproducible. FLEURS and
+LibriSpeech are run in full.
+
+* VoxPopuli: 1000 per language. Full frozen counts per language (after untranscribed cuts are dropped): de 2109,
+  en 1753, fr 1727, pl 1662, es 1631, ro 1371, it 1257, nl 1229, cs 1095, hu 1054, sl 889, hr 789, fi 687, sk 669.
+  Languages under 1000 keep everything. et (47) and lt (3) are not in the dev set: too small to score.
+* CoVoST2: 2000 per direction (10,000 in total, from 53,692).
+
+The uncapped CoVoST2 set is kept next to the capped one as `st-eval-campaign-v1-dev.full`.

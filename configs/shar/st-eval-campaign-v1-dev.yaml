@@ -1,4 +1,4 @@
-# CoVoST2 X->en ST dev set, FULL `dev` split (no max_samples), for the directions the eval suite runs
+# CoVoST2 X->en ST dev set, `dev` split capped at 2000 per direction (max_samples, seeded shuffle at freeze time), for the directions the eval suite runs
 # (configs/eval/suites/v1.yaml and speechval-dev.yaml): de/es/fr/it/pt -> en. Twin of st-eval-campaign-v1.yaml,
 # which also has en_de; no suite runs it, so it has no dev twin here.
 # Reference is the translation (supervisions[0].text); custom.sentence is the source transcript for MetricX.
@@ -12,6 +12,7 @@ seed: 0
 input_cfg:
   - type: lhotse_shar
     shar_path: ${LOCAL_DATASETS_DIR}/covost2/de_en/dev
+    max_samples: 2000
     source_text_field: custom.sentence
     tags:
       task: st
@@ -21,6 +22,7 @@ input_cfg:
 
   - type: lhotse_shar
     shar_path: ${LOCAL_DATASETS_DIR}/covost2/fr_en/dev
+    max_samples: 2000
     source_text_field: custom.sentence
     tags:
       task: st
@@ -30,6 +32,7 @@ input_cfg:
 
   - type: lhotse_shar
     shar_path: ${LOCAL_DATASETS_DIR}/covost2/it_en/dev
+    max_samples: 2000
     source_text_field: custom.sentence
     tags:
       task: st
@@ -39,6 +42,7 @@ input_cfg:
 
   - type: lhotse_shar
     shar_path: ${LOCAL_DATASETS_DIR}/covost2/es_en/dev
+    max_samples: 2000
     source_text_field: custom.sentence
     tags:
       task: st
@@ -48,6 +52,7 @@ input_cfg:
 
   - type: lhotse_shar
     shar_path: ${LOCAL_DATASETS_DIR}/covost2/pt_en/dev
+    max_samples: 2000
     source_text_field: custom.sentence
     tags:
       task: st
