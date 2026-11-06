@@ -47,8 +47,8 @@ def _workbook(path: Path) -> Path:
         "librispeech": pd.DataFrame([{"model": ours, "wer_clean": 0.03, "wer_other": 0.05}]),
         "mcif": pd.DataFrame(
             [
-                {"model": ours, "task": "st", "lang": "de", "comet": 0.78},
-                {"model": ours, "task": "st", "lang": "it", "comet": 0.81},
+                {"model": ours, "task": "st", "lang": "de", "variant": "short", "comet": 0.78},
+                {"model": ours, "task": "st", "lang": "it", "variant": "short", "comet": 0.81},
             ]
         ),
     }

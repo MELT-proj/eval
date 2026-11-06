@@ -266,6 +266,8 @@ class Headline:
     metric: str
     task: str | None = None
     lang: str | None = None
+    #: ``short`` / ``long`` for MCIF, whose tracks are separate variants.
+    variant: str | None = None
     #: ``mean`` over every selected row (with ``n``), or ``first`` for one value.
     agg: str = "mean"
 
@@ -278,12 +280,12 @@ HEADLINES = [
     Headline("LibriSpeech other CER", "librispeech", "cer", lang="other", agg="first"),
     Headline("VoxPopuli WER", "voxpopuli", "wer"),
     Headline("VoxPopuli CER", "voxpopuli", "cer"),
-    Headline("MCIF ASR WER", "mcif", "wer", task="asr", lang="en", agg="first"),
-    Headline("MCIF ASR CER", "mcif", "cer", task="asr", lang="en", agg="first"),
+    Headline("MCIF ASR WER", "mcif", "wer", task="asr", lang="en", variant="short", agg="first"),
+    Headline("MCIF ASR CER", "mcif", "cer", task="asr", lang="en", variant="short", agg="first"),
     Headline("FLEURS En->X COMET", "fleurs-st-enx", "comet"),
     Headline("FLEURS X->En COMET", "fleurs-st-xen", "comet"),
-    Headline("MCIF ST COMET", "mcif", "comet", task="st"),
-    Headline("MCIF SQA BERTScore", "mcif", "bertscore", task="qa"),
+    Headline("MCIF ST COMET", "mcif", "comet", task="st", variant="short"),
+    Headline("MCIF SQA BERTScore", "mcif", "bertscore", task="qa", variant="short"),
     Headline("MCIF SQA long QA BERTScore", "mcif", "bertscore", task="qa_long", lang="en", agg="first"),
     Headline("MCIF SQA long SUM BERTScore", "mcif", "bertscore_sum", task="qa_long", lang="en", agg="first"),
 ]
@@ -329,6 +331,8 @@ def aggregate_table(normalized: pd.DataFrame) -> pd.DataFrame:
                 cell = cell[cell["task"] == head.task]
             if head.lang is not None:
                 cell = cell[cell["lang"] == head.lang]
+            if head.variant is not None:
+                cell = cell[cell["variant"] == head.variant]
             cell = cell[cell["metric"] == head.metric]
             values = cell["value_num"].dropna()
             if values.empty:
@@ -373,6 +377,8 @@ def coverage_table(normalized: pd.DataFrame) -> pd.DataFrame:
                 cell = cell[cell["task"] == head.task]
             if head.lang is not None:
                 cell = cell[cell["lang"] == head.lang]
+            if head.variant is not None:
+                cell = cell[cell["variant"] == head.variant]
             numeric = int(cell["value_num"].notna().sum())
             pending = int((cell["state"] == _PENDING).sum())
             state = "ok" if numeric else ("pending" if pending else "missing")

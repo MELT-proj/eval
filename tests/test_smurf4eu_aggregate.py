@@ -171,6 +171,17 @@ class TestTables:
         models = aggregate.models_table(normalized).set_index("model")
         assert "whisper-large-v3-translate" in models.loc["whisper-large-v3", "aliases"]
 
+    def test_mcif_headline_uses_the_short_track(self):
+        long = pd.DataFrame(
+            [
+                _row("mcif", "chunked_asr-mcif-short-fixed-en", "wer_mcif-short-fixed-en", 0.10),
+                _row("mcif", "chunked_asr-mcif-long-fixed-en", "wer_mcif-long-fixed-en", 0.90),
+            ],
+            columns=COLUMNS,
+        )
+        table = aggregate.aggregate_table(aggregate.normalize(long))
+        assert table.loc[0, "MCIF ASR WER"] == pytest.approx(0.10)
+
     def test_librispeech_conditions_are_columns_not_rows(self):
         long = pd.DataFrame(
             [

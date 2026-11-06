@@ -170,8 +170,8 @@ ENGLISH_BENCHMARKS = {
 }
 # MCIF chunked ST: label -> same tuple. COMET-22 DA of MCIF's official pipeline (mwerSegmenter re-segmentation).
 MCIF_BENCHMARKS = {
-    "EN→DE": ("mcif", "comet", {"task": "st", "lang": "de"}, 100.0, "COMET-22"),
-    "EN→IT": ("mcif", "comet", {"task": "st", "lang": "it"}, 100.0, "COMET-22"),
+    "EN→DE": ("mcif", "comet", {"task": "st", "lang": "de", "variant": "short"}, 100.0, "COMET-22"),
+    "EN→IT": ("mcif", "comet", {"task": "st", "lang": "it", "variant": "short"}, 100.0, "COMET-22"),
 }
 
 
