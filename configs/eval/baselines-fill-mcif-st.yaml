@@ -1,0 +1,28 @@
+# Fill the MCIF chunked-ST cells for the translation-capable baselines that
+# have no MCIF result yet. English audio into German and Italian, scored with
+# MCIF's official COMET-22 after re-segmentation.
+#
+#   python scripts/evaluate.py run configs/eval/baselines-fill-mcif-st.yaml --site artemis --wait
+#   python scripts/evaluate.py score configs/eval/baselines-fill-mcif-st.yaml --site artemis --wait
+
+name: baselines-fill-mcif-st
+output_dir: ${EVAL_ROOT}/baselines-fill-mcif-st
+
+models:
+  - name: gemma-4-e4b-it
+    model: melt/hf/gemma4
+    venv: /mnt/scratch-artemis/giuseppe/melt-data/pyextras/gemma-shim/activate
+    args: [-M, batch_size=8]
+
+  - name: phi-4-multimodal-instruct
+    model: melt/hf/phi4_multimodal
+    venv: /mnt/scratch-artemis/giuseppe/melt-data/pyextras/pre-tf5-shim/activate
+    args: [-M, batch_size=8]
+
+benchmarks:
+  - name: mcif
+    spec: configs/hf/mcif.yaml
+    post_venv: ${METRICS_VENV_PATH}
+    slices:
+      - {task: chunked_st, dataset_id: mcif-short-fixed-de, post_scorers: [melteval/mcif_scoring.py@mcif_official_trans_scorer]}  # fmt: skip
+      - {task: chunked_st, dataset_id: mcif-short-fixed-it, post_scorers: [melteval/mcif_scoring.py@mcif_official_trans_scorer]}  # fmt: skip

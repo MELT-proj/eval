@@ -74,8 +74,12 @@ class Qwen3OmniAPI(HFSpeechChatAPI):
         return _thinker_kwargs(config)
 
     def _sequences(self, output: Any) -> Any:
-        """``generate()`` returns ``(token_ids, audio)``; keep the ids."""
-        return output[0]
+        """Keep the token ids, whether ``generate()`` returned them alone or with audio.
+
+        transformers 4.x returned ``(token_ids, audio)`` even with
+        ``return_audio=False``; 5.x returns the ids alone in that case.
+        """
+        return output[0] if isinstance(output, tuple) else output
 
 
 def _thinker_kwargs(config: GenerateConfig) -> dict[str, Any]:
@@ -100,6 +104,6 @@ def _generate(model, processor, device: str, batch: list[_Request], prompts: lis
         prompts,
         gen_kwargs=_thinker_kwargs(batch[0].config),
         family=FAMILY,
-        sequences=lambda output: output[0],
+        sequences=lambda output: output[0] if isinstance(output, tuple) else output,
         processor_kwargs=PROCESSOR_KWARGS,
     )

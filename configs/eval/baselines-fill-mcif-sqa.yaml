@@ -1,0 +1,57 @@
+# Fill the MCIF SQA cells of the aggregated table for the chat-capable baselines.
+#
+# Short track: 220 questions per language (en audio; de/it ask and answer in that
+# language). Long track: whole talks, QA + summarisation, for the models that
+# accept long audio. Scored after generation by MCIF's official BERTScore.
+#
+#   python scripts/evaluate.py run configs/eval/baselines-fill-mcif-sqa.yaml --site artemis --wait
+#   python scripts/evaluate.py score configs/eval/baselines-fill-mcif-sqa.yaml --site artemis --wait
+
+name: baselines-fill-mcif-sqa
+output_dir: ${EVAL_ROOT}/baselines-fill-mcif-sqa
+
+models:
+  - name: qwen2-audio-7b-instruct
+    model: melt/hf/qwen2_audio
+    args: [-M, batch_size=8]
+    # 30 s audio window: the long track cannot be read.
+    skip: [mcif-long-*]
+
+  - name: qwen3-omni-30b-a3b-instruct
+    model: melt/hf/qwen3_omni
+    venv: /mnt/scratch-artemis/giuseppe/melt-data/pyextras/qwen3-shim/activate
+    args: [-M, batch_size=4]
+
+  - name: apertus-1.5-8b
+    model: melt/hf/apertus
+    venv: ${APERTUS_VENV_PATH}
+    args: [-M, batch_size=8]
+
+  - name: gemma-4-e4b-it
+    model: melt/hf/gemma4
+    venv: /mnt/scratch-artemis/giuseppe/melt-data/pyextras/gemma-shim/activate
+    args: [-M, batch_size=8]
+    # Its audio context is not documented for multi-minute talks; short only.
+    skip: [mcif-long-*]
+
+  - name: phi-4-multimodal-instruct
+    model: melt/hf/phi4_multimodal
+    venv: /mnt/scratch-artemis/giuseppe/melt-data/pyextras/pre-tf5-shim/activate
+    args: [-M, batch_size=8]
+    skip: [mcif-long-*]
+
+benchmarks:
+  - name: mcif
+    spec: configs/hf/mcif.yaml
+    post_venv: ${METRICS_VENV_PATH}
+    slices:
+      - {task: audio_chat, dataset_id: mcif-short-fixed-en, post_scorers: [melteval/mcif_scoring.py@mcif_official_qa_scorer]}  # fmt: skip
+      - {task: audio_chat, dataset_id: mcif-short-fixed-de, post_scorers: [melteval/mcif_scoring.py@mcif_official_qa_scorer]}  # fmt: skip
+      - {task: audio_chat, dataset_id: mcif-short-fixed-it, post_scorers: [melteval/mcif_scoring.py@mcif_official_qa_scorer]}  # fmt: skip
+      - task: audio_chat
+        dataset_id: mcif-long-fixed-en
+        args: [-M, batch_size=1, --max-tokens, "4096"]
+        time: "06:00:00"
+        post_scorers:
+          - melteval/mcif_scoring.py@mcif_official_qa_scorer
+          - melteval/mcif_scoring.py@mcif_official_sum_scorer

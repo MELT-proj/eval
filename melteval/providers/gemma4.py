@@ -65,7 +65,6 @@ class Gemma4API(HFSpeechChatAPI):
             prompts,
             gen_kwargs=_generate_kwargs(batch[0].config),
             family=self.family,
-            max_seconds=None,
         )
         return [extract_after_marker(c, r) for c, r in zip(completions, batch)]
 
