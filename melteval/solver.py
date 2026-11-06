@@ -89,9 +89,7 @@ def melt_prompt(
             tgt_lang=str(metadata.get("tgt_lang") or ""),
             instruction=metadata.get("instruction"),
         )
-        chat_tokenizer = (
-            _tokenizer_for(tokenizer or state.model.name) if spec.apply_chat_template else None
-        )
+        chat_tokenizer = _tokenizer_for(tokenizer or state.model.name) if spec.apply_chat_template else None
         formatted = apply_generation_format(prompt, spec, chat_tokenizer)
 
         content: list = [ContentText(text=formatted)]
@@ -171,7 +169,11 @@ def smurf_prompt(
 
 
 @solver
-def instruction_prompt(instruction: str | None = None, mcq_instruction: str | None = None) -> Solver:
+def instruction_prompt(
+    instruction: str | None = None,
+    mcq_instruction: str | None = None,
+    instruction_override: bool = False,
+) -> Solver:
     """Build the model input for a baseline that applies its own chat template.
 
     For off-the-shelf speech LLMs whose provider wraps the prompt in the model's
@@ -187,6 +189,10 @@ def instruction_prompt(instruction: str | None = None, mcq_instruction: str | No
             (``"a", "b" or "c"``, see :func:`melteval.prompt.quoted_options`),
             for a model whose authors lay the options out their own way
             (currently only DeSTA2.5, in ``baselines-v1.yaml``).
+        instruction_override: Use *instruction* even for samples that carry one
+            of their own. Needed by a non-chat model whose input is a fixed
+            control string (Canary's ``<task>|<src>|<tgt>``) while the corpus
+            ships free-text prompts (MCIF).
 
     Returns:
         A solver that replaces the message list and generates.
@@ -201,6 +207,7 @@ def instruction_prompt(instruction: str | None = None, mcq_instruction: str | No
             "argument" if instruction is not None else None,
             {"provider": "hf", "source": "argument"},
             mcq_instruction,
+            instruction_override,
         )
 
     return solve
@@ -214,6 +221,7 @@ async def _instruction_solve(
     source: str | None,
     recorded: dict,
     mcq_template: str | None = None,
+    override: bool = False,
 ) -> TaskState:
     """Render a bare instruction for *state*, attach its audio, and generate.
 
@@ -239,7 +247,7 @@ async def _instruction_solve(
     instruction_ignored = ignores_instruction(model)
 
     sample_instruction = metadata.get("instruction")
-    sample_template = sample_instruction or template
+    sample_template = template if override and template else (sample_instruction or template)
     if mcq_template and state.choices:
         question = metadata.get("question")
         if not question:
@@ -284,9 +292,14 @@ async def _instruction_solve(
 
     recorded = dict(recorded)
     recorded["instruction"] = sample_template
-    recorded["instruction_source"] = (
-        source if source == "mcq_instruction" else "sample" if sample_instruction else (source or "sample")
-    )
+    if source == "mcq_instruction":
+        recorded["instruction_source"] = source
+    elif override and template:
+        recorded["instruction_source"] = "argument_override"
+    elif sample_instruction:
+        recorded["instruction_source"] = "sample"
+    else:
+        recorded["instruction_source"] = source or "sample"
     # The chat template is the model's, applied in the provider. Recorded so
     # a log makes clear that its absence here is a decision, not an omission.
     recorded["apply_chat_template"] = False

@@ -85,7 +85,7 @@ forgotten:
 | `whisper-large-v3` | FLEURS En→X, MCIF ST, MCIF SQA | Whisper translates only into English and has no chat/QA path. Its X→En numbers live under `whisper-large-v3-translate`, the same checkpoint in translate mode; the plots alias the two. |
 | `whisper-large-v3-translate` | everything except FLEURS X→En | Translate-only mode. |
 | `qwen2-audio-7b-instruct` | MCIF SQA (short and long) | Its 30 s audio window rejects MCIF's longer clips (a 34.1 s clip aborts the task). |
-| `canary-1b-v2` | MCIF ASR/ST/SQA | Its provider needs a `<task>\|<src>\|<tgt>` spec; MCIF ships free-text prompts. |
+| `canary-1b-v2` | MCIF SQA | Not a chat model. Its MCIF ASR/ST are filled by `baselines-fill-mcif-canary.yaml`, which overrides MCIF's free-text prompt with the `<task>\|<src>\|<tgt>` spec (`instruction_override`). |
 | `gemma-4-e4b-it`, `phi-4-multimodal-instruct` | MCIF SQA long track | Skipped by design: the short track is filled; their audio context is not documented for multi-minute talks. |
 
 **Excluded on purpose**

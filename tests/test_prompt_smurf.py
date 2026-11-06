@@ -119,9 +119,7 @@ class TestRenderSmurfPrompt:
             render_smurf_prompt("Transcribe {speaker}: ", task="asr", lang="en")
 
     def test_language_name_matches_the_one_melt_prompts_use(self):
-        assert render_smurf_prompt("Transcribe this {lang} audio: ", lang="en") == (
-            "Transcribe this English audio: "
-        )
+        assert render_smurf_prompt("Transcribe this {lang} audio: ", lang="en") == ("Transcribe this English audio: ")
 
     def test_unsupported_language_code_is_an_error(self):
         with pytest.raises(ValueError, match="Unsupported language ISO code"):
@@ -528,9 +526,7 @@ class TestInstructionSolverThroughRealInspect(TestSmurfSolverThroughRealInspect)
         )
 
     def test_mcq_instruction_replaces_the_options_layout_and_escapes_the_question(self, tmp_path):
-        log = self._run(
-            tmp_path, self._mcq_sample(), mcq_instruction="{question}\nThe answer could be: {options}"
-        )
+        log = self._run(tmp_path, self._mcq_sample(), mcq_instruction="{question}\nThe answer could be: {options}")
 
         [message] = log.samples[0].messages[:1]
         text = "".join(c.text for c in message.content if getattr(c, "type", None) == "text")
@@ -538,9 +534,7 @@ class TestInstructionSolverThroughRealInspect(TestSmurfSolverThroughRealInspect)
         assert log.samples[0].store["melteval:format_spec"]["instruction_source"] == "mcq_instruction"
 
     def test_mcq_instruction_leaves_a_sample_without_options_alone(self, tmp_path):
-        log = self._run(
-            tmp_path, self._sample(instruction="Answer."), mcq_instruction="{question} {options}"
-        )
+        log = self._run(tmp_path, self._sample(instruction="Answer."), mcq_instruction="{question} {options}")
 
         [message] = log.samples[0].messages[:1]
         text = "".join(c.text for c in message.content if getattr(c, "type", None) == "text")
@@ -558,6 +552,32 @@ class TestInstructionSolverThroughRealInspect(TestSmurfSolverThroughRealInspect)
         assert spec["instruction"] == "Transcribe this audio."
         assert spec["instruction_source"] == "argument"
         assert spec["apply_chat_template"] is False
+
+    def test_instruction_override_replaces_a_sample_instruction(self, tmp_path):
+        log = self._run(
+            tmp_path,
+            self._sample(instruction="Translate this audio into German."),
+            instruction="st|en|de",
+            instruction_override=True,
+        )
+
+        [message] = log.samples[0].messages[:1]
+        text = "".join(c.text for c in message.content if getattr(c, "type", None) == "text")
+        assert text == "st|en|de"
+        spec = log.samples[0].store["melteval:format_spec"]
+        assert spec["instruction_source"] == "argument_override"
+
+    def test_without_the_override_a_sample_instruction_still_wins(self, tmp_path):
+        log = self._run(
+            tmp_path,
+            self._sample(instruction="Translate this audio into German."),
+            instruction="st|en|de",
+        )
+
+        [message] = log.samples[0].messages[:1]
+        text = "".join(c.text for c in message.content if getattr(c, "type", None) == "text")
+        assert text == "Translate this audio into German."
+        assert log.samples[0].store["melteval:format_spec"]["instruction_source"] == "sample"
 
     def test_a_benchmark_instruction_with_the_audio_token_renders(self, tmp_path):
         """Every AIR-Bench/MCIF sample carries `{audio_token}`; without stripping

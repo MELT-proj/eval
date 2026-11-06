@@ -35,7 +35,8 @@ SOLVERS = {
     "smurf": (smurf_prompt, {"instruction", "prompt_config"}),
     # The prompt is just the instruction text: the model's provider wraps it in the chat template and adds the audio.
     # `mcq_instruction` is optional: it lets a model show multiple-choice questions in its own format (DeSTA2.5 does).
-    "hf": (instruction_prompt, {"instruction", "mcq_instruction"}),
+    # `instruction_override` forces the argument over a corpus's own free-text prompt (Canary on MCIF).
+    "hf": (instruction_prompt, {"instruction", "mcq_instruction", "instruction_override"}),
 }
 
 
@@ -53,6 +54,7 @@ def speech(
     tokenizer: str | None = None,
     instruction: str | None = None,
     instruction_file: str | None = None,
+    instruction_override: bool = False,
     mcq_instruction: str | None = None,
     prompt_config: str | None = None,
     normalizer: str | None = None,
@@ -98,6 +100,10 @@ def speech(
             *instruction*.
         mcq_instruction: ``hf`` only. Template (``{question}``, ``{options}``)
             that replaces the instruction of samples with options.
+        instruction_override: ``hf`` only. Use *instruction* even for samples
+            that carry one of their own, for a model whose input is a fixed
+            control string (Canary's ``<task>|<src>|<tgt>``) on a corpus that
+            ships free-text prompts (MCIF).
         prompt_config: ``smurf`` only. SMURF data/inference config to read the
             instruction (``tags.context``) from.
         normalizer: ``task_filter="asr"`` only. Text normalizer for the WER/CER
@@ -175,9 +181,7 @@ def speech(
         instruction = Path(instruction_file).read_text(encoding="utf-8")
 
     filters = {"task": task_filter, "lang": lang, "dataset_id": dataset_id, "limit": limit}
-    dataset = (
-        spec_dataset(spec, **filters) if spec else frozen_dataset(frozen_set, **filters)
-    )
+    dataset = spec_dataset(spec, **filters) if spec else frozen_dataset(frozen_set, **filters)
 
     name = f"speech-{task_filter or 'all'}"
     # dataset_id and lang fold into the task name (not just left in the task
@@ -199,6 +203,7 @@ def speech(
             format_config=format_config,
             tokenizer=tokenizer,
             instruction=instruction,
+            instruction_override=instruction_override,
             prompt_config=prompt_config,
             mcq_instruction=mcq_instruction,
         ),
@@ -215,6 +220,7 @@ def _prompt_solver(
     instruction: str | None,
     prompt_config: str | None,
     mcq_instruction: str | None = None,
+    instruction_override: bool = False,
 ) -> Solver:
     """Build the prompt solver for *prompt_style*.
 
@@ -238,11 +244,12 @@ def _prompt_solver(
         "instruction": instruction,
         "prompt_config": prompt_config,
         "mcq_instruction": mcq_instruction,
+        # Only "given" when asked for; False is the default everywhere and must
+        # not make a MELT/SMURF run look like it passed an hf-only argument.
+        "instruction_override": True if instruction_override else None,
     }
 
-    misplaced = [
-        name for name, value in given.items() if value is not None and name not in valid_kwargs
-    ]
+    misplaced = [name for name, value in given.items() if value is not None and name not in valid_kwargs]
 
     if misplaced:
         owners = [style for style, (_, kwargs) in SOLVERS.items() if misplaced[0] in kwargs]

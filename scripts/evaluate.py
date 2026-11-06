@@ -298,11 +298,7 @@ def plan(
                 # needs one from the model entry -- except for MELT, whose
                 # prompt comes from the checkpoint's training config, and for
                 # a provider that ignores the prompt altogether (Whisper).
-                if (
-                    bench.get("needs_instruction")
-                    and family in ("hf", "smurf")
-                    and not ignores_instruction(model)
-                ):
+                if bench.get("needs_instruction") and family in ("hf", "smurf") and not ignores_instruction(model):
                     instruction = (model_cfg.get("instruction") or {}).get(task)
                     if isinstance(instruction, dict):
                         # One literal instruction per dataset_id, for a model whose environment
@@ -318,6 +314,10 @@ def plan(
                         args += ["-T", f"instruction_file={write_instruction(config['_output_dir'], instruction)}"]
                     else:
                         args += ["-T", f"instruction={json.dumps(instruction)}"]
+                    if model_cfg.get("instruction_override"):
+                        # Use this instruction even where the corpus ships its own
+                        # (Canary's spec on MCIF's free-text prompts).
+                        args += ["-T", "instruction_override=true"]
 
                 # Optional per-model MCQ prompt template ({question}, {options}), e.g. DeSTA2.5's.
                 mcq_instruction = model_cfg.get("mcq_instruction")
