@@ -44,12 +44,7 @@ def _workbook(path: Path) -> Path:
             ]
         ),
         "fleurs-st-enx": pd.DataFrame([{"model": ours, "lang": "de", "comet": 0.87}]),
-        "librispeech": pd.DataFrame(
-            [
-                {"model": ours, "lang": "clean", "wer": 0.03},
-                {"model": ours, "lang": "other", "wer": 0.05},
-            ]
-        ),
+        "librispeech": pd.DataFrame([{"model": ours, "wer_clean": 0.03, "wer_other": 0.05}]),
         "mcif": pd.DataFrame(
             [
                 {"model": ours, "task": "st", "lang": "de", "comet": 0.78},

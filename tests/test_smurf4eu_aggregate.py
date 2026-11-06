@@ -134,6 +134,9 @@ class TestTables:
                 _row("voxpopuli", "asr-voxpopuli-en", "cer_en", 0.05),
                 _row("voxpopuli", "asr-voxpopuli-de", "cer_de", 0.10),
                 _row("mcif", "audio_chat-mcif-short-fixed-en", "official_bertscore", 0.25),
+                _row("mcif", "audio_chat-mcif-short-fixed-de", "official_bertscore", 0.35),
+                _row("mcif", "chunked_st-mcif-short-fixed-de", "official_trans_comet", 0.70),
+                _row("mcif", "chunked_st-mcif-short-fixed-it", "official_trans_comet", 0.80),
             ],
             columns=COLUMNS,
         )
@@ -143,11 +146,47 @@ class TestTables:
         table = aggregate.aggregate_table(self._normalized())
         assert table.loc[0, "VoxPopuli WER"] == pytest.approx(0.15)
         assert table.loc[0, "VoxPopuli WER n"] == 2
-        assert table.loc[0, "MCIF SQA en BERTScore"] == pytest.approx(0.25)
+        assert table.loc[0, "MCIF SQA BERTScore"] == pytest.approx(0.30)
+        assert table.loc[0, "MCIF SQA BERTScore n"] == 2
+        assert table.loc[0, "MCIF ST COMET"] == pytest.approx(0.75)
+        assert table.loc[0, "MCIF ST COMET n"] == 2
 
     def test_missing_headline_is_nan_not_zero(self):
         table = aggregate.aggregate_table(self._normalized())
         assert pd.isna(table.loc[0, "FLEURS En->X COMET"])
+
+    def test_whisper_translate_is_merged_into_one_model(self):
+        long = pd.DataFrame(
+            [
+                _row("voxpopuli", "asr-voxpopuli-en", "wer_en", 0.10, model="whisper-large-v3"),
+                _row("fleurs24-st-xen", "st-fleurs-de_en", "comet", 0.80, model="whisper-large-v3-translate"),
+            ],
+            columns=COLUMNS,
+        )
+        normalized = aggregate.normalize(long)
+        assert set(normalized["model"]) == {"whisper-large-v3"}
+        table = aggregate.aggregate_table(normalized)
+        assert table.loc[0, "VoxPopuli WER"] == pytest.approx(0.10)
+        assert table.loc[0, "FLEURS X->En COMET"] == pytest.approx(0.80)
+        models = aggregate.models_table(normalized).set_index("model")
+        assert "whisper-large-v3-translate" in models.loc["whisper-large-v3", "aliases"]
+
+    def test_librispeech_conditions_are_columns_not_rows(self):
+        long = pd.DataFrame(
+            [
+                _row("librispeech", "asr-librispeech-test-clean", "wer_en", 0.03),
+                _row("librispeech", "asr-librispeech-test-other", "wer_en", 0.06),
+                _row("librispeech", "asr-librispeech-test-clean", "cer_en", 0.01),
+                _row("librispeech", "asr-librispeech-test-other", "cer_en", 0.02),
+            ],
+            columns=COLUMNS,
+        )
+        tab = aggregate.dataset_tab(aggregate.normalize(long), "librispeech")
+        assert tab["model"].tolist() == ["m"]
+        assert tab.loc[0, "wer_clean"] == pytest.approx(0.03)
+        assert tab.loc[0, "wer_other"] == pytest.approx(0.06)
+        assert tab.loc[0, "cer_clean"] == pytest.approx(0.01)
+        assert "lang" not in tab.columns
 
     def test_coverage_distinguishes_filled_pending_missing(self):
         long = pd.DataFrame(

@@ -10,13 +10,16 @@ Output (``--out``):
 
 * ``aggregated.xlsx``
   - ``aggregate``: one row per model, one column per headline metric, with the
-    number of languages each mean covers (``*_n``).
-  - ``models``: kind/run/step/campaign for every model.
+    number of languages each mean covers (``*_n``). MCIF ST and MCIF SQA are
+    each a single column, averaged over their languages.
+  - ``models``: kind/run/step/campaign for every model, plus any ``aliases``
+    merged into it.
   - ``coverage``: for each model x dataset x headline metric, whether a numeric
     value exists, is still ``pending`` or is absent entirely.
   - one tab per dataset (``fleurs-st-enx``, ``fleurs-st-xen``, ``fleurs-asr``,
     ``voxpopuli``, ``librispeech``, ``mcif``), disaggregated by language (or by
-    LibriSpeech condition / MCIF task) with every metric the scorer logged.
+    MCIF task) with every metric the scorer logged. LibriSpeech's two
+    conditions are columns (``wer_clean`` / ``wer_other``), not rows.
 * ``aggregated_long.csv``: the same rows in tidy form, for plotting or for a
   different aggregation.
 
@@ -28,6 +31,8 @@ Conventions:
   not multiply by 100 (the plots do).
 * The ``aggregate`` tab collapses per-language values with a macro mean and
   records ``n``; it never pools error counts, which the long table does not carry.
+* ``whisper-large-v3`` and ``whisper-large-v3-translate`` are one checkpoint in
+  two modes and are reported as one row (see ``MODEL_ALIASES``).
 
 AIR-Bench and CoVoST2 are intentionally not aggregated.
 """
@@ -141,6 +146,14 @@ _METRIC_ALIASES = {
     "chrf_mcif-short-fixed-it": "chrf",
 }
 
+#: Models that are the same checkpoint in two modes. The workbook reports one
+#: row and coalesces the metrics: Whisper large-v3 transcribes and, in its
+#: translate mode, translates into English. It has no other translation
+#: direction, so the two rows never disagree on a cell.
+MODEL_ALIASES = {
+    "whisper-large-v3-translate": "whisper-large-v3",
+}
+
 #: ``bleu_<lang>`` / ``chrf_<lang>`` / ``spbleu_<lang>`` / ``wer_<lang>`` / ``cer_<lang>``.
 _LANG_METRIC = re.compile(r"^(bleu|chrf|spbleu|wer|cer)_([a-z]{2})$")
 
@@ -197,6 +210,7 @@ def normalize(long: pd.DataFrame) -> pd.DataFrame:
         raise ValueError(f"not a results_long table: missing columns {sorted(missing)}")
 
     frame = long.copy()
+    frame["model"] = frame["model"].map(lambda model: MODEL_ALIASES.get(str(model), model))
     frame["value_num"] = pd.to_numeric(frame["value"], errors="coerce")
     frame["state"] = frame["value"].map(lambda value: "pending" if str(value) == _PENDING else "ok")
     frame["dataset"] = None
@@ -268,11 +282,8 @@ HEADLINES = [
     Headline("MCIF ASR CER", "mcif", "cer", task="asr", lang="en", agg="first"),
     Headline("FLEURS En->X COMET", "fleurs-st-enx", "comet"),
     Headline("FLEURS X->En COMET", "fleurs-st-xen", "comet"),
-    Headline("MCIF ST EN->DE COMET", "mcif", "comet", task="st", lang="de", agg="first"),
-    Headline("MCIF ST EN->IT COMET", "mcif", "comet", task="st", lang="it", agg="first"),
-    Headline("MCIF SQA en BERTScore", "mcif", "bertscore", task="qa", lang="en", agg="first"),
-    Headline("MCIF SQA de BERTScore", "mcif", "bertscore", task="qa", lang="de", agg="first"),
-    Headline("MCIF SQA it BERTScore", "mcif", "bertscore", task="qa", lang="it", agg="first"),
+    Headline("MCIF ST COMET", "mcif", "comet", task="st"),
+    Headline("MCIF SQA BERTScore", "mcif", "bertscore", task="qa"),
     Headline("MCIF SQA long QA BERTScore", "mcif", "bertscore", task="qa_long", lang="en", agg="first"),
     Headline("MCIF SQA long SUM BERTScore", "mcif", "bertscore_sum", task="qa_long", lang="en", agg="first"),
 ]
@@ -284,12 +295,13 @@ def _step(model: str) -> int | None:
 
 
 def models_table(long: pd.DataFrame) -> pd.DataFrame:
-    """One row per model with kind, run, step and the campaign it came from."""
+    """One row per model with kind, run, step, campaign and any merged aliases."""
     first = long.drop_duplicates("model").set_index("model")
     rows = []
     for model, row in first.iterrows():
         step = _step(model)
         run = re.sub(r"-?step-\d+$", "", model) or model
+        aliases = sorted(alias for alias, canonical in MODEL_ALIASES.items() if canonical == model)
         rows.append(
             {
                 "model": model,
@@ -297,6 +309,7 @@ def models_table(long: pd.DataFrame) -> pd.DataFrame:
                 "run": run if run != model else str(row.get("source", model)),
                 "step": step,
                 "campaign": row.get("source", ""),
+                "aliases": ", ".join(aliases),
             }
         )
     table = pd.DataFrame(rows)
@@ -333,10 +346,18 @@ def aggregate_table(normalized: pd.DataFrame) -> pd.DataFrame:
 
 
 def dataset_tab(normalized: pd.DataFrame, dataset: str) -> pd.DataFrame:
-    """Model x language (or condition/task) for one dataset, every canonical metric."""
+    """Model x language (or condition/task) for one dataset, every canonical metric.
+
+    LibriSpeech has only two conditions, so they are spread across columns
+    (``wer_clean``, ``wer_other``, ...) instead of doubling every row.
+    """
     part = normalized[normalized["dataset"] == dataset].copy()
     if part.empty:
         return pd.DataFrame()
+    if dataset == "librispeech":
+        part["metric"] = part["metric"] + "_" + part["lang"].astype(str)
+        table = part.pivot_table(index=["model"], columns="metric", values="value_num", aggfunc="first")
+        return table.reset_index().sort_values("model")
     index = ["model", "task", "lang", "variant"] if dataset == "mcif" else ["model", "lang"]
     table = part.pivot_table(index=index, columns="metric", values="value_num", aggfunc="first")
     return table.reset_index().sort_values(index)

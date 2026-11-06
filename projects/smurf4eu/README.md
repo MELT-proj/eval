@@ -26,10 +26,10 @@ Writes `aggregated.xlsx` and `aggregated_long.csv` into `--out`.
 
 | Sheet | Contents |
 | --- | --- |
-| `aggregate` | One row per model, one column per headline metric: ASR WER/CER (LibriSpeech clean/other, VoxPopuli, MCIF), ST COMET-22 (FLEURS both directions, MCIF EN→DE/IT), MCIF SQA BERTScore. |
-| `models` | Kind (checkpoint/baseline), run, step and source campaign for every model. |
+| `aggregate` | One row per model, one column per headline metric: ASR WER/CER (LibriSpeech clean/other, VoxPopuli, MCIF), ST COMET-22 (FLEURS both directions, MCIF), MCIF SQA BERTScore. MCIF ST and MCIF SQA are one column each, macro-averaged over their languages (`*_n` records how many). |
+| `models` | Kind (checkpoint/baseline), run, step, source campaign and `aliases` for every model. |
 | `coverage` | For every model x headline cell: `ok`, `pending` or `missing`. |
-| `fleurs-st-enx`, `fleurs-st-xen`, `fleurs-asr`, `voxpopuli`, `librispeech`, `mcif` | Disaggregated by language (or LibriSpeech condition / MCIF task) with every metric the scorer logged, so a different aggregate (geometric mean, language subset, pooled WER) can be built without re-reading logs. |
+| `fleurs-st-enx`, `fleurs-st-xen`, `fleurs-asr`, `voxpopuli`, `librispeech`, `mcif` | Disaggregated by language (or MCIF task) with every metric the scorer logged, so a different aggregate (geometric mean, language subset, pooled WER) can be built without re-reading logs. LibriSpeech is the exception: its two conditions are columns (`wer_clean` / `wer_other`, `cer_clean` / `cer_other`), not rows. |
 
 Conventions: WER/CER are fractions on normalized text; the MCIF preamble-stripped
 WER is kept next to the raw one. The `aggregate` tab uses a macro mean over
@@ -93,8 +93,9 @@ forgotten:
 - DeSTA2.5-Audio: deferred.
 - AIR-Bench and CoVoST2: not part of this table.
 
-Note that `whisper-large-v3` and `whisper-large-v3-translate` are two rows for
-one checkpoint; a reader who wants "Whisper" should combine them (the plots do).
+Note that `whisper-large-v3` and `whisper-large-v3-translate` are one checkpoint
+in two modes; the workbook merges them into one row (the original name is kept
+in `models.aliases`), as do the plots.
 
 ## Known timeouts and how they were finished
 

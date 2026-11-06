@@ -165,13 +165,13 @@ MODELS: dict[str, ModelSpec] = {
 
 # English-only benchmarks: label -> (sheet, row filter, metric, scale, ylabel).
 ENGLISH_BENCHMARKS = {
-    "LibriSpeech clean": ("librispeech", {"lang": "clean"}, "wer", 100.0, "WER (%)"),
-    "LibriSpeech other": ("librispeech", {"lang": "other"}, "wer", 100.0, "WER (%)"),
+    "LibriSpeech clean": ("librispeech", "wer_clean", {}, 100.0, "WER (%)"),
+    "LibriSpeech other": ("librispeech", "wer_other", {}, 100.0, "WER (%)"),
 }
 # MCIF chunked ST: label -> same tuple. COMET-22 DA of MCIF's official pipeline (mwerSegmenter re-segmentation).
 MCIF_BENCHMARKS = {
-    "EN→DE": ("mcif", {"task": "st", "lang": "de"}, "comet", 100.0, "COMET-22"),
-    "EN→IT": ("mcif", {"task": "st", "lang": "it"}, "comet", 100.0, "COMET-22"),
+    "EN→DE": ("mcif", "comet", {"task": "st", "lang": "de"}, 100.0, "COMET-22"),
+    "EN→IT": ("mcif", "comet", {"task": "st", "lang": "it"}, 100.0, "COMET-22"),
 }
 
 
@@ -253,7 +253,7 @@ def load_english_benchmarks(workbook: Path, benchmarks: dict = ENGLISH_BENCHMARK
 
     Args:
         workbook: Path to ``aggregated.xlsx``.
-        benchmarks: Label -> (sheet, row filter, metric, scale, metric label).
+        benchmarks: Label -> (sheet, metric, row filters, scale, metric label).
 
     Returns:
         pd.DataFrame: Columns ``benchmark``, ``model``, ``value``, ``ylabel``.
@@ -261,8 +261,8 @@ def load_english_benchmarks(workbook: Path, benchmarks: dict = ENGLISH_BENCHMARK
     """
     book = pd.ExcelFile(workbook)
     out = []
-    for label, (sheet, filters, metric, scale, ylabel) in benchmarks.items():
-        frame = _tab(book, sheet, ["model", "lang", "task", metric])
+    for label, (sheet, metric, filters, scale, ylabel) in benchmarks.items():
+        frame = _tab(book, sheet, ["model", "task", "lang", metric])
         if frame.empty or metric not in frame:
             continue
         rows = frame
