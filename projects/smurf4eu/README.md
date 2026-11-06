@@ -101,9 +101,11 @@ in `models.aliases`), as do the plots.
 
 Two 24 h-queue slices hit their wall clock while the table was being filled:
 
-- **Qwen3 FLEURS ASR** completed 15,316/19,463 samples in 4 h. The six missing
-  languages (el, et, ga, lt, mt, sl) are re-run as their own slices by
-  `baselines-fill-asr-qwen3.yaml`, four at a time on the H200 partition.
+- **Qwen3 FLEURS ASR** completed 15,316/19,463 samples in 4 h. A timed-out log
+  is not a successful log, so none of it is reusable; the whole benchmark is
+  re-run one language per slice by `baselines-fill-asr-qwen3.yaml`, four at a
+  time on the H200 partition. Re-running the config skips languages that
+  already have a successful log.
 - **Apertus MCIF long-track SQA** reached 290/320 in 3 h 30. Retried with the
   slice's limit raised from 3 h 30 to 6 h.
 

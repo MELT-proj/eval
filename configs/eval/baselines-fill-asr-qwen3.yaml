@@ -1,10 +1,11 @@
-# Finish the Qwen3 FLEURS-ASR log that hit the wall clock.
+# Qwen3 FLEURS ASR, one language per slice.
 #
-# The one-log run completed 15,316 of 19,463 samples in 4 h. Only the six
-# languages below were incomplete (Greek 2/650, Dutch 364/1000, Estonian,
-# Irish, Maltese and Slovenian absent), so they are re-run as their own
-# slices: four fit on the H200 partition at once, and the per-language logs
-# merge back into the same `fleurs-asr` tab.
+# The one-log run (baselines-fill-asr.yaml) completed 15,316 of 19,463 samples
+# in 4 h and was killed. A timed-out log is not a successful log, so those
+# samples are not reusable: the whole benchmark is re-run here, one language
+# per slice, four at a time on the H200 partition. `run` skips any language
+# that already has a successful log, so re-running this config only fills the
+# missing ones.
 #
 #   MELT_PARTITION=h200 MELT_QOS=gpu-h200 \
 #     python scripts/evaluate.py run configs/eval/baselines-fill-asr-qwen3.yaml --site artemis
@@ -25,9 +26,27 @@ benchmarks:
     frozen_set: /mnt/scratch-artemis/giuseppe/melt-data/eval-sets/fleurs24-asr-test
     needs_instruction: true
     slices:
+      - {task: asr, lang: bg}
+      - {task: asr, lang: cs}
+      - {task: asr, lang: da}
+      - {task: asr, lang: de}
       - {task: asr, lang: el}
+      - {task: asr, lang: en}
+      - {task: asr, lang: es}
       - {task: asr, lang: et}
+      - {task: asr, lang: fi}
+      - {task: asr, lang: fr}
       - {task: asr, lang: ga}
+      - {task: asr, lang: hr}
+      - {task: asr, lang: hu}
+      - {task: asr, lang: it}
       - {task: asr, lang: lt}
+      - {task: asr, lang: lv}
       - {task: asr, lang: mt}
+      - {task: asr, lang: nl}
+      - {task: asr, lang: pl}
+      - {task: asr, lang: pt}
+      - {task: asr, lang: ro}
+      - {task: asr, lang: sk}
       - {task: asr, lang: sl}
+      - {task: asr, lang: sv}
