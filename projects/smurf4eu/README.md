@@ -68,3 +68,44 @@ python projects/smurf4eu/plotting/plot_eval.py \
 ```
 
 See [plotting/README.md](plotting/README.md).
+
+## Baseline coverage
+
+The eight baselines were filled with the campaigns in `configs/eval/`
+(`baselines-comet-backfill`, `baselines-fill-mcif-sqa`,
+`baselines-fill-mcif-st`, `baselines-fill-asr`, plus
+`baselines-fill-asr-qwen3` for the languages Qwen3's one-log run left
+unfinished). A cell is empty for one of two reasons, never because a run was
+forgotten:
+
+**Not applicable to the model**
+
+| Model | Empty cells | Why |
+| --- | --- | --- |
+| `whisper-large-v3` | FLEURS En→X, MCIF ST, MCIF SQA | Whisper translates only into English and has no chat/QA path. Its X→En numbers live under `whisper-large-v3-translate`, the same checkpoint in translate mode; the plots alias the two. |
+| `whisper-large-v3-translate` | everything except FLEURS X→En | Translate-only mode. |
+| `qwen2-audio-7b-instruct` | MCIF SQA (short and long) | Its 30 s audio window rejects MCIF's longer clips (a 34.1 s clip aborts the task). |
+| `canary-1b-v2` | MCIF ASR/ST/SQA | Its provider needs a `<task>\|<src>\|<tgt>` spec; MCIF ships free-text prompts. |
+| `gemma-4-e4b-it`, `phi-4-multimodal-instruct` | MCIF SQA long track | Skipped by design: the short track is filled; their audio context is not documented for multi-minute talks. |
+
+**Excluded on purpose**
+
+- DeSTA2.5-Audio: deferred.
+- AIR-Bench and CoVoST2: not part of this table.
+
+Note that `whisper-large-v3` and `whisper-large-v3-translate` are two rows for
+one checkpoint; a reader who wants "Whisper" should combine them (the plots do).
+
+## Known timeouts and how they were finished
+
+Two 24 h-queue slices hit their wall clock while the table was being filled:
+
+- **Qwen3 FLEURS ASR** completed 15,316/19,463 samples in 4 h. The six missing
+  languages (el, et, ga, lt, mt, sl) are re-run as their own slices by
+  `baselines-fill-asr-qwen3.yaml`, four at a time on the H200 partition.
+- **Apertus MCIF long-track SQA** reached 290/320 in 3 h 30. Retried with the
+  slice's limit raised from 3 h 30 to 6 h.
+
+Both write into the same `fleurs-asr` / `mcif` tabs as the rest of the
+campaign; nothing needs a separate merge step.
+

@@ -19,6 +19,7 @@ models:
 
   - name: qwen3-omni-30b-a3b-instruct
     model: melt/hf/qwen3_omni
+    venv: /mnt/scratch-artemis/giuseppe/melt-data/pyextras/qwen3-shim/activate
     args: [-M, batch_size=4]
 
   - name: apertus-1.5-8b
@@ -50,7 +51,7 @@ benchmarks:
       - task: audio_chat
         dataset_id: mcif-long-fixed-en
         args: [-M, batch_size=1, --max-tokens, "4096"]
-        time: "03:30:00"
+        time: "06:00:00"
         post_scorers:
           - melteval/mcif_scoring.py@mcif_official_qa_scorer
           - melteval/mcif_scoring.py@mcif_official_sum_scorer

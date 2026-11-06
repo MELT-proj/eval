@@ -17,6 +17,7 @@ models:
 
   - name: qwen3-omni-30b-a3b-instruct
     model: melt/hf/qwen3_omni
+    venv: /mnt/scratch-artemis/giuseppe/melt-data/pyextras/qwen3-shim/activate
     args: [-M, batch_size=4]
     skip: [mcif, librispeech, librispeech-other]
     instruction:
@@ -34,6 +35,19 @@ models:
     instruction:
       asr: "Transcribe this {lang} audio. Output only the transcription."
 
+  # MCIF ASR only: these two already have FLEURS ASR from the October campaign.
+  - name: gemma-4-e4b-it
+    model: melt/hf/gemma4
+    venv: /mnt/scratch-artemis/giuseppe/melt-data/pyextras/gemma-shim/activate
+    args: [-M, batch_size=8]
+    skip: [fleurs24-asr-test, librispeech]
+
+  - name: phi-4-multimodal-instruct
+    model: melt/hf/phi4_multimodal
+    venv: /mnt/scratch-artemis/giuseppe/melt-data/pyextras/pre-tf5-shim/activate
+    args: [-M, batch_size=8]
+    skip: [fleurs24-asr-test, librispeech]
+
 benchmarks:
   - name: fleurs24-asr-test
     frozen_set: /mnt/scratch-artemis/giuseppe/melt-data/eval-sets/fleurs24-asr-test
@@ -41,17 +55,14 @@ benchmarks:
     slices:
       - {task: asr}
 
+  # The frozen set, not the Hub spec: the October baselines used this one and
+  # it is already staged on the cluster.
   - name: librispeech
-    spec: configs/hf/librispeech-hf-test-clean.yaml
+    frozen_set: /mnt/scratch-artemis/giuseppe/melt-data/eval-sets/librispeech
     needs_instruction: true
     slices:
-      - {task: asr, dataset_id: librispeech-test-clean, time: "02:00:00"}
-
-  - name: librispeech-other
-    spec: configs/hf/librispeech-hf-test-other.yaml
-    needs_instruction: true
-    slices:
-      - {task: asr, dataset_id: librispeech-test-other, time: "02:00:00"}
+      - {task: asr, dataset_id: librispeech-clean, time: "02:00:00"}
+      - {task: asr, dataset_id: librispeech-other, time: "02:00:00"}
 
   - name: mcif
     spec: configs/hf/mcif.yaml

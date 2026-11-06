@@ -1,0 +1,33 @@
+# Finish the Qwen3 FLEURS-ASR log that hit the wall clock.
+#
+# The one-log run completed 15,316 of 19,463 samples in 4 h. Only the six
+# languages below were incomplete (Greek 2/650, Dutch 364/1000, Estonian,
+# Irish, Maltese and Slovenian absent), so they are re-run as their own
+# slices: four fit on the H200 partition at once, and the per-language logs
+# merge back into the same `fleurs-asr` tab.
+#
+#   MELT_PARTITION=h200 MELT_QOS=gpu-h200 \
+#     python scripts/evaluate.py run configs/eval/baselines-fill-asr-qwen3.yaml --site artemis
+
+name: baselines-fill-asr-qwen3
+output_dir: ${EVAL_ROOT}/baselines-fill-asr-qwen3
+
+models:
+  - name: qwen3-omni-30b-a3b-instruct
+    model: melt/hf/qwen3_omni
+    venv: /mnt/scratch-artemis/giuseppe/melt-data/pyextras/qwen3-shim/activate
+    args: [-M, batch_size=4]
+    instruction:
+      asr: "Transcribe this {lang} audio."
+
+benchmarks:
+  - name: fleurs24-asr-test
+    frozen_set: /mnt/scratch-artemis/giuseppe/melt-data/eval-sets/fleurs24-asr-test
+    needs_instruction: true
+    slices:
+      - {task: asr, lang: el}
+      - {task: asr, lang: et}
+      - {task: asr, lang: ga}
+      - {task: asr, lang: lt}
+      - {task: asr, lang: mt}
+      - {task: asr, lang: sl}
