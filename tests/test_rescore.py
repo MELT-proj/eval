@@ -221,3 +221,48 @@ class TestCometScorerThroughRealInspect:
         )
         assert log.status == "success"
         assert seen == [[{"src": src, "mt": "Pani Przewodnicząca, proszę.", "ref": ref}]]
+
+
+class TestMetricxScorerThroughRealInspect:
+    """``metricx_scorer`` under a real ``inspect_ai.eval()``, with the model replaced by a recorder."""
+
+    def test_scores_the_corpus_with_the_reference_based_input(self, tmp_path, monkeypatch):
+        from inspect_ai import Task
+        from inspect_ai import eval as inspect_eval
+        from inspect_ai.dataset import MemoryDataset, Sample
+
+        import melteval.rescore as rescore
+
+        seen = []
+        monkeypatch.setattr(rescore, "metricx_predict", lambda inputs: seen.append(inputs) or [2.0, 4.0, 6.0])
+        dataset = MemoryDataset(
+            [
+                Sample(input="x", target="Pani Przewodnicząca.", id="a", metadata={"source_text": "Madame la Présidente."}),
+                # no source transcript: still scored, with an empty source
+                Sample(input="x", target="Guten Tag.", id="b", metadata={}),
+                Sample(input="x", target="Tschüss.", id="c", metadata={"source_text": "Au revoir."}),
+                # empty output: not scorable
+                Sample(input="x", target="Danke.", id="d", metadata={"source_text": "Merci."}),
+            ]
+        )
+        contents = ("Pani Przewodnicząca.", "Guten Tag.", "Tschüss.", "")
+        outputs = [ModelOutput.from_content(model="mockllm/model", content=c) for c in contents]
+        [log] = inspect_eval(
+            Task(dataset=dataset, scorer=rescore.metricx_scorer()),
+            model="mockllm/model",
+            model_args={"custom_outputs": outputs},
+            display="none",
+            log_dir=str(tmp_path),
+        )
+        assert log.status == "success"
+        metrics = log.results.scores[0].metrics
+        assert metrics["metricx"].value == pytest.approx(4.0)
+        assert metrics["metricx_coverage"].value == pytest.approx(3 / 4)
+        [inputs] = seen
+        assert sorted(inputs) == sorted(
+            [
+                "source: Madame la Présidente. candidate: Pani Przewodnicząca. reference: Pani Przewodnicząca.",
+                "source:  candidate: Guten Tag. reference: Guten Tag.",
+                "source: Au revoir. candidate: Tschüss. reference: Tschüss.",
+            ]
+        )
