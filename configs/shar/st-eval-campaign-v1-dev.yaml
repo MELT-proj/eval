@@ -1,0 +1,56 @@
+# CoVoST2 X->en ST dev set, FULL `dev` split (no max_samples), for the directions the eval suite runs
+# (configs/eval/suites/v1.yaml and speechval-dev.yaml): de/es/fr/it/pt -> en. Twin of st-eval-campaign-v1.yaml,
+# which also has en_de; no suite runs it, so it has no dev twin here.
+# Reference is the translation (supervisions[0].text); custom.sentence is the source transcript for MetricX.
+# One dataset_id per direction (`covost2-<src>_<tgt>-dev`); see st-eval-campaign-v1.yaml for why.
+#
+# Freeze:  melteval freeze configs/shar/st-eval-campaign-v1-dev.yaml -o <frozen>/st-eval-campaign-v1-dev
+#          export COVOST2_DEV_SET=<frozen>/st-eval-campaign-v1-dev
+name: st-eval-campaign-v1-dev
+seed: 0
+
+input_cfg:
+  - type: lhotse_shar
+    shar_path: ${LOCAL_DATASETS_DIR}/covost2/de_en/dev
+    source_text_field: custom.sentence
+    tags:
+      task: st
+      src_lang: de
+      tgt_lang: en
+      dataset_id: covost2-de_en-dev
+
+  - type: lhotse_shar
+    shar_path: ${LOCAL_DATASETS_DIR}/covost2/fr_en/dev
+    source_text_field: custom.sentence
+    tags:
+      task: st
+      src_lang: fr
+      tgt_lang: en
+      dataset_id: covost2-fr_en-dev
+
+  - type: lhotse_shar
+    shar_path: ${LOCAL_DATASETS_DIR}/covost2/it_en/dev
+    source_text_field: custom.sentence
+    tags:
+      task: st
+      src_lang: it
+      tgt_lang: en
+      dataset_id: covost2-it_en-dev
+
+  - type: lhotse_shar
+    shar_path: ${LOCAL_DATASETS_DIR}/covost2/es_en/dev
+    source_text_field: custom.sentence
+    tags:
+      task: st
+      src_lang: es
+      tgt_lang: en
+      dataset_id: covost2-es_en-dev
+
+  - type: lhotse_shar
+    shar_path: ${LOCAL_DATASETS_DIR}/covost2/pt_en/dev
+    source_text_field: custom.sentence
+    tags:
+      task: st
+      src_lang: pt
+      tgt_lang: en
+      dataset_id: covost2-pt_en-dev

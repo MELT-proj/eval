@@ -1,0 +1,61 @@
+# speechval-dev
+
+The dev half of the speechval validation/test partition: full `validation`/`dev` splits (no `max_samples`),
+listed in `configs/eval/suites/speechval-dev.yaml`.
+
+| benchmark | spec | source | dataset_ids | env var |
+|---|---|---|---|---|
+| LibriSpeech | `configs/hf/librispeech-hf-validation-{clean,other}.yaml` | HF, read live | `librispeech-validation-{clean,other}` | - |
+| VoxPopuli | `configs/shar/voxpopuli-dev.yaml` | frozen | `voxpopuli-<lang>-dev` (16) | `VOXPOPULI_DEV_SET` |
+| FLEURS X->en | `configs/shar/fleurs24-st-xen-dev-full.yaml` | frozen | `fleurs-<lang>_en-dev` (23) | `FLEURS24_ST_XEN_DEV_SET` |
+| FLEURS en->X | `configs/shar/fleurs24-st-enx-dev.yaml` | frozen | `fleurs-en_<lang>-dev` (23) | `FLEURS24_ST_ENX_DEV_SET` |
+| CoVoST2 | `configs/shar/st-eval-campaign-v1-dev.yaml` | frozen | `covost2-<src>_en-dev` (de/es/fr/it/pt) | `COVOST2_DEV_SET` |
+
+Not part of it: `fleurs24-asr-dev.yaml` (FLEURS ASR), and `fleurs24-st-xen-dev.yaml` (training's 100-per-language
+subsample; the full twin above is separate). The CoVoST2 test spec also has `en_de`, which no suite runs, so it has no
+dev twin.
+
+## FLEURS en->X references
+
+`configs/refs/fleurs-<lang>-reference-dev.json` (23 targets) come from FLEURS `dev.tsv` at the pinned revision of
+`google/fleurs`. Needs internet (mollete/nyx), already committed:
+
+```bash
+python scripts/build_fleurs_reference.py bg_bg cs_cz da_dk de_de el_gr es_419 et_ee fi_fi fr_fr ga_ie hr_hr hu_hu \
+    it_it lt_lt lv_lv mt_mt nl_nl pl_pl pt_br ro_ro sk_sk sl_si sv_se --splits validation
+```
+
+A target lacks some English sentences (nl has 117 of 150 ids), so en->X sets are smaller than the audio;
+the difference is `dropped_no_reference` in `frozen_set.json`.
+
+## LibriSpeech prefetch (login shell; compute nodes are offline)
+
+```bash
+export HF_HOME=/mnt/scratch-artemis/giuseppe/melt-data/hf_cache   # adjust on the cluster you run on
+python - <<'PY'
+from datasets import load_dataset
+for name in ("clean", "other"):
+    load_dataset("openslr/librispeech_asr", name, split="validation", revision="71cacbfb7e2354c4226d01e70d77d5fca3d04ba1")
+PY
+```
+
+The pinned revision has `clean/validation` and `other/validation` parquet files (checked).
+
+## Freezing (jupiter, CPU only)
+
+```bash
+export LOCAL_DATASETS_DIR=...   # jupiter's indexed Shar tree
+export FROZEN=...               # output root, on scratch
+for s in fleurs24-st-xen-dev-full fleurs24-st-enx-dev st-eval-campaign-v1-dev; do
+  melteval freeze configs/shar/$s.yaml -o $FROZEN/$s
+done
+# VoxPopuli: azeros has no .idx files. Index the validation splits first (unless already indexed in
+# $LOCAL_DATASETS_DIR), then freeze from the indexed copy:
+python scripts/index_shar.py $AZEROS_DIR $AZEROS_INDEXED_DIR voxpopuli/{en,de,fr,es,pl,it,ro,hu,cs,nl,fi,hr,sk,sl,et,lt}/validation
+melteval freeze configs/shar/voxpopuli-dev.yaml -o $FROZEN/voxpopuli-dev
+
+export VOXPOPULI_DEV_SET=$FROZEN/voxpopuli-dev FLEURS24_ST_XEN_DEV_SET=$FROZEN/fleurs24-st-xen-dev-full \
+       FLEURS24_ST_ENX_DEV_SET=$FROZEN/fleurs24-st-enx-dev COVOST2_DEV_SET=$FROZEN/st-eval-campaign-v1-dev
+```
+
+Check each `frozen_set.json` for per-`dataset_id` counts and `dropped_no_reference`.

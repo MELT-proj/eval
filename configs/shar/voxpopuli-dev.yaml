@@ -1,0 +1,94 @@
+# VoxPopuli ASR dev set, FULL: the `validation` split of the same 16 languages as voxpopuli-test.yaml, same
+# source tree, same reference convention (`text`, supervisions[0].text, in every language; en is scored with the
+# English normalizer) -- see that file's header for the reasoning. Part of the speechval-dev suite. No max_samples.
+#
+# Freezing: see docs/speechval.md (azeros has no `.idx` files: index the validation splits first, or use the copy in
+# $LOCAL_DATASETS_DIR if present):
+#
+#   melteval freeze configs/shar/voxpopuli-dev.yaml -o <frozen>/voxpopuli-dev
+#   export VOXPOPULI_DEV_SET=<frozen>/voxpopuli-dev
+#
+# One dataset_id per language (`voxpopuli-<lang>-dev`).
+name: voxpopuli-dev
+seed: 0
+
+input_cfg:
+  - type: lhotse_shar
+    shar_path: ${AZEROS_INDEXED_DIR}/voxpopuli/en/validation
+    text_field: text
+    tags: {task: asr, lang: en, dataset_id: voxpopuli-en-dev}
+
+  - type: lhotse_shar
+    shar_path: ${AZEROS_INDEXED_DIR}/voxpopuli/de/validation
+    text_field: text
+    tags: {task: asr, lang: de, dataset_id: voxpopuli-de-dev}
+
+  - type: lhotse_shar
+    shar_path: ${AZEROS_INDEXED_DIR}/voxpopuli/fr/validation
+    text_field: text
+    tags: {task: asr, lang: fr, dataset_id: voxpopuli-fr-dev}
+
+  - type: lhotse_shar
+    shar_path: ${AZEROS_INDEXED_DIR}/voxpopuli/es/validation
+    text_field: text
+    tags: {task: asr, lang: es, dataset_id: voxpopuli-es-dev}
+
+  - type: lhotse_shar
+    shar_path: ${AZEROS_INDEXED_DIR}/voxpopuli/it/validation
+    text_field: text
+    tags: {task: asr, lang: it, dataset_id: voxpopuli-it-dev}
+
+  - type: lhotse_shar
+    shar_path: ${AZEROS_INDEXED_DIR}/voxpopuli/pl/validation
+    text_field: text
+    tags: {task: asr, lang: pl, dataset_id: voxpopuli-pl-dev}
+
+  - type: lhotse_shar
+    shar_path: ${AZEROS_INDEXED_DIR}/voxpopuli/ro/validation
+    text_field: text
+    tags: {task: asr, lang: ro, dataset_id: voxpopuli-ro-dev}
+
+  - type: lhotse_shar
+    shar_path: ${AZEROS_INDEXED_DIR}/voxpopuli/hu/validation
+    text_field: text
+    tags: {task: asr, lang: hu, dataset_id: voxpopuli-hu-dev}
+
+  - type: lhotse_shar
+    shar_path: ${AZEROS_INDEXED_DIR}/voxpopuli/cs/validation
+    text_field: text
+    tags: {task: asr, lang: cs, dataset_id: voxpopuli-cs-dev}
+
+  - type: lhotse_shar
+    shar_path: ${AZEROS_INDEXED_DIR}/voxpopuli/nl/validation
+    text_field: text
+    tags: {task: asr, lang: nl, dataset_id: voxpopuli-nl-dev}
+
+  - type: lhotse_shar
+    shar_path: ${AZEROS_INDEXED_DIR}/voxpopuli/fi/validation
+    text_field: text
+    tags: {task: asr, lang: fi, dataset_id: voxpopuli-fi-dev}
+
+  - type: lhotse_shar
+    shar_path: ${AZEROS_INDEXED_DIR}/voxpopuli/hr/validation
+    text_field: text
+    tags: {task: asr, lang: hr, dataset_id: voxpopuli-hr-dev}
+
+  - type: lhotse_shar
+    shar_path: ${AZEROS_INDEXED_DIR}/voxpopuli/sk/validation
+    text_field: text
+    tags: {task: asr, lang: sk, dataset_id: voxpopuli-sk-dev}
+
+  - type: lhotse_shar
+    shar_path: ${AZEROS_INDEXED_DIR}/voxpopuli/sl/validation
+    text_field: text
+    tags: {task: asr, lang: sl, dataset_id: voxpopuli-sl-dev}
+
+  - type: lhotse_shar
+    shar_path: ${AZEROS_INDEXED_DIR}/voxpopuli/et/validation
+    text_field: text
+    tags: {task: asr, lang: et, dataset_id: voxpopuli-et-dev}
+
+  - type: lhotse_shar
+    shar_path: ${AZEROS_INDEXED_DIR}/voxpopuli/lt/validation
+    text_field: text
+    tags: {task: asr, lang: lt, dataset_id: voxpopuli-lt-dev}

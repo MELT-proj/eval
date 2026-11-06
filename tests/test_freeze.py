@@ -226,3 +226,73 @@ class TestEuroparlStSpecs:
         dev = {s["tags"]["dataset_id"] for s in self._load("europarl-st-dev.yaml", monkeypatch)}
         test = {s["tags"]["dataset_id"] for s in self._load("europarl-st-test.yaml", monkeypatch)}
         assert not dev & test
+
+
+class TestSpeechvalDevSpecs:
+    """The speechval-dev specs: full validation/dev splits, no cap, and every suite slice has a source."""
+
+    ROOT = Path(__file__).parent.parent
+    SHAR = {
+        "voxpopuli-dev.yaml": "validation",
+        "fleurs24-st-xen-dev-full.yaml": "validation",
+        "fleurs24-st-enx-dev.yaml": "validation",
+        "st-eval-campaign-v1-dev.yaml": "dev",
+    }
+
+    def _load(self, name: str, monkeypatch) -> list[dict]:
+        monkeypatch.setenv("LOCAL_DATASETS_DIR", "/shar")
+        monkeypatch.setenv("AZEROS_INDEXED_DIR", "/azeros")
+        return load_spec(self.ROOT / "configs" / "shar" / name)["input_cfg"]
+
+    @pytest.mark.parametrize("name,split", SHAR.items())
+    def test_full_split_and_dev_ids(self, name, split, monkeypatch):
+        sources = self._load(name, monkeypatch)
+        ids = [s["tags"]["dataset_id"] for s in sources]
+        assert len(ids) == len(set(ids))
+        for s in sources:
+            assert "max_samples" not in s
+            assert s["shar_path"].endswith(f"/{split}")
+            assert s["tags"]["dataset_id"].endswith("-dev")
+            if "reference_map" in s:
+                assert (self.ROOT / s["reference_map"]).is_file() and "reference-dev" in s["reference_map"]
+
+    def test_enx_pairs_english_validation_audio_with_target_references(self, monkeypatch):
+        sources = self._load("fleurs24-st-enx-dev.yaml", monkeypatch)
+        assert len(sources) == 23
+        for s in sources:
+            tgt = s["tags"]["tgt_lang"]
+            assert s["shar_path"] == "/shar/fleurs/en_us/validation"
+            assert s["reference_map"] == f"configs/refs/fleurs-{tgt}-reference-dev.json"
+            assert s["tags"]["dataset_id"] == f"fleurs-en_{tgt}-dev"
+
+    def test_xen_uses_the_dev_english_reference(self, monkeypatch):
+        sources = self._load("fleurs24-st-xen-dev-full.yaml", monkeypatch)
+        assert len(sources) == 23
+        assert {s["reference_map"] for s in sources} == {"configs/refs/fleurs-en-reference-dev.json"}
+
+    def test_covost_dev_covers_the_suite_directions(self, monkeypatch):
+        ids = {s["tags"]["dataset_id"] for s in self._load("st-eval-campaign-v1-dev.yaml", monkeypatch)}
+        assert ids == {f"covost2-{s}_en-dev" for s in ("de", "es", "fr", "it", "pt")}
+
+    @pytest.mark.parametrize("c", ["clean", "other"])
+    def test_librispeech_validation_mirrors_test(self, c):
+        val = load_spec(self.ROOT / "configs" / "hf" / f"librispeech-hf-validation-{c}.yaml")["input_cfg"][0]
+        test = load_spec(self.ROOT / "configs" / "hf" / f"librispeech-hf-test-{c}.yaml")["input_cfg"][0]
+        assert val["split"] == "validation" and "max_samples" not in val
+        assert {k: v for k, v in val.items() if k not in ("split", "tags")} == {
+            k: v for k, v in test.items() if k not in ("split", "tags")
+        }
+        assert val["tags"]["dataset_id"] == f"librispeech-validation-{c}"
+
+    def test_every_suite_slice_has_a_source(self, monkeypatch):
+        import yaml
+
+        suite = yaml.safe_load((self.ROOT / "configs/eval/suites/speechval-dev.yaml").read_text())["benchmarks"]
+        known = {f"librispeech-validation-{c}" for c in ("clean", "other")}
+        for name in self.SHAR:
+            known |= {s["tags"]["dataset_id"] for s in self._load(name, monkeypatch)}
+        for b in suite:
+            if b["name"].startswith("europarl"):
+                continue
+            for sl in b["slices"]:
+                assert sl["dataset_id"] in known, sl
