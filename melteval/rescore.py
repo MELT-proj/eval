@@ -196,9 +196,9 @@ def comet_scorer() -> Scorer:
 #
 # Run from the metrics venv (torch + transformers + sentencepiece), never as part of `inspect eval`. The input
 # format, the 1536-token cap, the ``google/mt5-xl`` tokenizer, the dropped final EOS and the read-out (logit
-# 250089 = ``<extra_id_10>`` after one decoder step from token 0, clamped to [0, 25]) follow
-# ``projects/metricx/score.py``, which holds the pins' rationale and the batch-independence tests; the constants
-# are repeated here because ``melteval`` must not import from ``projects/``.
+# 250089 = ``<extra_id_10>`` after one decoder step from token 0, clamped to [0, 25]) follow upstream
+# (``google-research/metricx`` at commit fc4978e, ``metricx24/predict.py`` and ``models.py``). The checkpoint's
+# ``MT5ForRegression`` head is an ``MT5ForConditionalGeneration`` read at one position, so the stock class loads it.
 
 #: bf16 export of ``google/metricx-24-hybrid-xxl-v2p6`` (same model, weights cast to bfloat16, which is the
 #: precision it is run in), and the tokenizer upstream names for it. Pinned.

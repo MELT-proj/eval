@@ -26,12 +26,12 @@
 # 3.1 was not needed: the HF fetch succeeded and agreed across recordings.
 #
 # source_text_field: custom.pnc_text carries the source-language (X)
-# transcript for `melteval rescore`'s COMET triples, same convention as
+# transcript for `melteval rescore` and MetricX, same convention as
 # st-eval-campaign-v1.yaml's CoVoST2 sources. ga (Irish) has no
 # `custom.pnc_text` on FLEURS test/validation (fleurs24-asr-test.yaml's
 # header) so its source_text comes out empty; harmless for chrF++/BLEU
-# (scored against the English reference only) but means no COMET source can
-# be built for ga until that gap is closed.
+# (scored against the English reference only); MetricX scores it with an empty
+# source (upstream allows it), so ga is scored but without a source signal.
 #
 # Per-language breakdown: unlike ASR, do NOT use `-T lang=<code>` here.
 # get_tags_from_cut (training repo, helpers.py) sets the returned `lang` to

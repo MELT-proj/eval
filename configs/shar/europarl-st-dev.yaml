@@ -5,8 +5,8 @@
 # Field convention (same as CoVoST, see st-eval-campaign-v1.yaml): the reference is
 # the TARGET-language translation (supervisions[0].text, the default text field, so no
 # override), and custom.sentence is the SOURCE-language transcript, kept via
-# source_text_field so `melteval rescore` / comet_scorer can build (src, mt, ref)
-# triples for COMET-22 DA afterwards.
+# source_text_field so metricx_scorer (melteval/rescore.py) can build (src, mt, ref)
+# triples for MetricX-24 afterwards.
 #
 # Language-ID check (2026-11-06): cut ids all start with `en.` (and so do those of
 # de_en, whose custom.source_language is `de`), but that prefix is the debate-id

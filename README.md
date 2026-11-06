@@ -417,6 +417,14 @@ cased references. It needs the SentencePiece model like everything else here.
 
 ## Rescoring ST output with COMET/MetricX
 
+**The ST metric of the suites is MetricX-24** (hybrid XXL, reference-based; error 0-25, lower is better), run as an
+`inspect score` post scorer: a slice declares `post_scorers: [melteval/rescore.py@metricx_scorer]` and
+`evaluate.py score` runs it from the benchmark's `post_venv` (the metrics venv, which has `inspect_ai`, `torch`
+and `transformers` together) as a GPU job. It reads `source_text`, the completion and the target of each sample;
+`google/metricx-24-hybrid-xxl-v2p6-bfloat16` and `google/mt5-xl` must be in `$HF_HOME` on offline nodes.
+By hand: `inspect score LOG --model mockllm/model --scorer melteval/rescore.py@metricx_scorer --action append`.
+`comet_scorer` (COMET-22 DA) stays in the same module for comparisons.
+
 `inspect eval` reports BLEU/spBLEU/chrF++; a neural MT metric is a separate step, run
 from the `comet`/`metricx` venv rather than this one, so a GPU metric stack
 never has to install next to the model under evaluation. `infra/Singularity.def`

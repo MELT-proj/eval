@@ -16,8 +16,8 @@
 # `dropped_no_reference`; that number is expected here, not a bug. en_us test
 # has ~1.85 recordings per sentence, so ~600 samples per direction (~460 for nl).
 #
-# source_text_field: custom.pnc_text, the English transcript, as COMET's source
-# (melteval/rescore.py@comet_scorer).
+# source_text_field: custom.pnc_text, the English transcript, as MetricX's source
+# (melteval/rescore.py@metricx_scorer).
 #
 # Per-language breakdown: one dataset_id per direction (`fleurs-en_<lang>`),
 # as in the X->en file. Every record's lang is its tgt_lang here, so `-T lang=`
