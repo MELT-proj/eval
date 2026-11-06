@@ -49,7 +49,8 @@ What was run (2026-11-06). `$LOCAL_DATASETS_DIR` is not set in a jupiter login s
   languages and `fleurs/<locale>/validation` for 18 locales (no el_gr, pl_pl, ro_ro, sk_sk, sl_si, sv_se), but both
   are plain Shar without `.idx`. The existing indexed tree (`.../calvo-bartolome1/azeros-indexed`) holds only `test`,
   so the validation splits were indexed into `$SCRATCH/attanasio1/azeros-indexed-dev` (symlinks + `.idx`, small).
-  There is **no CoVoST2 on jupiter**.
+  There was no CoVoST2 on jupiter: `covost2/{de,es,fr,it,pt}_en/dev` (4.8 GB) was copied there from the nyx tree
+  into `/e/data1/smurf4eu-data/speech/shar/covost2/` (`tar ch ... | ssh jupiter 'tar x'`; indexed already).
 * **nyx/artemis**: `/mnt/scratch-nyx/giuseppe/melt/melt-data/shar` is already indexed and has `covost2/*_en/dev`.
 
 ```bash
@@ -61,7 +62,10 @@ python scripts/index_shar.py $AZEROS_DIR $AZEROS_INDEXED_DIR \
 export LOCAL_DATASETS_DIR=$AZEROS_INDEXED_DIR F=$PROJECT/attanasio1/frozen-dev
 for s in fleurs24-st-xen-dev-full fleurs24-st-enx-dev voxpopuli-dev; do melteval freeze configs/shar/$s.yaml -o $F/$s; done
 
-# nyx / artemis
+# jupiter, CoVoST2 (copied tree, see above)
+LOCAL_DATASETS_DIR=/e/data1/smurf4eu-data/speech/shar melteval freeze configs/shar/st-eval-campaign-v1-dev.yaml -o $F/st-eval-campaign-v1-dev
+
+# nyx / artemis (same set, for runs there)
 LOCAL_DATASETS_DIR=/mnt/scratch-nyx/giuseppe/melt/melt-data/shar \
   melteval freeze configs/shar/st-eval-campaign-v1-dev.yaml -o /mnt/scratch-artemis/giuseppe/frozen/speechval-dev/st-eval-campaign-v1-dev
 ```
@@ -73,10 +77,10 @@ Frozen sets (locators are absolute paths, so they only work on their own machine
 | `VOXPOPULI_DEV_SET` | jupiter `/e/project1/e-ext-2025e01-100/attanasio1/frozen-dev/voxpopuli-dev` |
 | `FLEURS24_ST_XEN_DEV_SET` | jupiter `.../frozen-dev/fleurs24-st-xen-dev-full` (17 directions) |
 | `FLEURS24_ST_ENX_DEV_SET` | jupiter `.../frozen-dev/fleurs24-st-enx-dev` |
-| `COVOST2_DEV_SET` | nyx/artemis `/mnt/scratch-artemis/giuseppe/frozen/speechval-dev/st-eval-campaign-v1-dev` |
+| `COVOST2_DEV_SET` | jupiter `.../frozen-dev/st-eval-campaign-v1-dev`; nyx/artemis `/mnt/scratch-artemis/giuseppe/frozen/speechval-dev/st-eval-campaign-v1-dev` |
 
 Samples: VoxPopuli 17972 (en 1753, de 2109, fr 1727, es 1631, pl 1662, it 1257, ro 1371, hu 1054, cs 1095, nl 1229,
 fi 687, hr 789, sk 669, sl 889, et 47, lt 3); the freezer drops cuts with empty `text` (VoxPopuli validation has
 untranscribed cuts: hr loses 496 of 1285). FLEURS X->en 6234 (17 directions); FLEURS en->X 8819 (23 directions;
 see `dropped_no_reference` per source, expected); CoVoST2 53692 (de 13474, es 13221,
-fr 14749, it 8930, pt 3318). A CoVoST2 run on jupiter needs the tree copied there first.
+fr 14749, it 8930, pt 3318).
