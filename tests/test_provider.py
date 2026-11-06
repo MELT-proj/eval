@@ -569,7 +569,16 @@ class TestQwen2Audio:
 
 
 class _FakeOmniModel(_FakeQwenModel):
-    """Qwen3-Omni's ``generate()``: returns ``(token_ids, audio)`` and takes ``thinker_*`` kwargs."""
+    """Qwen3-Omni's ``generate()`` with the talker off: token ids, ``thinker_*`` kwargs."""
+
+    def generate(self, input_ids, input_features=None, **kwargs):
+        # transformers 5.x: with return_audio=False (and the talker disabled)
+        # generate() returns the ids alone. 4.x returned (ids, audio).
+        return super().generate(input_ids, input_features, **kwargs)
+
+
+class _FakeOmniModelWithAudio(_FakeOmniModel):
+    """The 4.x shape: ``generate()`` returns ``(token_ids, audio)``."""
 
     def generate(self, input_ids, input_features=None, **kwargs):
         return super().generate(input_ids, input_features, **kwargs), None
@@ -586,8 +595,19 @@ class TestQwen3Omni:
         prompts = [_render(processor, r.text) for r in batch]
         return _generate(model, processor, "cpu", batch, prompts), processor, model
 
-    def test_the_token_ids_are_taken_from_the_tuple_and_the_prompt_stripped(self):
+    def test_bare_token_ids_are_stripped_of_the_prompt(self):
         completions, _, _ = self._run([_QwenRequest(text="short"), _QwenRequest(text="a longer prompt")])
+
+        assert completions == ["a", "b"]
+
+    def test_token_ids_in_a_tuple_with_audio_are_still_accepted(self):
+        """transformers 4.x returned ``(ids, audio)`` even with return_audio=False."""
+        pytest.importorskip("torch")
+        from melteval.providers.qwen3_omni import _generate, _render
+
+        processor, model = _FakeQwenProcessor(), _FakeOmniModelWithAudio()
+        batch = [_QwenRequest(text="short"), _QwenRequest(text="a longer prompt")]
+        completions = _generate(model, processor, "cpu", batch, [_render(processor, r.text) for r in batch])
 
         assert completions == ["a", "b"]
 
@@ -627,8 +647,15 @@ class TestTextOnlyJudge:
         processor, model = _FakeQwenProcessor(), _FakeOmniModel()
         prompts = [render(processor, r.text, with_audio=False) for r in batch]
         completions = generate(
-            model, processor, "cpu", batch, prompts, gen_kwargs={}, family="Qwen3-Omni",
-            sequences=lambda output: output[0], with_audio=False,
+            model,
+            processor,
+            "cpu",
+            batch,
+            prompts,
+            gen_kwargs={},
+            family="Qwen3-Omni",
+            sequences=lambda output: output,
+            with_audio=False,
         )
         return completions, processor
 
