@@ -1,0 +1,68 @@
+# speechval DEV suite: the dev half of the validation/test split, shared by configs in configs/eval/
+# (`benchmarks: <this file>`). A config that runs part of it uses `skip`.
+
+benchmarks:
+  # configs/shar/europarl-st-dev.yaml: EuroparlST, the 56 directions among fr/de/es/it/pt/pl/ro/nl (validation, 100 per direction).
+  # MetricX-24 hybrid XXL (reference-based) post-hoc, from custom.sentence (the source transcript).
+  - name: europarl-st-dev
+    frozen_set: ${EUROPARL_ST_DEV_SET}
+    needs_instruction: true
+    post_venv: ${METRICS_VENV_PATH}
+    slices:
+      - {task: st, dataset_id: europarl-st-fr_de-dev, post_scorers: [melteval/rescore.py@metricx_scorer]}
+      - {task: st, dataset_id: europarl-st-fr_es-dev, post_scorers: [melteval/rescore.py@metricx_scorer]}
+      - {task: st, dataset_id: europarl-st-fr_it-dev, post_scorers: [melteval/rescore.py@metricx_scorer]}
+      - {task: st, dataset_id: europarl-st-fr_pt-dev, post_scorers: [melteval/rescore.py@metricx_scorer]}
+      - {task: st, dataset_id: europarl-st-fr_pl-dev, post_scorers: [melteval/rescore.py@metricx_scorer]}
+      - {task: st, dataset_id: europarl-st-fr_ro-dev, post_scorers: [melteval/rescore.py@metricx_scorer]}
+      - {task: st, dataset_id: europarl-st-fr_nl-dev, post_scorers: [melteval/rescore.py@metricx_scorer]}
+      - {task: st, dataset_id: europarl-st-de_fr-dev, post_scorers: [melteval/rescore.py@metricx_scorer]}
+      - {task: st, dataset_id: europarl-st-de_es-dev, post_scorers: [melteval/rescore.py@metricx_scorer]}
+      - {task: st, dataset_id: europarl-st-de_it-dev, post_scorers: [melteval/rescore.py@metricx_scorer]}
+      - {task: st, dataset_id: europarl-st-de_pt-dev, post_scorers: [melteval/rescore.py@metricx_scorer]}
+      - {task: st, dataset_id: europarl-st-de_pl-dev, post_scorers: [melteval/rescore.py@metricx_scorer]}
+      - {task: st, dataset_id: europarl-st-de_ro-dev, post_scorers: [melteval/rescore.py@metricx_scorer]}
+      - {task: st, dataset_id: europarl-st-de_nl-dev, post_scorers: [melteval/rescore.py@metricx_scorer]}
+      - {task: st, dataset_id: europarl-st-es_fr-dev, post_scorers: [melteval/rescore.py@metricx_scorer]}
+      - {task: st, dataset_id: europarl-st-es_de-dev, post_scorers: [melteval/rescore.py@metricx_scorer]}
+      - {task: st, dataset_id: europarl-st-es_it-dev, post_scorers: [melteval/rescore.py@metricx_scorer]}
+      - {task: st, dataset_id: europarl-st-es_pt-dev, post_scorers: [melteval/rescore.py@metricx_scorer]}
+      - {task: st, dataset_id: europarl-st-es_pl-dev, post_scorers: [melteval/rescore.py@metricx_scorer]}
+      - {task: st, dataset_id: europarl-st-es_ro-dev, post_scorers: [melteval/rescore.py@metricx_scorer]}
+      - {task: st, dataset_id: europarl-st-es_nl-dev, post_scorers: [melteval/rescore.py@metricx_scorer]}
+      - {task: st, dataset_id: europarl-st-it_fr-dev, post_scorers: [melteval/rescore.py@metricx_scorer]}
+      - {task: st, dataset_id: europarl-st-it_de-dev, post_scorers: [melteval/rescore.py@metricx_scorer]}
+      - {task: st, dataset_id: europarl-st-it_es-dev, post_scorers: [melteval/rescore.py@metricx_scorer]}
+      - {task: st, dataset_id: europarl-st-it_pt-dev, post_scorers: [melteval/rescore.py@metricx_scorer]}
+      - {task: st, dataset_id: europarl-st-it_pl-dev, post_scorers: [melteval/rescore.py@metricx_scorer]}
+      - {task: st, dataset_id: europarl-st-it_ro-dev, post_scorers: [melteval/rescore.py@metricx_scorer]}
+      - {task: st, dataset_id: europarl-st-it_nl-dev, post_scorers: [melteval/rescore.py@metricx_scorer]}
+      - {task: st, dataset_id: europarl-st-pt_fr-dev, post_scorers: [melteval/rescore.py@metricx_scorer]}
+      - {task: st, dataset_id: europarl-st-pt_de-dev, post_scorers: [melteval/rescore.py@metricx_scorer]}
+      - {task: st, dataset_id: europarl-st-pt_es-dev, post_scorers: [melteval/rescore.py@metricx_scorer]}
+      - {task: st, dataset_id: europarl-st-pt_it-dev, post_scorers: [melteval/rescore.py@metricx_scorer]}
+      - {task: st, dataset_id: europarl-st-pt_pl-dev, post_scorers: [melteval/rescore.py@metricx_scorer]}
+      - {task: st, dataset_id: europarl-st-pt_ro-dev, post_scorers: [melteval/rescore.py@metricx_scorer]}
+      - {task: st, dataset_id: europarl-st-pt_nl-dev, post_scorers: [melteval/rescore.py@metricx_scorer]}
+      - {task: st, dataset_id: europarl-st-pl_fr-dev, post_scorers: [melteval/rescore.py@metricx_scorer]}
+      - {task: st, dataset_id: europarl-st-pl_de-dev, post_scorers: [melteval/rescore.py@metricx_scorer]}
+      - {task: st, dataset_id: europarl-st-pl_es-dev, post_scorers: [melteval/rescore.py@metricx_scorer]}
+      - {task: st, dataset_id: europarl-st-pl_it-dev, post_scorers: [melteval/rescore.py@metricx_scorer]}
+      - {task: st, dataset_id: europarl-st-pl_pt-dev, post_scorers: [melteval/rescore.py@metricx_scorer]}
+      - {task: st, dataset_id: europarl-st-pl_ro-dev, post_scorers: [melteval/rescore.py@metricx_scorer]}
+      - {task: st, dataset_id: europarl-st-pl_nl-dev, post_scorers: [melteval/rescore.py@metricx_scorer]}
+      - {task: st, dataset_id: europarl-st-ro_fr-dev, post_scorers: [melteval/rescore.py@metricx_scorer]}
+      - {task: st, dataset_id: europarl-st-ro_de-dev, post_scorers: [melteval/rescore.py@metricx_scorer]}
+      - {task: st, dataset_id: europarl-st-ro_es-dev, post_scorers: [melteval/rescore.py@metricx_scorer]}
+      - {task: st, dataset_id: europarl-st-ro_it-dev, post_scorers: [melteval/rescore.py@metricx_scorer]}
+      - {task: st, dataset_id: europarl-st-ro_pt-dev, post_scorers: [melteval/rescore.py@metricx_scorer]}
+      - {task: st, dataset_id: europarl-st-ro_pl-dev, post_scorers: [melteval/rescore.py@metricx_scorer]}
+      - {task: st, dataset_id: europarl-st-ro_nl-dev, post_scorers: [melteval/rescore.py@metricx_scorer]}
+      - {task: st, dataset_id: europarl-st-nl_fr-dev, post_scorers: [melteval/rescore.py@metricx_scorer]}
+      - {task: st, dataset_id: europarl-st-nl_de-dev, post_scorers: [melteval/rescore.py@metricx_scorer]}
+      - {task: st, dataset_id: europarl-st-nl_es-dev, post_scorers: [melteval/rescore.py@metricx_scorer]}
+      - {task: st, dataset_id: europarl-st-nl_it-dev, post_scorers: [melteval/rescore.py@metricx_scorer]}
+      - {task: st, dataset_id: europarl-st-nl_pt-dev, post_scorers: [melteval/rescore.py@metricx_scorer]}
+      - {task: st, dataset_id: europarl-st-nl_pl-dev, post_scorers: [melteval/rescore.py@metricx_scorer]}
+      - {task: st, dataset_id: europarl-st-nl_ro-dev, post_scorers: [melteval/rescore.py@metricx_scorer]}
+
