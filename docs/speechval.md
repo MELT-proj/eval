@@ -79,11 +79,11 @@ Frozen sets (locators are absolute paths, so they only work on their own machine
 | `FLEURS24_ST_ENX_DEV_SET` | jupiter `.../frozen-dev/fleurs24-st-enx-dev` |
 | `COVOST2_DEV_SET` | jupiter `.../frozen-dev/st-eval-campaign-v1-dev`; nyx/artemis `/mnt/scratch-artemis/giuseppe/frozen/speechval-dev/st-eval-campaign-v1-dev` |
 
-Samples: VoxPopuli 17972 (en 1753, de 2109, fr 1727, es 1631, pl 1662, it 1257, ro 1371, hu 1054, cs 1095, nl 1229,
-fi 687, hr 789, sk 669, sl 889, et 47, lt 3); the freezer drops cuts with empty `text` (VoxPopuli validation has
-untranscribed cuts: hr loses 496 of 1285). FLEURS X->en 6234 (17 directions); FLEURS en->X 8819 (23 directions;
-see `dropped_no_reference` per source, expected); CoVoST2 53692 (de 13474, es 13221,
-fr 14749, it 8930, pt 3318).
+Samples (capped sets, see below): VoxPopuli 13034 (1000 each for en, de, fr, es, pl, it, ro, hu, cs, nl; sl 889,
+hr 789, fi 687, sk 669). The freezer drops cuts with empty `text` (VoxPopuli validation has untranscribed cuts: hr
+loses 496 of 1285). FLEURS X->en 6234 (17 directions); FLEURS en->X 8819 (23 directions; see `dropped_no_reference`
+per source, expected); CoVoST2 10000 (2000 per direction: de, es, fr, it, pt). The CoVoST2 jupiter and nyx/artemis
+sets are identical in size.
 
 ## Caps
 
@@ -96,4 +96,5 @@ LibriSpeech are run in full.
   Languages under 1000 keep everything. et (47) and lt (3) are not in the dev set: too small to score.
 * CoVoST2: 2000 per direction (10,000 in total, from 53,692).
 
-The uncapped CoVoST2 set is kept next to the capped one as `st-eval-campaign-v1-dev.full`.
+The uncapped sets are kept next to the capped ones, renamed `*.full` (CoVoST2 on both machines, VoxPopuli on jupiter;
+the uncapped VoxPopuli set still includes et and lt).
