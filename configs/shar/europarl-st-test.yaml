@@ -1,0 +1,315 @@
+# EuroparlST ST test set: all 56 ordered directions among the 8 non-English
+# languages fr, de, es, it, pt, pl, ro, nl.
+# Directions involving English are left out on purpose: CoVoST covers most of them.
+#
+# Field convention (same as CoVoST, see st-eval-campaign-v1.yaml): the reference is
+# the TARGET-language translation (supervisions[0].text, the default text field, so no
+# override), and custom.sentence is the SOURCE-language transcript, kept via
+# source_text_field so metricx_scorer (melteval/rescore.py) can build (src, mt, ref)
+# triples for MetricX-24 afterwards.
+#
+# Language-ID check (2026-11-06): cut ids all start with `en.` (and so do those of
+# de_en, whose custom.source_language is `de`), but that prefix is the debate-id
+# convention of the corpus, not the audio language. Whisper-base language ID on 12
+# validation cuts from each of the 56 directions (CPU): the audio is in the source
+# language in 663 of 672 clips (98.7%), and every direction's majority language is its
+# source language (at least 10 of 12). The nine others are single clips per direction,
+# mis-detected as en/es/pt (short or noisy ones). Metadata and audio agree, so no
+# direction is excluded. The 7 directions of one source language largely share their audio
+# (same cut ids; the lists differ by a few percent) and differ in the translation.
+#
+# Known text quirk: the French and Italian text is detokenized badly ("qu ' elle",
+# with spaces around the apostrophe) in many cuts -- about 3/4 of fr and 1/2 of it
+# translations, and 70% of the French source transcripts in dev. It is reference text as the
+# corpus ships it and is not rewritten here; BLEU/chrF++ into fr/it are depressed
+# by it for any system that writes normal apostrophes.
+#
+# Test: the full `test` split of each direction (about 1,000-1,400 utterances), no
+# max_samples.
+#
+# Each direction has its own dataset_id (`europarl-st-<src>_<tgt>`), since BLEU's
+# tokenizer is chosen per target language and corpus_bleu refuses to mix targets
+# (melteval/scorers.py, `_target_lang`). Slice by dataset_id, one `inspect eval` each.
+name: europarl-st-test
+seed: 0
+
+input_cfg:
+  - type: lhotse_shar
+    shar_path: ${LOCAL_DATASETS_DIR}/europarl_st/fr_de/test
+    source_text_field: custom.sentence
+    tags: {task: st, src_lang: fr, tgt_lang: de, dataset_id: europarl-st-fr_de}
+
+  - type: lhotse_shar
+    shar_path: ${LOCAL_DATASETS_DIR}/europarl_st/fr_es/test
+    source_text_field: custom.sentence
+    tags: {task: st, src_lang: fr, tgt_lang: es, dataset_id: europarl-st-fr_es}
+
+  - type: lhotse_shar
+    shar_path: ${LOCAL_DATASETS_DIR}/europarl_st/fr_it/test
+    source_text_field: custom.sentence
+    tags: {task: st, src_lang: fr, tgt_lang: it, dataset_id: europarl-st-fr_it}
+
+  - type: lhotse_shar
+    shar_path: ${LOCAL_DATASETS_DIR}/europarl_st/fr_pt/test
+    source_text_field: custom.sentence
+    tags: {task: st, src_lang: fr, tgt_lang: pt, dataset_id: europarl-st-fr_pt}
+
+  - type: lhotse_shar
+    shar_path: ${LOCAL_DATASETS_DIR}/europarl_st/fr_pl/test
+    source_text_field: custom.sentence
+    tags: {task: st, src_lang: fr, tgt_lang: pl, dataset_id: europarl-st-fr_pl}
+
+  - type: lhotse_shar
+    shar_path: ${LOCAL_DATASETS_DIR}/europarl_st/fr_ro/test
+    source_text_field: custom.sentence
+    tags: {task: st, src_lang: fr, tgt_lang: ro, dataset_id: europarl-st-fr_ro}
+
+  - type: lhotse_shar
+    shar_path: ${LOCAL_DATASETS_DIR}/europarl_st/fr_nl/test
+    source_text_field: custom.sentence
+    tags: {task: st, src_lang: fr, tgt_lang: nl, dataset_id: europarl-st-fr_nl}
+
+  - type: lhotse_shar
+    shar_path: ${LOCAL_DATASETS_DIR}/europarl_st/de_fr/test
+    source_text_field: custom.sentence
+    tags: {task: st, src_lang: de, tgt_lang: fr, dataset_id: europarl-st-de_fr}
+
+  - type: lhotse_shar
+    shar_path: ${LOCAL_DATASETS_DIR}/europarl_st/de_es/test
+    source_text_field: custom.sentence
+    tags: {task: st, src_lang: de, tgt_lang: es, dataset_id: europarl-st-de_es}
+
+  - type: lhotse_shar
+    shar_path: ${LOCAL_DATASETS_DIR}/europarl_st/de_it/test
+    source_text_field: custom.sentence
+    tags: {task: st, src_lang: de, tgt_lang: it, dataset_id: europarl-st-de_it}
+
+  - type: lhotse_shar
+    shar_path: ${LOCAL_DATASETS_DIR}/europarl_st/de_pt/test
+    source_text_field: custom.sentence
+    tags: {task: st, src_lang: de, tgt_lang: pt, dataset_id: europarl-st-de_pt}
+
+  - type: lhotse_shar
+    shar_path: ${LOCAL_DATASETS_DIR}/europarl_st/de_pl/test
+    source_text_field: custom.sentence
+    tags: {task: st, src_lang: de, tgt_lang: pl, dataset_id: europarl-st-de_pl}
+
+  - type: lhotse_shar
+    shar_path: ${LOCAL_DATASETS_DIR}/europarl_st/de_ro/test
+    source_text_field: custom.sentence
+    tags: {task: st, src_lang: de, tgt_lang: ro, dataset_id: europarl-st-de_ro}
+
+  - type: lhotse_shar
+    shar_path: ${LOCAL_DATASETS_DIR}/europarl_st/de_nl/test
+    source_text_field: custom.sentence
+    tags: {task: st, src_lang: de, tgt_lang: nl, dataset_id: europarl-st-de_nl}
+
+  - type: lhotse_shar
+    shar_path: ${LOCAL_DATASETS_DIR}/europarl_st/es_fr/test
+    source_text_field: custom.sentence
+    tags: {task: st, src_lang: es, tgt_lang: fr, dataset_id: europarl-st-es_fr}
+
+  - type: lhotse_shar
+    shar_path: ${LOCAL_DATASETS_DIR}/europarl_st/es_de/test
+    source_text_field: custom.sentence
+    tags: {task: st, src_lang: es, tgt_lang: de, dataset_id: europarl-st-es_de}
+
+  - type: lhotse_shar
+    shar_path: ${LOCAL_DATASETS_DIR}/europarl_st/es_it/test
+    source_text_field: custom.sentence
+    tags: {task: st, src_lang: es, tgt_lang: it, dataset_id: europarl-st-es_it}
+
+  - type: lhotse_shar
+    shar_path: ${LOCAL_DATASETS_DIR}/europarl_st/es_pt/test
+    source_text_field: custom.sentence
+    tags: {task: st, src_lang: es, tgt_lang: pt, dataset_id: europarl-st-es_pt}
+
+  - type: lhotse_shar
+    shar_path: ${LOCAL_DATASETS_DIR}/europarl_st/es_pl/test
+    source_text_field: custom.sentence
+    tags: {task: st, src_lang: es, tgt_lang: pl, dataset_id: europarl-st-es_pl}
+
+  - type: lhotse_shar
+    shar_path: ${LOCAL_DATASETS_DIR}/europarl_st/es_ro/test
+    source_text_field: custom.sentence
+    tags: {task: st, src_lang: es, tgt_lang: ro, dataset_id: europarl-st-es_ro}
+
+  - type: lhotse_shar
+    shar_path: ${LOCAL_DATASETS_DIR}/europarl_st/es_nl/test
+    source_text_field: custom.sentence
+    tags: {task: st, src_lang: es, tgt_lang: nl, dataset_id: europarl-st-es_nl}
+
+  - type: lhotse_shar
+    shar_path: ${LOCAL_DATASETS_DIR}/europarl_st/it_fr/test
+    source_text_field: custom.sentence
+    tags: {task: st, src_lang: it, tgt_lang: fr, dataset_id: europarl-st-it_fr}
+
+  - type: lhotse_shar
+    shar_path: ${LOCAL_DATASETS_DIR}/europarl_st/it_de/test
+    source_text_field: custom.sentence
+    tags: {task: st, src_lang: it, tgt_lang: de, dataset_id: europarl-st-it_de}
+
+  - type: lhotse_shar
+    shar_path: ${LOCAL_DATASETS_DIR}/europarl_st/it_es/test
+    source_text_field: custom.sentence
+    tags: {task: st, src_lang: it, tgt_lang: es, dataset_id: europarl-st-it_es}
+
+  - type: lhotse_shar
+    shar_path: ${LOCAL_DATASETS_DIR}/europarl_st/it_pt/test
+    source_text_field: custom.sentence
+    tags: {task: st, src_lang: it, tgt_lang: pt, dataset_id: europarl-st-it_pt}
+
+  - type: lhotse_shar
+    shar_path: ${LOCAL_DATASETS_DIR}/europarl_st/it_pl/test
+    source_text_field: custom.sentence
+    tags: {task: st, src_lang: it, tgt_lang: pl, dataset_id: europarl-st-it_pl}
+
+  - type: lhotse_shar
+    shar_path: ${LOCAL_DATASETS_DIR}/europarl_st/it_ro/test
+    source_text_field: custom.sentence
+    tags: {task: st, src_lang: it, tgt_lang: ro, dataset_id: europarl-st-it_ro}
+
+  - type: lhotse_shar
+    shar_path: ${LOCAL_DATASETS_DIR}/europarl_st/it_nl/test
+    source_text_field: custom.sentence
+    tags: {task: st, src_lang: it, tgt_lang: nl, dataset_id: europarl-st-it_nl}
+
+  - type: lhotse_shar
+    shar_path: ${LOCAL_DATASETS_DIR}/europarl_st/pt_fr/test
+    source_text_field: custom.sentence
+    tags: {task: st, src_lang: pt, tgt_lang: fr, dataset_id: europarl-st-pt_fr}
+
+  - type: lhotse_shar
+    shar_path: ${LOCAL_DATASETS_DIR}/europarl_st/pt_de/test
+    source_text_field: custom.sentence
+    tags: {task: st, src_lang: pt, tgt_lang: de, dataset_id: europarl-st-pt_de}
+
+  - type: lhotse_shar
+    shar_path: ${LOCAL_DATASETS_DIR}/europarl_st/pt_es/test
+    source_text_field: custom.sentence
+    tags: {task: st, src_lang: pt, tgt_lang: es, dataset_id: europarl-st-pt_es}
+
+  - type: lhotse_shar
+    shar_path: ${LOCAL_DATASETS_DIR}/europarl_st/pt_it/test
+    source_text_field: custom.sentence
+    tags: {task: st, src_lang: pt, tgt_lang: it, dataset_id: europarl-st-pt_it}
+
+  - type: lhotse_shar
+    shar_path: ${LOCAL_DATASETS_DIR}/europarl_st/pt_pl/test
+    source_text_field: custom.sentence
+    tags: {task: st, src_lang: pt, tgt_lang: pl, dataset_id: europarl-st-pt_pl}
+
+  - type: lhotse_shar
+    shar_path: ${LOCAL_DATASETS_DIR}/europarl_st/pt_ro/test
+    source_text_field: custom.sentence
+    tags: {task: st, src_lang: pt, tgt_lang: ro, dataset_id: europarl-st-pt_ro}
+
+  - type: lhotse_shar
+    shar_path: ${LOCAL_DATASETS_DIR}/europarl_st/pt_nl/test
+    source_text_field: custom.sentence
+    tags: {task: st, src_lang: pt, tgt_lang: nl, dataset_id: europarl-st-pt_nl}
+
+  - type: lhotse_shar
+    shar_path: ${LOCAL_DATASETS_DIR}/europarl_st/pl_fr/test
+    source_text_field: custom.sentence
+    tags: {task: st, src_lang: pl, tgt_lang: fr, dataset_id: europarl-st-pl_fr}
+
+  - type: lhotse_shar
+    shar_path: ${LOCAL_DATASETS_DIR}/europarl_st/pl_de/test
+    source_text_field: custom.sentence
+    tags: {task: st, src_lang: pl, tgt_lang: de, dataset_id: europarl-st-pl_de}
+
+  - type: lhotse_shar
+    shar_path: ${LOCAL_DATASETS_DIR}/europarl_st/pl_es/test
+    source_text_field: custom.sentence
+    tags: {task: st, src_lang: pl, tgt_lang: es, dataset_id: europarl-st-pl_es}
+
+  - type: lhotse_shar
+    shar_path: ${LOCAL_DATASETS_DIR}/europarl_st/pl_it/test
+    source_text_field: custom.sentence
+    tags: {task: st, src_lang: pl, tgt_lang: it, dataset_id: europarl-st-pl_it}
+
+  - type: lhotse_shar
+    shar_path: ${LOCAL_DATASETS_DIR}/europarl_st/pl_pt/test
+    source_text_field: custom.sentence
+    tags: {task: st, src_lang: pl, tgt_lang: pt, dataset_id: europarl-st-pl_pt}
+
+  - type: lhotse_shar
+    shar_path: ${LOCAL_DATASETS_DIR}/europarl_st/pl_ro/test
+    source_text_field: custom.sentence
+    tags: {task: st, src_lang: pl, tgt_lang: ro, dataset_id: europarl-st-pl_ro}
+
+  - type: lhotse_shar
+    shar_path: ${LOCAL_DATASETS_DIR}/europarl_st/pl_nl/test
+    source_text_field: custom.sentence
+    tags: {task: st, src_lang: pl, tgt_lang: nl, dataset_id: europarl-st-pl_nl}
+
+  - type: lhotse_shar
+    shar_path: ${LOCAL_DATASETS_DIR}/europarl_st/ro_fr/test
+    source_text_field: custom.sentence
+    tags: {task: st, src_lang: ro, tgt_lang: fr, dataset_id: europarl-st-ro_fr}
+
+  - type: lhotse_shar
+    shar_path: ${LOCAL_DATASETS_DIR}/europarl_st/ro_de/test
+    source_text_field: custom.sentence
+    tags: {task: st, src_lang: ro, tgt_lang: de, dataset_id: europarl-st-ro_de}
+
+  - type: lhotse_shar
+    shar_path: ${LOCAL_DATASETS_DIR}/europarl_st/ro_es/test
+    source_text_field: custom.sentence
+    tags: {task: st, src_lang: ro, tgt_lang: es, dataset_id: europarl-st-ro_es}
+
+  - type: lhotse_shar
+    shar_path: ${LOCAL_DATASETS_DIR}/europarl_st/ro_it/test
+    source_text_field: custom.sentence
+    tags: {task: st, src_lang: ro, tgt_lang: it, dataset_id: europarl-st-ro_it}
+
+  - type: lhotse_shar
+    shar_path: ${LOCAL_DATASETS_DIR}/europarl_st/ro_pt/test
+    source_text_field: custom.sentence
+    tags: {task: st, src_lang: ro, tgt_lang: pt, dataset_id: europarl-st-ro_pt}
+
+  - type: lhotse_shar
+    shar_path: ${LOCAL_DATASETS_DIR}/europarl_st/ro_pl/test
+    source_text_field: custom.sentence
+    tags: {task: st, src_lang: ro, tgt_lang: pl, dataset_id: europarl-st-ro_pl}
+
+  - type: lhotse_shar
+    shar_path: ${LOCAL_DATASETS_DIR}/europarl_st/ro_nl/test
+    source_text_field: custom.sentence
+    tags: {task: st, src_lang: ro, tgt_lang: nl, dataset_id: europarl-st-ro_nl}
+
+  - type: lhotse_shar
+    shar_path: ${LOCAL_DATASETS_DIR}/europarl_st/nl_fr/test
+    source_text_field: custom.sentence
+    tags: {task: st, src_lang: nl, tgt_lang: fr, dataset_id: europarl-st-nl_fr}
+
+  - type: lhotse_shar
+    shar_path: ${LOCAL_DATASETS_DIR}/europarl_st/nl_de/test
+    source_text_field: custom.sentence
+    tags: {task: st, src_lang: nl, tgt_lang: de, dataset_id: europarl-st-nl_de}
+
+  - type: lhotse_shar
+    shar_path: ${LOCAL_DATASETS_DIR}/europarl_st/nl_es/test
+    source_text_field: custom.sentence
+    tags: {task: st, src_lang: nl, tgt_lang: es, dataset_id: europarl-st-nl_es}
+
+  - type: lhotse_shar
+    shar_path: ${LOCAL_DATASETS_DIR}/europarl_st/nl_it/test
+    source_text_field: custom.sentence
+    tags: {task: st, src_lang: nl, tgt_lang: it, dataset_id: europarl-st-nl_it}
+
+  - type: lhotse_shar
+    shar_path: ${LOCAL_DATASETS_DIR}/europarl_st/nl_pt/test
+    source_text_field: custom.sentence
+    tags: {task: st, src_lang: nl, tgt_lang: pt, dataset_id: europarl-st-nl_pt}
+
+  - type: lhotse_shar
+    shar_path: ${LOCAL_DATASETS_DIR}/europarl_st/nl_pl/test
+    source_text_field: custom.sentence
+    tags: {task: st, src_lang: nl, tgt_lang: pl, dataset_id: europarl-st-nl_pl}
+
+  - type: lhotse_shar
+    shar_path: ${LOCAL_DATASETS_DIR}/europarl_st/nl_ro/test
+    source_text_field: custom.sentence
+    tags: {task: st, src_lang: nl, tgt_lang: ro, dataset_id: europarl-st-nl_ro}

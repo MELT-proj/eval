@@ -191,3 +191,38 @@ class TestGroupFormRejection:
         from melteval.readers.shar import _reject_group_form
 
         _reject_group_form({"shar_path": "/x", "tags": {"task": "asr"}}, 0)
+
+
+class TestEuroparlStSpecs:
+    """The EuroparlST dev/test specs: 56 non-English directions, one dataset_id each."""
+
+    LANGS = {"fr", "de", "es", "it", "pt", "pl", "ro", "nl"}
+
+    @staticmethod
+    def _load(name: str, monkeypatch) -> list[dict]:
+        monkeypatch.setenv("LOCAL_DATASETS_DIR", "/shar")
+        return load_spec(Path(__file__).parent.parent / "configs" / "shar" / name)["input_cfg"]
+
+    def _check(self, sources: list[dict], split: str, suffix: str, cap: int | None) -> None:
+        pairs = {(s["tags"]["src_lang"], s["tags"]["tgt_lang"]) for s in sources}
+        assert len(sources) == len(pairs) == 56
+        assert pairs == {(a, b) for a in self.LANGS for b in self.LANGS if a != b}
+        for s in sources:
+            src, tgt = s["tags"]["src_lang"], s["tags"]["tgt_lang"]
+            assert s["shar_path"] == f"/shar/europarl_st/{src}_{tgt}/{split}"
+            assert s["tags"]["dataset_id"] == f"europarl-st-{src}_{tgt}{suffix}"
+            assert s["tags"]["task"] == "st"
+            assert s["source_text_field"] == "custom.sentence"
+            assert s.get("max_samples") == cap
+            assert "text_field" not in s  # reference stays supervisions[0].text (the translation)
+
+    def test_dev_is_validation_capped_at_100(self, monkeypatch):
+        self._check(self._load("europarl-st-dev.yaml", monkeypatch), "validation", "-dev", 100)
+
+    def test_test_is_the_full_test_split(self, monkeypatch):
+        self._check(self._load("europarl-st-test.yaml", monkeypatch), "test", "", None)
+
+    def test_dev_dataset_ids_do_not_collide_with_test(self, monkeypatch):
+        dev = {s["tags"]["dataset_id"] for s in self._load("europarl-st-dev.yaml", monkeypatch)}
+        test = {s["tags"]["dataset_id"] for s in self._load("europarl-st-test.yaml", monkeypatch)}
+        assert not dev & test

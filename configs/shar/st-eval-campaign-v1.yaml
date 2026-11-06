@@ -1,11 +1,11 @@
 # ST test sets for the checkpoint-comparison eval campaign: BLEU/spBLEU/chrF++ (and,
-# after rescoring, COMET) for CoVoST2 in six directions. Full `test` splits,
+# after rescoring, MetricX) for CoVoST2 in six directions. Full `test` splits,
 # no max_samples.
 #
 # Reference is the translation (default text field, i.e. supervisions[0].text
 # -- no override needed); custom.sentence is the source-language transcript,
 # kept via source_text_field so `melteval rescore` can build (src, mt, ref)
-# triples for COMET afterwards (Unbabel/wmt22-comet-da; see README's
+# triples for MetricX-24 afterwards (see README's
 # "Rescoring ST output with COMET/MetricX" and melteval/rescore.py).
 #
 # Each direction gets its own dataset_id (covost2-<src>_<tgt>), not a shared

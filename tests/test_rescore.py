@@ -184,3 +184,85 @@ class TestCometScorerThroughRealInspect:
             {"src": "Guten Tag.", "mt": "Good day.", "ref": "Good day."},
             {"src": "Ich gehe.", "mt": "I go.", "ref": "I go."},
         ]
+
+    def test_non_english_source_and_target_pass_through_unchanged(self, tmp_path, monkeypatch):
+        """EuroparlST fr->pl: neither side is English; the triple is (source transcript, hypothesis, reference)."""
+        import sys
+        import types
+
+        from inspect_ai import Task
+        from inspect_ai import eval as inspect_eval
+        from inspect_ai.dataset import MemoryDataset, Sample
+
+        from melteval.rescore import comet_scorer
+
+        seen = []
+        fake = types.ModuleType("comet")
+        fake.download_model = lambda name: name
+
+        class _Model:
+            def predict(self, samples, batch_size, gpus):
+                seen.append(samples)
+                return types.SimpleNamespace(system_score=0.8)
+
+        fake.load_from_checkpoint = lambda path: _Model()
+        monkeypatch.setitem(sys.modules, "comet", fake)
+
+        src = "Madame la Présidente, je voudrais qu ' elle réponde."
+        ref = "Pani Przewodnicząca, chciałbym, aby odpowiedziała. Zażółć gęślą jaźń."
+        dataset = MemoryDataset([Sample(input="x", target=ref, id="a", metadata={"source_text": src})])
+        outputs = [ModelOutput.from_content(model="mockllm/model", content="Pani Przewodnicząca, proszę.")]
+        [log] = inspect_eval(
+            Task(dataset=dataset, scorer=comet_scorer()),
+            model="mockllm/model",
+            model_args={"custom_outputs": outputs},
+            display="none",
+            log_dir=str(tmp_path),
+        )
+        assert log.status == "success"
+        assert seen == [[{"src": src, "mt": "Pani Przewodnicząca, proszę.", "ref": ref}]]
+
+
+class TestMetricxScorerThroughRealInspect:
+    """``metricx_scorer`` under a real ``inspect_ai.eval()``, with the model replaced by a recorder."""
+
+    def test_scores_the_corpus_with_the_reference_based_input(self, tmp_path, monkeypatch):
+        from inspect_ai import Task
+        from inspect_ai import eval as inspect_eval
+        from inspect_ai.dataset import MemoryDataset, Sample
+
+        import melteval.rescore as rescore
+
+        seen = []
+        monkeypatch.setattr(rescore, "metricx_predict", lambda inputs: seen.append(inputs) or [2.0, 4.0, 6.0])
+        dataset = MemoryDataset(
+            [
+                Sample(input="x", target="Pani Przewodnicząca.", id="a", metadata={"source_text": "Madame la Présidente."}),
+                # no source transcript: still scored, with an empty source
+                Sample(input="x", target="Guten Tag.", id="b", metadata={}),
+                Sample(input="x", target="Tschüss.", id="c", metadata={"source_text": "Au revoir."}),
+                # empty output: not scorable
+                Sample(input="x", target="Danke.", id="d", metadata={"source_text": "Merci."}),
+            ]
+        )
+        contents = ("Pani Przewodnicząca.", "Guten Tag.", "Tschüss.", "")
+        outputs = [ModelOutput.from_content(model="mockllm/model", content=c) for c in contents]
+        [log] = inspect_eval(
+            Task(dataset=dataset, scorer=rescore.metricx_scorer()),
+            model="mockllm/model",
+            model_args={"custom_outputs": outputs},
+            display="none",
+            log_dir=str(tmp_path),
+        )
+        assert log.status == "success"
+        metrics = log.results.scores[0].metrics
+        assert metrics["metricx"].value == pytest.approx(4.0)
+        assert metrics["metricx_coverage"].value == pytest.approx(3 / 4)
+        [inputs] = seen
+        assert sorted(inputs) == sorted(
+            [
+                "source: Madame la Présidente. candidate: Pani Przewodnicząca. reference: Pani Przewodnicząca.",
+                "source:  candidate: Guten Tag. reference: Guten Tag.",
+                "source: Au revoir. candidate: Tschüss. reference: Tschüss.",
+            ]
+        )

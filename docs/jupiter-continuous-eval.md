@@ -77,7 +77,7 @@ Two aarch64 details: `mweralign` publishes x86_64 wheels only, so here `uv` buil
 
 Do **not** pass `--prerelease=allow`: it resolves `httpx` to its `1.0.dev*` line, which dropped `httpcore`, and every scoring job then dies on `import inspect_ai` with `ModuleNotFoundError: No module named 'httpcore'` before it reads a log. That is exactly how the first MCIF ST scoring attempt here failed (`metrics-mcif` venv) — all three jobs, in about a minute, with `mcif-bench`/`mweralign` themselves installed fine.
 
-**Offline models for the post-hoc scorers.** The following need to be fetched in `$HF_HOME` from the login node: `Unbabel/wmt22-comet-da` and `xlm-roberta-large` (COMET), `roberta-large` (BERTScore, en) and `bert-base-multilingual-cased` (BERTScore, de/it).
+**Offline models for the post-hoc scorers.** The following need to be fetched in `$HF_HOME` from the login node: `Unbabel/wmt22-comet-da` and `xlm-roberta-large` (COMET), `roberta-large` (BERTScore, en) and `bert-base-multilingual-cased` (BERTScore, de/it), `google/metricx-24-hybrid-xxl-v2p6-bfloat16` and `google/mt5-xl` (MetricX, ST; the revisions pinned in `melteval/rescore.py`).
 
 **MCIF references are a download too.** `mcif_scoring` re-fetches `MCIF.<track>.<lang>.ref.xml.gz` itself (it scores against the exact revision generation used, not whatever the dataset cache happens to hold), and the compute nodes are offline. Cache the two files the ST slices need from the login node — the keys come from the logs, so this works for logs someone else generated:
 
@@ -135,6 +135,8 @@ huggingface-cli download roberta-large
 huggingface-cli download bert-base-multilingual-cased
 huggingface-cli download Unbabel/wmt22-comet-da
 huggingface-cli download xlm-roberta-large
+huggingface-cli download google/metricx-24-hybrid-xxl-v2p6-bfloat16
+huggingface-cli download google/mt5-xl
 
 # 5-6, 8-9. The baselines' models
 huggingface-cli download Qwen/Qwen2-Audio-7B-Instruct
@@ -274,7 +276,7 @@ Some metrics need a model of their own and are computed after generation, by `ev
 | MCIF SQA (`audio_chat`, short en/de/it) | `mcif_scoring.py@mcif_official_qa_scorer` | `official_bertscore` |
 | MCIF QA + SUM (`audio_chat`, long en) | `mcif_scoring.py@mcif_official_qa_scorer` and `@mcif_official_sum_scorer` | `official_bertscore` on the QA and the summarisation samples of one log |
 | MCIF ST (`chunked_st`, de/it) | `mcif_scoring.py@mcif_official_trans_scorer` | `official_trans_comet` |
-| FLEURS ST, both directions | `rescore.py@comet_scorer` | `comet`, and `comet_coverage` (share of samples COMET could score) |
+| FLEURS and EuroparlST ST | `rescore.py@metricx_scorer` | `metricx` (MetricX-24 hybrid XXL error, 0-25, lower is better), and `metricx_coverage` (share of samples with an output) |
 
 They are declared per slice in the suite, [configs/eval/suites/v1.yaml](../configs/eval/suites/v1.yaml) (`post_scorers:`, with `post_venv:` on the benchmark). The watcher runs them by itself: once a checkpoint's generation is `done`, each pass calls `evaluate.py score`, which submits what is missing and skips what is already queued, and the checkpoint becomes `scored` when nothing is left. Until then the report shows `pending` for those metrics. A missing score never makes a checkpoint `failed`; after 3 submissions that did not complete it, the watcher stops trying and `status` says so.
 

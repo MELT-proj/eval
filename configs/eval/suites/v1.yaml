@@ -106,63 +106,63 @@ benchmarks:
     slices:
       - {task: asr}
 
-  # COMET-22 DA (melteval/rescore.py), scored after generation in the metrics venv.
+  # MetricX-24 hybrid XXL (melteval/rescore.py), scored after generation in the metrics venv.
   - name: fleurs24-st-xen
     frozen_set: ${FLEURS24_ST_XEN_SET}
     needs_instruction: true
     post_venv: ${METRICS_VENV_PATH}
     slices:
-      - {task: st, dataset_id: fleurs-bg_en, post_scorers: [melteval/rescore.py@comet_scorer]}
-      - {task: st, dataset_id: fleurs-cs_en, post_scorers: [melteval/rescore.py@comet_scorer]}
-      - {task: st, dataset_id: fleurs-da_en, post_scorers: [melteval/rescore.py@comet_scorer]}
-      - {task: st, dataset_id: fleurs-de_en, post_scorers: [melteval/rescore.py@comet_scorer]}
-      - {task: st, dataset_id: fleurs-el_en, post_scorers: [melteval/rescore.py@comet_scorer]}
-      - {task: st, dataset_id: fleurs-es_en, post_scorers: [melteval/rescore.py@comet_scorer]}
-      - {task: st, dataset_id: fleurs-et_en, post_scorers: [melteval/rescore.py@comet_scorer]}
-      - {task: st, dataset_id: fleurs-fi_en, post_scorers: [melteval/rescore.py@comet_scorer]}
-      - {task: st, dataset_id: fleurs-fr_en, post_scorers: [melteval/rescore.py@comet_scorer]}
-      - {task: st, dataset_id: fleurs-ga_en}  # no FLEURS ga source transcript: BLEU/chrF++ only
-      - {task: st, dataset_id: fleurs-hr_en, post_scorers: [melteval/rescore.py@comet_scorer]}
-      - {task: st, dataset_id: fleurs-hu_en, post_scorers: [melteval/rescore.py@comet_scorer]}
-      - {task: st, dataset_id: fleurs-it_en, post_scorers: [melteval/rescore.py@comet_scorer]}
-      - {task: st, dataset_id: fleurs-lt_en, post_scorers: [melteval/rescore.py@comet_scorer]}
-      - {task: st, dataset_id: fleurs-lv_en, post_scorers: [melteval/rescore.py@comet_scorer]}
-      - {task: st, dataset_id: fleurs-mt_en, post_scorers: [melteval/rescore.py@comet_scorer]}
-      - {task: st, dataset_id: fleurs-nl_en, post_scorers: [melteval/rescore.py@comet_scorer]}
-      - {task: st, dataset_id: fleurs-pl_en, post_scorers: [melteval/rescore.py@comet_scorer]}
-      - {task: st, dataset_id: fleurs-pt_en, post_scorers: [melteval/rescore.py@comet_scorer]}
-      - {task: st, dataset_id: fleurs-ro_en, post_scorers: [melteval/rescore.py@comet_scorer]}
-      - {task: st, dataset_id: fleurs-sk_en, post_scorers: [melteval/rescore.py@comet_scorer]}
-      - {task: st, dataset_id: fleurs-sl_en, post_scorers: [melteval/rescore.py@comet_scorer]}
-      - {task: st, dataset_id: fleurs-sv_en, post_scorers: [melteval/rescore.py@comet_scorer]}
+      - {task: st, dataset_id: fleurs-bg_en, post_scorers: [melteval/rescore.py@metricx_scorer]}
+      - {task: st, dataset_id: fleurs-cs_en, post_scorers: [melteval/rescore.py@metricx_scorer]}
+      - {task: st, dataset_id: fleurs-da_en, post_scorers: [melteval/rescore.py@metricx_scorer]}
+      - {task: st, dataset_id: fleurs-de_en, post_scorers: [melteval/rescore.py@metricx_scorer]}
+      - {task: st, dataset_id: fleurs-el_en, post_scorers: [melteval/rescore.py@metricx_scorer]}
+      - {task: st, dataset_id: fleurs-es_en, post_scorers: [melteval/rescore.py@metricx_scorer]}
+      - {task: st, dataset_id: fleurs-et_en, post_scorers: [melteval/rescore.py@metricx_scorer]}
+      - {task: st, dataset_id: fleurs-fi_en, post_scorers: [melteval/rescore.py@metricx_scorer]}
+      - {task: st, dataset_id: fleurs-fr_en, post_scorers: [melteval/rescore.py@metricx_scorer]}
+      - {task: st, dataset_id: fleurs-ga_en, post_scorers: [melteval/rescore.py@metricx_scorer]}  # no source transcript: scored with an empty one
+      - {task: st, dataset_id: fleurs-hr_en, post_scorers: [melteval/rescore.py@metricx_scorer]}
+      - {task: st, dataset_id: fleurs-hu_en, post_scorers: [melteval/rescore.py@metricx_scorer]}
+      - {task: st, dataset_id: fleurs-it_en, post_scorers: [melteval/rescore.py@metricx_scorer]}
+      - {task: st, dataset_id: fleurs-lt_en, post_scorers: [melteval/rescore.py@metricx_scorer]}
+      - {task: st, dataset_id: fleurs-lv_en, post_scorers: [melteval/rescore.py@metricx_scorer]}
+      - {task: st, dataset_id: fleurs-mt_en, post_scorers: [melteval/rescore.py@metricx_scorer]}
+      - {task: st, dataset_id: fleurs-nl_en, post_scorers: [melteval/rescore.py@metricx_scorer]}
+      - {task: st, dataset_id: fleurs-pl_en, post_scorers: [melteval/rescore.py@metricx_scorer]}
+      - {task: st, dataset_id: fleurs-pt_en, post_scorers: [melteval/rescore.py@metricx_scorer]}
+      - {task: st, dataset_id: fleurs-ro_en, post_scorers: [melteval/rescore.py@metricx_scorer]}
+      - {task: st, dataset_id: fleurs-sk_en, post_scorers: [melteval/rescore.py@metricx_scorer]}
+      - {task: st, dataset_id: fleurs-sl_en, post_scorers: [melteval/rescore.py@metricx_scorer]}
+      - {task: st, dataset_id: fleurs-sv_en, post_scorers: [melteval/rescore.py@metricx_scorer]}
 
   # configs/shar/fleurs24-st-enx-test.yaml: English audio into each EU language
-  # (one slice per target). COMET-22 DA post-hoc, from the English source.
+  # (one slice per target). MetricX-24 post-hoc, from the English source.
   - name: fleurs24-st-enx
     frozen_set: ${FLEURS24_ST_ENX_SET}
     needs_instruction: true
     post_venv: ${METRICS_VENV_PATH}
     slices:
-      - {task: st, dataset_id: fleurs-en_bg, post_scorers: [melteval/rescore.py@comet_scorer]}
-      - {task: st, dataset_id: fleurs-en_cs, post_scorers: [melteval/rescore.py@comet_scorer]}
-      - {task: st, dataset_id: fleurs-en_da, post_scorers: [melteval/rescore.py@comet_scorer]}
-      - {task: st, dataset_id: fleurs-en_de, post_scorers: [melteval/rescore.py@comet_scorer]}
-      - {task: st, dataset_id: fleurs-en_el, post_scorers: [melteval/rescore.py@comet_scorer]}
-      - {task: st, dataset_id: fleurs-en_es, post_scorers: [melteval/rescore.py@comet_scorer]}
-      - {task: st, dataset_id: fleurs-en_et, post_scorers: [melteval/rescore.py@comet_scorer]}
-      - {task: st, dataset_id: fleurs-en_fi, post_scorers: [melteval/rescore.py@comet_scorer]}
-      - {task: st, dataset_id: fleurs-en_fr, post_scorers: [melteval/rescore.py@comet_scorer]}
-      - {task: st, dataset_id: fleurs-en_ga, post_scorers: [melteval/rescore.py@comet_scorer]}
-      - {task: st, dataset_id: fleurs-en_hr, post_scorers: [melteval/rescore.py@comet_scorer]}
-      - {task: st, dataset_id: fleurs-en_hu, post_scorers: [melteval/rescore.py@comet_scorer]}
-      - {task: st, dataset_id: fleurs-en_it, post_scorers: [melteval/rescore.py@comet_scorer]}
-      - {task: st, dataset_id: fleurs-en_lt, post_scorers: [melteval/rescore.py@comet_scorer]}
-      - {task: st, dataset_id: fleurs-en_lv, post_scorers: [melteval/rescore.py@comet_scorer]}
-      - {task: st, dataset_id: fleurs-en_mt, post_scorers: [melteval/rescore.py@comet_scorer]}
-      - {task: st, dataset_id: fleurs-en_nl, post_scorers: [melteval/rescore.py@comet_scorer]}
-      - {task: st, dataset_id: fleurs-en_pl, post_scorers: [melteval/rescore.py@comet_scorer]}
-      - {task: st, dataset_id: fleurs-en_pt, post_scorers: [melteval/rescore.py@comet_scorer]}
-      - {task: st, dataset_id: fleurs-en_ro, post_scorers: [melteval/rescore.py@comet_scorer]}
-      - {task: st, dataset_id: fleurs-en_sk, post_scorers: [melteval/rescore.py@comet_scorer]}
-      - {task: st, dataset_id: fleurs-en_sl, post_scorers: [melteval/rescore.py@comet_scorer]}
-      - {task: st, dataset_id: fleurs-en_sv, post_scorers: [melteval/rescore.py@comet_scorer]}
+      - {task: st, dataset_id: fleurs-en_bg, post_scorers: [melteval/rescore.py@metricx_scorer]}
+      - {task: st, dataset_id: fleurs-en_cs, post_scorers: [melteval/rescore.py@metricx_scorer]}
+      - {task: st, dataset_id: fleurs-en_da, post_scorers: [melteval/rescore.py@metricx_scorer]}
+      - {task: st, dataset_id: fleurs-en_de, post_scorers: [melteval/rescore.py@metricx_scorer]}
+      - {task: st, dataset_id: fleurs-en_el, post_scorers: [melteval/rescore.py@metricx_scorer]}
+      - {task: st, dataset_id: fleurs-en_es, post_scorers: [melteval/rescore.py@metricx_scorer]}
+      - {task: st, dataset_id: fleurs-en_et, post_scorers: [melteval/rescore.py@metricx_scorer]}
+      - {task: st, dataset_id: fleurs-en_fi, post_scorers: [melteval/rescore.py@metricx_scorer]}
+      - {task: st, dataset_id: fleurs-en_fr, post_scorers: [melteval/rescore.py@metricx_scorer]}
+      - {task: st, dataset_id: fleurs-en_ga, post_scorers: [melteval/rescore.py@metricx_scorer]}
+      - {task: st, dataset_id: fleurs-en_hr, post_scorers: [melteval/rescore.py@metricx_scorer]}
+      - {task: st, dataset_id: fleurs-en_hu, post_scorers: [melteval/rescore.py@metricx_scorer]}
+      - {task: st, dataset_id: fleurs-en_it, post_scorers: [melteval/rescore.py@metricx_scorer]}
+      - {task: st, dataset_id: fleurs-en_lt, post_scorers: [melteval/rescore.py@metricx_scorer]}
+      - {task: st, dataset_id: fleurs-en_lv, post_scorers: [melteval/rescore.py@metricx_scorer]}
+      - {task: st, dataset_id: fleurs-en_mt, post_scorers: [melteval/rescore.py@metricx_scorer]}
+      - {task: st, dataset_id: fleurs-en_nl, post_scorers: [melteval/rescore.py@metricx_scorer]}
+      - {task: st, dataset_id: fleurs-en_pl, post_scorers: [melteval/rescore.py@metricx_scorer]}
+      - {task: st, dataset_id: fleurs-en_pt, post_scorers: [melteval/rescore.py@metricx_scorer]}
+      - {task: st, dataset_id: fleurs-en_ro, post_scorers: [melteval/rescore.py@metricx_scorer]}
+      - {task: st, dataset_id: fleurs-en_sk, post_scorers: [melteval/rescore.py@metricx_scorer]}
+      - {task: st, dataset_id: fleurs-en_sl, post_scorers: [melteval/rescore.py@metricx_scorer]}
+      - {task: st, dataset_id: fleurs-en_sv, post_scorers: [melteval/rescore.py@metricx_scorer]}

@@ -1,6 +1,6 @@
 """Extract (src, mt, ref) triples from a completed eval log for rescoring.
 
-(For COMET written straight into the log instead, see :func:`comet_scorer`
+(For COMET / MetricX-24 written straight into the log instead, see :func:`comet_scorer` / :func:`metricx_scorer`
 at the end of this module.)
 
 Neural MT metrics (COMET, MetricX) live in their own venvs — `comet` and
@@ -184,5 +184,115 @@ def comet_scorer() -> Scorer:
         usable = bool(source) and bool(hypothesis and hypothesis.strip())
         triple = {"src": source, "mt": hypothesis, "ref": target.text} if usable else None
         return Score(value={}, answer=hypothesis, metadata={"comet_triple": triple})
+
+    return score
+
+
+# --------------------------------------------------------------------------- metricx_scorer
+#
+# MetricX-24 (hybrid XXL), reference-based, as a post-hoc scorer like :func:`comet_scorer`:
+#
+#     inspect score path/to/log.json --scorer melteval/rescore.py@metricx_scorer --action append
+#
+# Run from the metrics venv (torch + transformers + sentencepiece), never as part of `inspect eval`. The input
+# format, the 1536-token cap, the ``google/mt5-xl`` tokenizer, the dropped final EOS and the read-out (logit
+# 250089 = ``<extra_id_10>`` after one decoder step from token 0, clamped to [0, 25]) follow upstream
+# (``google-research/metricx`` at commit fc4978e, ``metricx24/predict.py`` and ``models.py``). The checkpoint's
+# ``MT5ForRegression`` head is an ``MT5ForConditionalGeneration`` read at one position, so the stock class loads it.
+
+#: bf16 export of ``google/metricx-24-hybrid-xxl-v2p6`` (same model, weights cast to bfloat16, which is the
+#: precision it is run in), and the tokenizer upstream names for it. Pinned.
+METRICX_MODEL = "google/metricx-24-hybrid-xxl-v2p6-bfloat16"
+METRICX_REVISION = "3d9c6f7fd11b58d3eceeb68ee39fe7d2c761ee20"
+METRICX_TOKENIZER = "google/mt5-xl"
+METRICX_TOKENIZER_REVISION = "63fc6450d80515b48e026b69ef2fbbd426433e84"
+METRICX_MAX_INPUT_LENGTH = 1536
+METRICX_SCORE_TOKEN_ID = 250089
+
+
+def metricx_input(source: str, hypothesis: str, reference: str) -> str:
+    """The reference-based MetricX-24 input string."""
+    return f"source: {source} candidate: {hypothesis} reference: {reference}"
+
+
+def metricx_predict(inputs: list[str], batch_size: int = 16) -> list[float]:
+    """MetricX-24 error scores in [0, 25] (lower is better), parallel to *inputs*; the model is loaded once."""
+    import torch  # type: ignore
+    import transformers  # type: ignore
+
+    device = "cuda" if torch.cuda.is_available() else "cpu"
+    tokenizer = transformers.AutoTokenizer.from_pretrained(METRICX_TOKENIZER, revision=METRICX_TOKENIZER_REVISION)
+    model = transformers.MT5ForConditionalGeneration.from_pretrained(
+        METRICX_MODEL, revision=METRICX_REVISION, torch_dtype=torch.bfloat16, low_cpu_mem_usage=True
+    )
+    model.to(device).eval()
+    pad = model.config.pad_token_id
+    ids = [
+        tokenizer(t, max_length=METRICX_MAX_INPUT_LENGTH, truncation=True, padding=False)["input_ids"][:-1]
+        for t in inputs
+    ]
+    scores = [0.0] * len(ids)
+    order = sorted(range(len(ids)), key=lambda i: len(ids[i]))  # by length: little padding, order restored below
+    for start in range(0, len(order), batch_size):
+        chunk = order[start : start + batch_size]
+        width = max(len(ids[i]) for i in chunk)
+        input_ids = torch.tensor([ids[i] + [pad] * (width - len(ids[i])) for i in chunk], device=device)
+        mask = torch.tensor([[1] * len(ids[i]) + [0] * (width - len(ids[i])) for i in chunk], device=device)
+        with torch.inference_mode():
+            logits = model(
+                input_ids=input_ids,
+                attention_mask=mask,
+                decoder_input_ids=torch.zeros((len(chunk), 1), dtype=torch.long, device=device),
+                use_cache=False,
+            ).logits
+        for i, value in zip(chunk, logits[:, 0, METRICX_SCORE_TOKEN_ID].float().clamp(0.0, 25.0).tolist()):
+            scores[i] = value
+    return scores
+
+
+def _metricx_triple(sample_score: SampleScore) -> dict | None:
+    """The ``{src, mt, ref}`` stashed by :func:`metricx_scorer`, or ``None`` if the sample had no output."""
+    return (sample_score.score.metadata or {}).get("metricx_triple")
+
+
+@metric
+def metricx() -> Metric:
+    """System-level MetricX-24 error (mean of segment scores, 0-25, lower is better)."""
+
+    def calculate(scores: list[SampleScore]) -> float:
+        triples = [t for t in map(_metricx_triple, scores) if t]
+        if not triples:
+            return float("nan")
+        values = metricx_predict([metricx_input(t["src"], t["mt"], t["ref"]) for t in triples])
+        return sum(values) / len(values)
+
+    return calculate
+
+
+@metric
+def metricx_coverage() -> Metric:
+    """Fraction of samples MetricX could score (the rest had no output)."""
+
+    def calculate(scores: list[SampleScore]) -> float:
+        return sum(_metricx_triple(s) is not None for s in scores) / len(scores) if scores else 0.0
+
+    return calculate
+
+
+@scorer(metrics=[metricx(), metricx_coverage()])
+def metricx_scorer() -> Scorer:
+    """MetricX-24 hybrid XXL, reference-based, from each sample's ``source_text``, completion and target.
+
+    Like :func:`comet_scorer`, nothing is computed per sample: the triple goes into ``Score.metadata`` and
+    :func:`metricx` scores the run at once. A sample without a source transcript is still scored, with an empty
+    source (upstream allows it); only an empty completion is skipped.
+    """
+
+    async def score(state: TaskState, target: Target) -> Score:
+        source = (state.metadata or {}).get("source_text") or ""
+        hypothesis = state.output.completion if state.output else ""
+        usable = bool(hypothesis and hypothesis.strip())
+        triple = {"src": source, "mt": hypothesis, "ref": target.text} if usable else None
+        return Score(value={}, answer=hypothesis, metadata={"metricx_triple": triple})
 
     return score
