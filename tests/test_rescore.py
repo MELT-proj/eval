@@ -184,3 +184,40 @@ class TestCometScorerThroughRealInspect:
             {"src": "Guten Tag.", "mt": "Good day.", "ref": "Good day."},
             {"src": "Ich gehe.", "mt": "I go.", "ref": "I go."},
         ]
+
+    def test_non_english_source_and_target_pass_through_unchanged(self, tmp_path, monkeypatch):
+        """EuroparlST fr->pl: neither side is English; the triple is (source transcript, hypothesis, reference)."""
+        import sys
+        import types
+
+        from inspect_ai import Task
+        from inspect_ai import eval as inspect_eval
+        from inspect_ai.dataset import MemoryDataset, Sample
+
+        from melteval.rescore import comet_scorer
+
+        seen = []
+        fake = types.ModuleType("comet")
+        fake.download_model = lambda name: name
+
+        class _Model:
+            def predict(self, samples, batch_size, gpus):
+                seen.append(samples)
+                return types.SimpleNamespace(system_score=0.8)
+
+        fake.load_from_checkpoint = lambda path: _Model()
+        monkeypatch.setitem(sys.modules, "comet", fake)
+
+        src = "Madame la Présidente, je voudrais qu ' elle réponde."
+        ref = "Pani Przewodnicząca, chciałbym, aby odpowiedziała. Zażółć gęślą jaźń."
+        dataset = MemoryDataset([Sample(input="x", target=ref, id="a", metadata={"source_text": src})])
+        outputs = [ModelOutput.from_content(model="mockllm/model", content="Pani Przewodnicząca, proszę.")]
+        [log] = inspect_eval(
+            Task(dataset=dataset, scorer=comet_scorer()),
+            model="mockllm/model",
+            model_args={"custom_outputs": outputs},
+            display="none",
+            log_dir=str(tmp_path),
+        )
+        assert log.status == "success"
+        assert seen == [[{"src": src, "mt": "Pani Przewodnicząca, proszę.", "ref": ref}]]
