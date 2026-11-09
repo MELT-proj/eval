@@ -185,6 +185,30 @@ export FLEURS24_ST_XEN_SET=$F/fleurs24-st-xen-test \
        FLEURS24_ST_ENX_SET=$F/fleurs24-st-enx-test VOXPOPULI_SET=$F/voxpopuli-test
 ```
 
+#### EuroparlST (speechval)
+
+Two more frozen sets, from [configs/shar/europarl-st-dev.yaml](../configs/shar/europarl-st-dev.yaml) (`validation`, 100 per direction, seeded) and [configs/shar/europarl-st-test.yaml](../configs/shar/europarl-st-test.yaml) (full `test`): the 56 directions among fr/de/es/it/pt/pl/ro/nl, no English. The dev set is the `europarl-st-dev` entry of [configs/eval/suites/speechval-dev.yaml](../configs/eval/suites/speechval-dev.yaml); its slices are scored with MetricX-24 (`melteval/rescore.py@metricx_scorer`, see 2.5), so the two MetricX models of 1.4 have to be in `$HF_HOME`. No suite runs the test set yet.
+
+| Set | Recipe | Variable | Samples |
+| --- | ------ | -------- | ------- |
+| EuroparlST dev | `configs/shar/europarl-st-dev.yaml` | `EUROPARL_ST_DEV_SET` | 5,600 (56 × 100) |
+| EuroparlST test | `configs/shar/europarl-st-test.yaml` | `EUROPARL_ST_TEST_SET` | 62,369 (165.8 h) |
+
+The audio is the indexed Shar tree of the training data (`europarl_st/<src>_<tgt>/{validation,test}`; 112 directories, 20 GB). A frozen set stores absolute locators, so freeze on the machine that will read the audio. On JUPITER the tree is under `/e/data1/smurf4eu-data/speech/shar`:
+
+```bash
+# from the machine that has the tree: copy validation + test of the 56 directions (the paths are relative to the corpus root)
+rsync -aR ./fr_de/validation ./fr_de/test ... jupiter:/e/data1/smurf4eu-data/speech/shar/europarl_st/
+
+# on JUPITER, CPU only (login node is fine; ~25 s for dev, ~15 s for test)
+export LOCAL_DATASETS_DIR=/e/data1/smurf4eu-data/speech/shar
+melteval freeze configs/shar/europarl-st-dev.yaml  -o $F/europarl-st-dev
+melteval freeze configs/shar/europarl-st-test.yaml -o $F/europarl-st-test
+export EUROPARL_ST_DEV_SET=$F/europarl-st-dev EUROPARL_ST_TEST_SET=$F/europarl-st-test
+```
+
+Reference and source: the reference is the translation; `custom.sentence` is the source-language transcript, which MetricX's reference-based input uses as the source. The `fr`/`it` transcripts come detokenized (apostrophes separated), which is how the dataset ships them and is not normalized here.
+
 ### 1.6. Smoke test
 
 Run a few samples of every benchmark before leaving the watcher unattended.
