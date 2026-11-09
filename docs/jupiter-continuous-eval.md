@@ -187,18 +187,18 @@ export FLEURS24_ST_XEN_SET=$F/fleurs24-st-xen-test \
 
 #### EuroparlST (speechval)
 
-Two more frozen sets, from [configs/shar/europarl-st-dev.yaml](../configs/shar/europarl-st-dev.yaml) (`validation`, 100 per direction, seeded) and [configs/shar/europarl-st-test.yaml](../configs/shar/europarl-st-test.yaml) (full `test`): the 56 directions among fr/de/es/it/pt/pl/ro/nl, no English. The dev set is the `europarl-st-dev` entry of [configs/eval/suites/speechval-dev.yaml](../configs/eval/suites/speechval-dev.yaml); its slices are scored with MetricX-24 (`melteval/rescore.py@metricx_scorer`, see 2.5), so the two MetricX models of 1.4 have to be in `$HF_HOME`. No suite runs the test set yet.
+Two more frozen sets, from [configs/shar/europarl-st-dev.yaml](../configs/shar/europarl-st-dev.yaml) (`validation`, 500 per direction, seeded) and [configs/shar/europarl-st-test.yaml](../configs/shar/europarl-st-test.yaml) (full `test`): the 72 ordered directions among en/fr/de/es/it/pt/pl/ro/nl (English as source or target included). The dev set is the `europarl-st-dev` entry of [configs/eval/suites/speechval-dev.yaml](../configs/eval/suites/speechval-dev.yaml); its slices are scored with MetricX-24 (`melteval/rescore.py@metricx_scorer`, see 2.5), so the two MetricX models of 1.4 have to be in `$HF_HOME`. No suite runs the test set yet.
 
 | Set | Recipe | Variable | Samples |
 | --- | ------ | -------- | ------- |
-| EuroparlST dev | `configs/shar/europarl-st-dev.yaml` | `EUROPARL_ST_DEV_SET` | 5,600 (56 × 100) |
-| EuroparlST test | `configs/shar/europarl-st-test.yaml` | `EUROPARL_ST_TEST_SET` | 62,369 (165.8 h) |
+| EuroparlST dev | `configs/shar/europarl-st-dev.yaml` | `EUROPARL_ST_DEV_SET` | 36,000 (72 × 500) |
+| EuroparlST test | `configs/shar/europarl-st-test.yaml` | `EUROPARL_ST_TEST_SET` | 88,227 (230.8 h, the whole `test` split) |
 
-The audio is the indexed Shar tree of the training data (`europarl_st/<src>_<tgt>/{validation,test}`; 112 directories, 20 GB). A frozen set stores absolute locators, so freeze on the machine that will read the audio. On JUPITER the tree is under `/e/data1/smurf4eu-data/speech/shar`:
+The audio is the indexed Shar tree of the training data (`europarl_st/<src>_<tgt>/{validation,test}`; 144 directories). A frozen set stores absolute locators, so freeze on the machine that will read the audio. On JUPITER the tree is under `/e/data1/smurf4eu-data/speech/shar`:
 
 ```bash
-# from the machine that has the tree: copy validation + test of the 56 directions (the paths are relative to the corpus root)
-rsync -aR ./fr_de/validation ./fr_de/test ... jupiter:/e/data1/smurf4eu-data/speech/shar/europarl_st/
+# from the machine that has the tree: copy validation + test of the 72 directions (the paths are relative to the corpus root)
+rsync -aR ./fr_de/validation ./fr_de/test ./en_fr/validation ./en_fr/test ... jupiter:/e/data1/smurf4eu-data/speech/shar/europarl_st/
 
 # on JUPITER, CPU only (login node is fine; ~25 s for dev, ~15 s for test)
 export LOCAL_DATASETS_DIR=/e/data1/smurf4eu-data/speech/shar

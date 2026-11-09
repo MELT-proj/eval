@@ -2,7 +2,7 @@
 # (`benchmarks: <this file>`). A config that runs part of it uses `skip`.
 
 benchmarks:
-  # configs/shar/europarl-st-dev.yaml: EuroparlST, the 56 directions among fr/de/es/it/pt/pl/ro/nl (validation, 100 per direction).
+  # configs/shar/europarl-st-dev.yaml: EuroparlST, the 72 directions among en/fr/de/es/it/pt/pl/ro/nl (validation, 500 per direction).
   # MetricX-24 hybrid XXL (reference-based) post-hoc, from custom.sentence (the source transcript).
   - name: europarl-st-dev
     frozen_set: ${EUROPARL_ST_DEV_SET}
@@ -65,4 +65,20 @@ benchmarks:
       - {task: st, dataset_id: europarl-st-nl_pt-dev, post_scorers: [melteval/rescore.py@metricx_scorer]}
       - {task: st, dataset_id: europarl-st-nl_pl-dev, post_scorers: [melteval/rescore.py@metricx_scorer]}
       - {task: st, dataset_id: europarl-st-nl_ro-dev, post_scorers: [melteval/rescore.py@metricx_scorer]}
+      - {task: st, dataset_id: europarl-st-en_fr-dev, post_scorers: [melteval/rescore.py@metricx_scorer]}
+      - {task: st, dataset_id: europarl-st-en_de-dev, post_scorers: [melteval/rescore.py@metricx_scorer]}
+      - {task: st, dataset_id: europarl-st-en_es-dev, post_scorers: [melteval/rescore.py@metricx_scorer]}
+      - {task: st, dataset_id: europarl-st-en_it-dev, post_scorers: [melteval/rescore.py@metricx_scorer]}
+      - {task: st, dataset_id: europarl-st-en_pt-dev, post_scorers: [melteval/rescore.py@metricx_scorer]}
+      - {task: st, dataset_id: europarl-st-en_pl-dev, post_scorers: [melteval/rescore.py@metricx_scorer]}
+      - {task: st, dataset_id: europarl-st-en_ro-dev, post_scorers: [melteval/rescore.py@metricx_scorer]}
+      - {task: st, dataset_id: europarl-st-en_nl-dev, post_scorers: [melteval/rescore.py@metricx_scorer]}
+      - {task: st, dataset_id: europarl-st-fr_en-dev, post_scorers: [melteval/rescore.py@metricx_scorer]}
+      - {task: st, dataset_id: europarl-st-de_en-dev, post_scorers: [melteval/rescore.py@metricx_scorer]}
+      - {task: st, dataset_id: europarl-st-es_en-dev, post_scorers: [melteval/rescore.py@metricx_scorer]}
+      - {task: st, dataset_id: europarl-st-it_en-dev, post_scorers: [melteval/rescore.py@metricx_scorer]}
+      - {task: st, dataset_id: europarl-st-pt_en-dev, post_scorers: [melteval/rescore.py@metricx_scorer]}
+      - {task: st, dataset_id: europarl-st-pl_en-dev, post_scorers: [melteval/rescore.py@metricx_scorer]}
+      - {task: st, dataset_id: europarl-st-ro_en-dev, post_scorers: [melteval/rescore.py@metricx_scorer]}
+      - {task: st, dataset_id: europarl-st-nl_en-dev, post_scorers: [melteval/rescore.py@metricx_scorer]}
 

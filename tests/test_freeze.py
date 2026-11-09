@@ -194,9 +194,9 @@ class TestGroupFormRejection:
 
 
 class TestEuroparlStSpecs:
-    """The EuroparlST dev/test specs: 56 non-English directions, one dataset_id each."""
+    """The EuroparlST dev/test specs: 72 directions (the 9 languages incl. English), one dataset_id each."""
 
-    LANGS = {"fr", "de", "es", "it", "pt", "pl", "ro", "nl"}
+    LANGS = {"en", "fr", "de", "es", "it", "pt", "pl", "ro", "nl"}
 
     @staticmethod
     def _load(name: str, monkeypatch) -> list[dict]:
@@ -205,7 +205,7 @@ class TestEuroparlStSpecs:
 
     def _check(self, sources: list[dict], split: str, suffix: str, cap: int | None) -> None:
         pairs = {(s["tags"]["src_lang"], s["tags"]["tgt_lang"]) for s in sources}
-        assert len(sources) == len(pairs) == 56
+        assert len(sources) == len(pairs) == 72
         assert pairs == {(a, b) for a in self.LANGS for b in self.LANGS if a != b}
         for s in sources:
             src, tgt = s["tags"]["src_lang"], s["tags"]["tgt_lang"]
@@ -216,11 +216,30 @@ class TestEuroparlStSpecs:
             assert s.get("max_samples") == cap
             assert "text_field" not in s  # reference stays supervisions[0].text (the translation)
 
-    def test_dev_is_validation_capped_at_100(self, monkeypatch):
-        self._check(self._load("europarl-st-dev.yaml", monkeypatch), "validation", "-dev", 100)
+    def test_dev_is_validation_capped_at_500(self, monkeypatch):
+        self._check(self._load("europarl-st-dev.yaml", monkeypatch), "validation", "-dev", 500)
 
     def test_test_is_the_full_test_split(self, monkeypatch):
         self._check(self._load("europarl-st-test.yaml", monkeypatch), "test", "", None)
+
+    def test_english_directions_are_included(self, monkeypatch):
+        for name in ("europarl-st-dev.yaml", "europarl-st-test.yaml"):
+            pairs = {(s["tags"]["src_lang"], s["tags"]["tgt_lang"]) for s in self._load(name, monkeypatch)}
+            assert {("en", t) for t in self.LANGS - {"en"}} <= pairs
+            assert {(s, "en") for s in self.LANGS - {"en"}} <= pairs
+            assert ("en", "en") not in pairs
+
+    def test_suite_slices_match_the_dev_spec(self, monkeypatch):
+        """Every dev dataset_id has exactly one suite slice scored with MetricX, and vice versa."""
+        dev = {s["tags"]["dataset_id"] for s in self._load("europarl-st-dev.yaml", monkeypatch)}
+        import yaml
+
+        suite_file = Path(__file__).parent.parent / "configs" / "eval" / "suites" / "speechval-dev.yaml"
+        suite = yaml.safe_load(suite_file.read_text())  # not load_spec: ${EUROPARL_ST_DEV_SET} is left as is
+        entry = next(b for b in suite["benchmarks"] if b["name"] == "europarl-st-dev")
+        slices = [s["dataset_id"] for s in entry["slices"]]
+        assert len(slices) == len(set(slices)) and set(slices) == dev
+        assert all(s["post_scorers"] == ["melteval/rescore.py@metricx_scorer"] for s in entry["slices"])
 
     def test_dev_dataset_ids_do_not_collide_with_test(self, monkeypatch):
         dev = {s["tags"]["dataset_id"] for s in self._load("europarl-st-dev.yaml", monkeypatch)}
