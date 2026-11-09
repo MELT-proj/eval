@@ -1,0 +1,266 @@
+# PolySpeech-100 (passage audio + question audio), 24 languages: the official EU languages the dataset has, plus uk and ru.
+# (Croatian and Irish are not in PolySpeech-100.)
+#
+# Read **live** from a local reconstruction of the upstream parquet archives
+# (docs/polyspeech.md says how it is built and what is in it):
+#
+#   export POLYSPEECH_ROOT=/e/data1/smurf4eu-data/speech/polyspeech-100    # on jupiter
+#   inspect eval melteval/tasks.py@audio_mcq --model melt/<checkpoint> \
+#     -T spec=configs/hf/polyspeech-100-pa_qa.yaml -T dataset_id=polyspeech-pa_qa-de
+#
+# Variant `pa_qa`: the passage and the question are both audio (one waveform:
+# passage, a pause, the spoken question); the prompt has a fixed scaffold sentence instead of
+# the question text, so the question reaches the model only as audio.
+# The four options are always text in the prompt. Scored by accuracy over the options
+# (`audio_mcq`, no judge), reported per source, i.e. per language, through `dataset_id`.
+#
+# One source per language, as for AIR-Bench's splits: `-T dataset_id=` / `-T lang=` then
+# stop the other 23 languages being read at all. Always pass one of them for a first run --
+# a run without it pools 24 languages (19,224 samples) into one number.
+#
+# Not every language asks the same questions: 17 share one 801-question set and 7 (de et hu
+# lt nl ro ru) another; join across languages on extra.index / extra.qid and compare
+# only the overlap. See docs/polyspeech.md.
+name: polyspeech-100-pa_qa
+seed: 0
+
+input_cfg:
+  - type: polyspeech
+    root: ${POLYSPEECH_ROOT}
+    revision: 5c9235323df63e175819d5bee46b82efc6965bbd
+    language: bul_Cyrl
+    variant: pa_qa
+    tags:
+      task: audio_mcq
+      lang: bg
+      dataset_id: polyspeech-pa_qa-bg
+
+  - type: polyspeech
+    root: ${POLYSPEECH_ROOT}
+    revision: 5c9235323df63e175819d5bee46b82efc6965bbd
+    language: ces_Latn
+    variant: pa_qa
+    tags:
+      task: audio_mcq
+      lang: cs
+      dataset_id: polyspeech-pa_qa-cs
+
+  - type: polyspeech
+    root: ${POLYSPEECH_ROOT}
+    revision: 5c9235323df63e175819d5bee46b82efc6965bbd
+    language: dan_Latn
+    variant: pa_qa
+    tags:
+      task: audio_mcq
+      lang: da
+      dataset_id: polyspeech-pa_qa-da
+
+  - type: polyspeech
+    root: ${POLYSPEECH_ROOT}
+    revision: 5c9235323df63e175819d5bee46b82efc6965bbd
+    language: nld_Latn
+    variant: pa_qa
+    tags:
+      task: audio_mcq
+      lang: nl
+      dataset_id: polyspeech-pa_qa-nl
+
+  - type: polyspeech
+    root: ${POLYSPEECH_ROOT}
+    revision: 5c9235323df63e175819d5bee46b82efc6965bbd
+    language: eng_Latn
+    variant: pa_qa
+    tags:
+      task: audio_mcq
+      lang: en
+      dataset_id: polyspeech-pa_qa-en
+
+  - type: polyspeech
+    root: ${POLYSPEECH_ROOT}
+    revision: 5c9235323df63e175819d5bee46b82efc6965bbd
+    language: est_Latn
+    variant: pa_qa
+    tags:
+      task: audio_mcq
+      lang: et
+      dataset_id: polyspeech-pa_qa-et
+
+  - type: polyspeech
+    root: ${POLYSPEECH_ROOT}
+    revision: 5c9235323df63e175819d5bee46b82efc6965bbd
+    language: fin_Latn
+    variant: pa_qa
+    tags:
+      task: audio_mcq
+      lang: fi
+      dataset_id: polyspeech-pa_qa-fi
+
+  - type: polyspeech
+    root: ${POLYSPEECH_ROOT}
+    revision: 5c9235323df63e175819d5bee46b82efc6965bbd
+    language: fra_Latn
+    variant: pa_qa
+    tags:
+      task: audio_mcq
+      lang: fr
+      dataset_id: polyspeech-pa_qa-fr
+
+  - type: polyspeech
+    root: ${POLYSPEECH_ROOT}
+    revision: 5c9235323df63e175819d5bee46b82efc6965bbd
+    language: deu_Latn
+    variant: pa_qa
+    tags:
+      task: audio_mcq
+      lang: de
+      dataset_id: polyspeech-pa_qa-de
+
+  - type: polyspeech
+    root: ${POLYSPEECH_ROOT}
+    revision: 5c9235323df63e175819d5bee46b82efc6965bbd
+    language: ell_Grek
+    variant: pa_qa
+    tags:
+      task: audio_mcq
+      lang: el
+      dataset_id: polyspeech-pa_qa-el
+
+  - type: polyspeech
+    root: ${POLYSPEECH_ROOT}
+    revision: 5c9235323df63e175819d5bee46b82efc6965bbd
+    language: hun_Latn
+    variant: pa_qa
+    tags:
+      task: audio_mcq
+      lang: hu
+      dataset_id: polyspeech-pa_qa-hu
+
+  - type: polyspeech
+    root: ${POLYSPEECH_ROOT}
+    revision: 5c9235323df63e175819d5bee46b82efc6965bbd
+    language: ita_Latn
+    variant: pa_qa
+    tags:
+      task: audio_mcq
+      lang: it
+      dataset_id: polyspeech-pa_qa-it
+
+  - type: polyspeech
+    root: ${POLYSPEECH_ROOT}
+    revision: 5c9235323df63e175819d5bee46b82efc6965bbd
+    language: lvs_Latn
+    variant: pa_qa
+    tags:
+      task: audio_mcq
+      lang: lv
+      dataset_id: polyspeech-pa_qa-lv
+
+  - type: polyspeech
+    root: ${POLYSPEECH_ROOT}
+    revision: 5c9235323df63e175819d5bee46b82efc6965bbd
+    language: lit_Latn
+    variant: pa_qa
+    tags:
+      task: audio_mcq
+      lang: lt
+      dataset_id: polyspeech-pa_qa-lt
+
+  - type: polyspeech
+    root: ${POLYSPEECH_ROOT}
+    revision: 5c9235323df63e175819d5bee46b82efc6965bbd
+    language: mlt_Latn
+    variant: pa_qa
+    tags:
+      task: audio_mcq
+      lang: mt
+      dataset_id: polyspeech-pa_qa-mt
+
+  - type: polyspeech
+    root: ${POLYSPEECH_ROOT}
+    revision: 5c9235323df63e175819d5bee46b82efc6965bbd
+    language: pol_Latn
+    variant: pa_qa
+    tags:
+      task: audio_mcq
+      lang: pl
+      dataset_id: polyspeech-pa_qa-pl
+
+  - type: polyspeech
+    root: ${POLYSPEECH_ROOT}
+    revision: 5c9235323df63e175819d5bee46b82efc6965bbd
+    language: por_Latn
+    variant: pa_qa
+    tags:
+      task: audio_mcq
+      lang: pt
+      dataset_id: polyspeech-pa_qa-pt
+
+  - type: polyspeech
+    root: ${POLYSPEECH_ROOT}
+    revision: 5c9235323df63e175819d5bee46b82efc6965bbd
+    language: ron_Latn
+    variant: pa_qa
+    tags:
+      task: audio_mcq
+      lang: ro
+      dataset_id: polyspeech-pa_qa-ro
+
+  - type: polyspeech
+    root: ${POLYSPEECH_ROOT}
+    revision: 5c9235323df63e175819d5bee46b82efc6965bbd
+    language: slk_Latn
+    variant: pa_qa
+    tags:
+      task: audio_mcq
+      lang: sk
+      dataset_id: polyspeech-pa_qa-sk
+
+  - type: polyspeech
+    root: ${POLYSPEECH_ROOT}
+    revision: 5c9235323df63e175819d5bee46b82efc6965bbd
+    language: slv_Latn
+    variant: pa_qa
+    tags:
+      task: audio_mcq
+      lang: sl
+      dataset_id: polyspeech-pa_qa-sl
+
+  - type: polyspeech
+    root: ${POLYSPEECH_ROOT}
+    revision: 5c9235323df63e175819d5bee46b82efc6965bbd
+    language: spa_Latn
+    variant: pa_qa
+    tags:
+      task: audio_mcq
+      lang: es
+      dataset_id: polyspeech-pa_qa-es
+
+  - type: polyspeech
+    root: ${POLYSPEECH_ROOT}
+    revision: 5c9235323df63e175819d5bee46b82efc6965bbd
+    language: swe_Latn
+    variant: pa_qa
+    tags:
+      task: audio_mcq
+      lang: sv
+      dataset_id: polyspeech-pa_qa-sv
+
+  - type: polyspeech
+    root: ${POLYSPEECH_ROOT}
+    revision: 5c9235323df63e175819d5bee46b82efc6965bbd
+    language: ukr_Cyrl
+    variant: pa_qa
+    tags:
+      task: audio_mcq
+      lang: uk
+      dataset_id: polyspeech-pa_qa-uk
+
+  - type: polyspeech
+    root: ${POLYSPEECH_ROOT}
+    revision: 5c9235323df63e175819d5bee46b82efc6965bbd
+    language: rus_Cyrl
+    variant: pa_qa
+    tags:
+      task: audio_mcq
+      lang: ru
+      dataset_id: polyspeech-pa_qa-ru

@@ -132,7 +132,12 @@ def _load_builtin_readers() -> None:
     with _LOAD_LOCK:
         if _LOADED:  # another thread finished loading while this one waited
             return
-        for module in ("melteval.readers.shar", "melteval.readers.hf", "melteval.readers.mcif"):
+        for module in (
+            "melteval.readers.shar",
+            "melteval.readers.hf",
+            "melteval.readers.mcif",
+            "melteval.readers.polyspeech",
+        ):
             try:
                 __import__(module)
             except ImportError:
