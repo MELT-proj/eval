@@ -200,7 +200,7 @@ The audio is the indexed Shar tree of the training data (`europarl_st/<src>_<tgt
 # from the machine that has the tree: copy validation + test of the 72 directions (the paths are relative to the corpus root)
 rsync -aR ./fr_de/validation ./fr_de/test ./en_fr/validation ./en_fr/test ... jupiter:/e/data1/smurf4eu-data/speech/shar/europarl_st/
 
-# on JUPITER, CPU only (login node is fine; ~25 s for dev, ~15 s for test)
+# on JUPITER, CPU only (login node is fine; dev took 4 min on a freshly copied tree, test 20 s)
 export LOCAL_DATASETS_DIR=/e/data1/smurf4eu-data/speech/shar
 melteval freeze configs/shar/europarl-st-dev.yaml  -o $F/europarl-st-dev
 melteval freeze configs/shar/europarl-st-test.yaml -o $F/europarl-st-test
