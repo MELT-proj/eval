@@ -79,6 +79,11 @@ def _config(tmp_path, **overrides):
     return config
 
 
+def _model_args(args):
+    """The `-M key=value` pairs of a job's argument list, as a dict (values left as strings)."""
+    return dict(args[i + 1].split("=", 1) for i, a in enumerate(args) if a == "-M")
+
+
 def _jobs(tmp_path, **overrides):
     jobs, skipped = evaluate.plan(_config(tmp_path, **overrides))
     return {(job.model_name, job.slice): job for job in jobs}, skipped
@@ -147,10 +152,38 @@ class TestPlan:
     def test_a_system_prompt_is_a_model_argument_per_task_with_a_default(self, tmp_path):
         """Only a model entry with `system:` gets one; a task not listed falls back to `default`."""
         jobs, _ = _jobs(tmp_path)
-        assert 'system_prompt="Focus. Respond directly."' in jobs["desta", "asr-librispeech-test-clean"].args
-        assert 'system_prompt="Focus."' in jobs["desta", "audio_mcq-air-bench-foundation-speech"].args
+        asr = _model_args(jobs["desta", "asr-librispeech-test-clean"].args)
+        assert Path(asr["system_prompt_file"]).read_text() == "Focus. Respond directly."
+        mcq = _model_args(jobs["desta", "audio_mcq-air-bench-foundation-speech"].args)
+        assert Path(mcq["system_prompt_file"]).read_text() == "Focus."
         for key in (("qwen", "asr-librispeech-test-clean"), ("melt", "asr-librispeech-test-clean")):
-            assert not any(a.startswith("system_prompt=") for a in jobs[key].args)
+            assert not any(a.startswith("system_prompt") for a in jobs[key].args)
+
+    def test_a_system_prompt_with_commas_survives_inspects_model_arg_parsing(self, tmp_path):
+        """inspect splits `-M k=v` on commas and YAML-parses the pieces: only a path may travel that way."""
+        from inspect_ai._cli.util import parse_cli_args
+
+        from melteval.providers.base import resolve_system_prompt
+
+        prompt = (
+            "Translate the speech in the audio into the target language named in the instruction. Output only the "
+            "translation, written entirely in the target language, even if the speech is in another language. "
+            "Do not repeat these instructions."
+        )
+        config = _config(tmp_path)
+        config["models"][1]["system"] = {"asr": prompt}
+        jobs = {(j.model_name, j.slice): j for j in evaluate.plan(config)[0]}
+        args = jobs["desta", "asr-librispeech-test-clean"].args
+        margs = [args[i + 1] for i, a in enumerate(args) if a == "-M"]
+        parsed = parse_cli_args(margs)
+        assert "system_prompt" not in parsed
+        assert resolve_system_prompt(None, parsed["system_prompt_file"]) == prompt
+
+    def test_a_split_system_prompt_is_refused_not_passed_on(self):
+        from melteval.providers.base import resolve_system_prompt
+
+        with pytest.raises(ValueError, match="system_prompt_file"):
+            resolve_system_prompt(["Output only the translation", " written in English"], None)
 
     def test_a_model_config_override_becomes_an_absolute_model_argument(self, tmp_path):
         """Relative to the repo root in the config; absolute in the job, since inspect chdirs into melteval/."""

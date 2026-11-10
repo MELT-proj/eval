@@ -53,7 +53,13 @@ from typing import Any
 
 from inspect_ai.model import GenerateConfig, modelapi
 
-from melteval.providers.base import DEFAULT_BATCH_SIZE, DEFAULT_MAX_TOKENS, BatchedSpeechAPI, _Request
+from melteval.providers.base import (
+    DEFAULT_BATCH_SIZE,
+    DEFAULT_MAX_TOKENS,
+    BatchedSpeechAPI,
+    _Request,
+    resolve_system_prompt,
+)
 
 
 logger = logging.getLogger(__name__)
@@ -91,6 +97,7 @@ class SmurfAPI(BatchedSpeechAPI):
         use_model_defaults: bool | None = False,
         enable_thinking: bool | None = None,
         system_prompt: str | None = None,
+        system_prompt_file: str | None = None,
         system_placement: str = "turn",
         **model_args: Any,
     ) -> None:
@@ -135,6 +142,8 @@ class SmurfAPI(BatchedSpeechAPI):
                 mode. Left unset by default, matching SMURF's inference path.
             system_prompt: Sent as a ``system`` turn before every request's
                 user turn. ``None`` (the default) sends no system turn.
+            system_prompt_file: Path of a text file holding the system prompt, for one with
+                commas (see :func:`resolve_system_prompt`).
             system_placement: ``turn`` (the default) sends *system_prompt* as a
                 ``system`` turn; ``user`` prepends it to the user turn, for a
                 ``prompt_format`` with no ``system`` role.
@@ -176,7 +185,7 @@ class SmurfAPI(BatchedSpeechAPI):
         self.num_beams = int(num_beams)
         self.use_model_defaults = use_model_defaults
         self.enable_thinking = enable_thinking
-        self.system_prompt = system_prompt
+        self.system_prompt = resolve_system_prompt(system_prompt, system_prompt_file)
         self.system_placement = system_placement
 
         logger.info(

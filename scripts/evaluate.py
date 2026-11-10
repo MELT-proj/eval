@@ -329,11 +329,12 @@ def plan(
                 # slices only, so one entry covers both its modes.
                 args += [str(a) for a in (model_cfg.get("args_by_task") or {}).get(task, [])]
                 # Optional per-task system prompts (`system:` map, `default` as fallback), e.g. DeSTA2.5's.
-                # Passed as a model argument so inspect records it in the log.
+                # Passed by file: inspect splits `-M k=v` on commas, so a prompt with one would arrive as a list.
                 system = model_cfg.get("system") or {}
                 system_prompt = system.get(task, system.get("default"))
                 if system_prompt is not None:
-                    args += ["-M", f"system_prompt={json.dumps(system_prompt)}"]
+                    path = write_instruction(config["_output_dir"], system_prompt)
+                    args += ["-M", f"system_prompt_file={path}"]
                 args += [str(a) for a in slice_cfg.get("args", [])]
                 if task in JUDGE_TASKS:
                     args.append("--no-score")
