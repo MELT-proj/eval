@@ -60,7 +60,7 @@ export AZEROS_DIR=/e/data1/smurf4eu-data/speech/azeros AZEROS_INDEXED_DIR=$SCRAT
 python scripts/index_shar.py $AZEROS_DIR $AZEROS_INDEXED_DIR \
     fleurs/{en_us,es_419,fr_fr,de_de,it_it,nl_nl,pt_br,hu_hu,fi_fi,cs_cz,hr_hr,bg_bg,lv_lv,da_dk,lt_lt,et_ee,ga_ie,mt_mt}/validation  # + el_gr pl_pl ro_ro sk_sk sl_si sv_se: copied from nyx, see above \
     voxpopuli/{en,de,fr,es,pl,it,ro,hu,cs,nl,fi,hr,sk,sl}/validation
-export LOCAL_DATASETS_DIR=$AZEROS_INDEXED_DIR F=$PROJECT/attanasio1/frozen-dev
+export LOCAL_DATASETS_DIR=$AZEROS_INDEXED_DIR F=/e/data1/smurf4eu-data/speech/frozen-dev
 for s in fleurs24-st-xen-dev-full fleurs24-st-enx-dev voxpopuli-dev; do melteval freeze configs/shar/$s.yaml -o $F/$s; done
 
 # jupiter, CoVoST2 (copied tree, see above)
@@ -71,19 +71,19 @@ LOCAL_DATASETS_DIR=/mnt/scratch-nyx/giuseppe/melt/melt-data/shar \
   melteval freeze configs/shar/st-eval-campaign-v1-dev.yaml -o /mnt/scratch-artemis/giuseppe/frozen/speechval-dev/st-eval-campaign-v1-dev
 ```
 
-The two FLEURS sets were refrozen on 2026-11-10 after the review (23 X->en directions, `supervisions.0.text` as source
-text) into `$SCRATCH/attanasio1/frozen-dev`, because the project filesystem was at its quota and refused new files and
-directories; the other jupiter sets stay under `$PROJECT/attanasio1/frozen-dev`. The previous FLEURS sets (17 directions,
-`custom.pnc_text` source) are still there as `fleurs24-st-xen-dev-full.pnc17` and `fleurs24-st-enx-dev.pnc`.
+All jupiter frozen sets live in `/e/data1/smurf4eu-data/speech/frozen-dev` (moved there on 2026-11-10; the project
+and scratch filesystems were at their quota). Next to the live sets are the superseded ones: the uncapped
+`voxpopuli-dev.full` and `st-eval-campaign-v1-dev.full`, and the pre-review FLEURS sets (17 directions, `custom.pnc_text`
+source) `fleurs24-st-xen-dev-full.pnc17` and `fleurs24-st-enx-dev.pnc`.
 
 Frozen sets (locators are absolute paths, so they only work on their own machine):
 
 | env var | path |
 |---|---|
-| `VOXPOPULI_DEV_SET` | jupiter `/e/project1/e-ext-2025e01-100/attanasio1/frozen-dev/voxpopuli-dev` |
-| `FLEURS24_ST_XEN_DEV_SET` | jupiter `/e/scratch/e-ext-2025e01-100/attanasio1/frozen-dev/fleurs24-st-xen-dev-full` (23 directions) |
-| `FLEURS24_ST_ENX_DEV_SET` | jupiter `/e/scratch/e-ext-2025e01-100/attanasio1/frozen-dev/fleurs24-st-enx-dev` |
-| `COVOST2_DEV_SET` | jupiter `.../frozen-dev/st-eval-campaign-v1-dev`; nyx/artemis `/mnt/scratch-artemis/giuseppe/frozen/speechval-dev/st-eval-campaign-v1-dev` |
+| `VOXPOPULI_DEV_SET` | jupiter `/e/data1/smurf4eu-data/speech/frozen-dev/voxpopuli-dev` |
+| `FLEURS24_ST_XEN_DEV_SET` | jupiter `/e/data1/smurf4eu-data/speech/frozen-dev/fleurs24-st-xen-dev-full` (23 directions) |
+| `FLEURS24_ST_ENX_DEV_SET` | jupiter `/e/data1/smurf4eu-data/speech/frozen-dev/fleurs24-st-enx-dev` |
+| `COVOST2_DEV_SET` | jupiter `/e/data1/smurf4eu-data/speech/frozen-dev/st-eval-campaign-v1-dev`; nyx/artemis `/mnt/scratch-artemis/giuseppe/frozen/speechval-dev/st-eval-campaign-v1-dev` |
 
 Samples (capped sets, see below): VoxPopuli 13034 (1000 each for en, de, fr, es, pl, it, ro, hu, cs, nl; sl 889,
 hr 789, fi 687, sk 669). The freezer drops cuts with empty `text` (VoxPopuli validation has untranscribed cuts: hr
