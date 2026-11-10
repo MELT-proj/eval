@@ -66,17 +66,55 @@ benchmarks:
     slices:
       - {task: asr, dataset_id: librispeech-test-other, time: "02:00:00"}
 
-  # X->en ST from the local CoVoST2 Shar tree; what whisper-large-v3's `st`
-  # mode runs on. Read live: nothing to download.
+  # CoVoST2 test from the local Shar tree (configs/shar/st-eval-campaign-v1.yaml, frozen): 21 X->en directions;
+  # what whisper-large-v3's `st` mode runs on.
   - name: covost2
-    spec: configs/shar/st-eval-campaign-v1.yaml
+    frozen_set: ${COVOST2_SET}
     needs_instruction: true
     slices:
+      - {task: st, dataset_id: covost2-ar_en}
+      - {task: st, dataset_id: covost2-ca_en}
+      - {task: st, dataset_id: covost2-cy_en}
       - {task: st, dataset_id: covost2-de_en}
       - {task: st, dataset_id: covost2-es_en}
+      - {task: st, dataset_id: covost2-et_en}
+      - {task: st, dataset_id: covost2-fa_en}
       - {task: st, dataset_id: covost2-fr_en}
+      - {task: st, dataset_id: covost2-id_en}
       - {task: st, dataset_id: covost2-it_en}
+      - {task: st, dataset_id: covost2-ja_en}
+      - {task: st, dataset_id: covost2-lv_en}
+      - {task: st, dataset_id: covost2-mn_en}
+      - {task: st, dataset_id: covost2-nl_en}
       - {task: st, dataset_id: covost2-pt_en}
+      - {task: st, dataset_id: covost2-ru_en}
+      - {task: st, dataset_id: covost2-sl_en}
+      - {task: st, dataset_id: covost2-sv_en}
+      - {task: st, dataset_id: covost2-ta_en}
+      - {task: st, dataset_id: covost2-tr_en}
+      - {task: st, dataset_id: covost2-zh_en}
+
+  # The 15 en->X directions of the same frozen set: one English audio set (~15.5k utterances) per target, so a full
+  # run is ~230k samples. Select with --benchmarks covost2-enx.
+  - name: covost2-enx
+    frozen_set: ${COVOST2_SET}
+    needs_instruction: true
+    slices:
+      - {task: st, dataset_id: covost2-en_ar}
+      - {task: st, dataset_id: covost2-en_ca}
+      - {task: st, dataset_id: covost2-en_cy}
+      - {task: st, dataset_id: covost2-en_de}
+      - {task: st, dataset_id: covost2-en_et}
+      - {task: st, dataset_id: covost2-en_fa}
+      - {task: st, dataset_id: covost2-en_id}
+      - {task: st, dataset_id: covost2-en_ja}
+      - {task: st, dataset_id: covost2-en_lv}
+      - {task: st, dataset_id: covost2-en_mn}
+      - {task: st, dataset_id: covost2-en_sl}
+      - {task: st, dataset_id: covost2-en_sv}
+      - {task: st, dataset_id: covost2-en_ta}
+      - {task: st, dataset_id: covost2-en_tr}
+      - {task: st, dataset_id: covost2-en_zh}
 
   # configs/shar/voxpopuli-test.yaml. en: English normalizer (numbers are spelled out in its reference).
   - name: voxpopuli

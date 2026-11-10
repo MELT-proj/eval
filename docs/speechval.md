@@ -9,11 +9,15 @@ listed in `configs/eval/suites/speechval-dev.yaml`.
 | VoxPopuli | `configs/shar/voxpopuli-dev.yaml` | frozen | `voxpopuli-<lang>-dev` (14) | `VOXPOPULI_DEV_SET` |
 | FLEURS X->en | `configs/shar/fleurs24-st-xen-dev-full.yaml` | frozen | `fleurs-<lang>_en-dev` (23) | `FLEURS24_ST_XEN_DEV_SET` |
 | FLEURS en->X | `configs/shar/fleurs24-st-enx-dev.yaml` | frozen | `fleurs-en_<lang>-dev` (23) | `FLEURS24_ST_ENX_DEV_SET` |
-| CoVoST2 | `configs/shar/st-eval-campaign-v1-dev.yaml` | frozen | `covost2-<src>_en-dev` (de/es/fr/it/pt) | `COVOST2_DEV_SET` |
+| CoVoST2 | `configs/shar/st-eval-campaign-v1-dev.yaml` | frozen | `covost2-<src>_en-dev` (21), `covost2-en_<tgt>-dev` (15) | `COVOST2_DEV_SET` |
 
 Not part of it: `fleurs24-asr-dev.yaml` (FLEURS ASR), and `fleurs24-st-xen-dev.yaml` (training's 100-per-language
-subsample; the full twin above is separate). The CoVoST2 test spec also has `en_de`, which no suite runs, so it has no
-dev twin.
+subsample; the full twin above is separate).
+
+Every benchmark covers all of its languages; only dev is capped, per language or direction (VoxPopuli 1000, CoVoST2 2000).
+VoxPopuli dev has 14 languages, not 16: et (47 usable cuts) and lt (3) are too small to score.
+CoVoST2 has 36 directions: 21 X->en (ar ca cy de es et fa fr id it ja lv mn nl pt ru sl sv ta tr zh) and 15 en->X
+(ar ca cy de et fa id ja lv mn sl sv ta tr zh). Suites: `covost2-dev` / `covost2-enx-dev`.
 
 ## FLEURS en->X references
 
@@ -49,14 +53,17 @@ What was run (2026-11-06). `$LOCAL_DATASETS_DIR` is not set in a jupiter login s
   languages and `fleurs/<locale>/validation` for 18 locales (no el_gr, pl_pl, ro_ro, sk_sk, sl_si, sv_se), but both
   are plain Shar without `.idx`. The 6 missing FLEURS validation splits were copied from the nyx tree (indexed already)
   into `/e/data1/smurf4eu-data/speech/shar/fleurs/<locale>/validation` and symlinked into the indexed dev tree below. The existing indexed tree (`.../calvo-bartolome1/azeros-indexed`) holds only `test`,
-  so the validation splits were indexed into `$SCRATCH/attanasio1/azeros-indexed-dev` (symlinks + `.idx`, small).
-  There was no CoVoST2 on jupiter: `covost2/{de,es,fr,it,pt}_en/dev` (4.8 GB) was copied there from the nyx tree
-  into `/e/data1/smurf4eu-data/speech/shar/covost2/` (`tar ch ... | ssh jupiter 'tar x'`; indexed already).
+  so the validation splits were indexed into `/e/data1/smurf4eu-data/speech/azeros-indexed` (symlinks + `.idx`, small).
+  There was no CoVoST2 on jupiter: `covost2/<dir>/{dev,test}` for all 36 directions (~56 GB, indexed already) and the
+  `test` splits of the 6 FLEURS locales above were copied from the nyx tree (`rsync -rt`) into
+  `/e/data1/smurf4eu-data/speech/shar/{covost2,fleurs}/`.
+* The indexed tree used by the freeze is `/e/data1/smurf4eu-data/speech/azeros-indexed` (on data1, not scratch):
+  `fleurs/<24 locales>/{validation,test}` and `voxpopuli/<14>/validation`; the 6 copied locales are symlinks to the shar tree.
 * **nyx/artemis**: `/mnt/scratch-nyx/giuseppe/melt/melt-data/shar` is already indexed and has `covost2/*_en/dev`.
 
 ```bash
 # jupiter (venv with lhotse: $PROJECT/calvo-bartolome1/venvs/freeze-eval; code from this repo via PYTHONPATH)
-export AZEROS_DIR=/e/data1/smurf4eu-data/speech/azeros AZEROS_INDEXED_DIR=$SCRATCH/attanasio1/azeros-indexed-dev
+export AZEROS_DIR=/e/data1/smurf4eu-data/speech/azeros AZEROS_INDEXED_DIR=/e/data1/smurf4eu-data/speech/azeros-indexed
 python scripts/index_shar.py $AZEROS_DIR $AZEROS_INDEXED_DIR \
     fleurs/{en_us,es_419,fr_fr,de_de,it_it,nl_nl,pt_br,hu_hu,fi_fi,cs_cz,hr_hr,bg_bg,lv_lv,da_dk,lt_lt,et_ee,ga_ie,mt_mt}/validation  # + el_gr pl_pl ro_ro sk_sk sl_si sv_se: copied from nyx, see above \
     voxpopuli/{en,de,fr,es,pl,it,ro,hu,cs,nl,fi,hr,sk,sl}/validation
@@ -71,10 +78,13 @@ LOCAL_DATASETS_DIR=/mnt/scratch-nyx/giuseppe/melt/melt-data/shar \
   melteval freeze configs/shar/st-eval-campaign-v1-dev.yaml -o /mnt/scratch-artemis/giuseppe/frozen/speechval-dev/st-eval-campaign-v1-dev
 ```
 
-All jupiter frozen sets live in `/e/data1/smurf4eu-data/speech/frozen-dev` (moved there on 2026-11-10; the project
-and scratch filesystems were at their quota). Next to the live sets are the superseded ones: the uncapped
-`voxpopuli-dev.full` and `st-eval-campaign-v1-dev.full`, and the pre-review FLEURS sets (17 directions, `custom.pnc_text`
-source) `fleurs24-st-xen-dev-full.pnc17` and `fleurs24-st-enx-dev.pnc`.
+All jupiter frozen sets live in `/e/data1/smurf4eu-data/speech/frozen-dev` (re-frozen on 2026-11-10 from the data1 indexed
+tree, with all 36 CoVoST2 directions; the previous sets, which pointed at a scratch tree, are in `frozen-dev-superseded`).
+Counts: VoxPopuli 13034, FLEURS X->en 8261, FLEURS en->X 8819, CoVoST2 61452.
+
+The test counterparts of the two sets that changed are in `/e/data1/smurf4eu-data/speech/frozen-test`:
+`covost2-test` (36 directions, 329103 samples; env `COVOST2_SET`) and `fleurs24-st-xen-test` (23 directions, 18816;
+env `FLEURS24_ST_XEN_SET`). VoxPopuli and FLEURS en->X test were already complete.
 
 Frozen sets (locators are absolute paths, so they only work on their own machine):
 

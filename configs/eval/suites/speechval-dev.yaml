@@ -97,16 +97,53 @@ benchmarks:
       - {task: st, dataset_id: fleurs-en_sl-dev, post_scorers: [melteval/rescore.py@metricx_scorer]}
       - {task: st, dataset_id: fleurs-en_sv-dev, post_scorers: [melteval/rescore.py@metricx_scorer]}
 
-  # configs/shar/st-eval-campaign-v1-dev.yaml: CoVoST2 X->en, full `dev` split.
+  # configs/shar/st-eval-campaign-v1-dev.yaml: CoVoST2 dev, all 36 directions, each capped at 2000. One benchmark per
+  # direction of travel so the 15 en->X ones can be run apart from the 21 X->en ones (same frozen set).
   - name: covost2-dev
     frozen_set: ${COVOST2_DEV_SET}
     needs_instruction: true
     slices:
+      - {task: st, dataset_id: covost2-ar_en-dev}
+      - {task: st, dataset_id: covost2-ca_en-dev}
+      - {task: st, dataset_id: covost2-cy_en-dev}
       - {task: st, dataset_id: covost2-de_en-dev}
       - {task: st, dataset_id: covost2-es_en-dev}
+      - {task: st, dataset_id: covost2-et_en-dev}
+      - {task: st, dataset_id: covost2-fa_en-dev}
       - {task: st, dataset_id: covost2-fr_en-dev}
+      - {task: st, dataset_id: covost2-id_en-dev}
       - {task: st, dataset_id: covost2-it_en-dev}
+      - {task: st, dataset_id: covost2-ja_en-dev}
+      - {task: st, dataset_id: covost2-lv_en-dev}
+      - {task: st, dataset_id: covost2-mn_en-dev}
+      - {task: st, dataset_id: covost2-nl_en-dev}
       - {task: st, dataset_id: covost2-pt_en-dev}
+      - {task: st, dataset_id: covost2-ru_en-dev}
+      - {task: st, dataset_id: covost2-sl_en-dev}
+      - {task: st, dataset_id: covost2-sv_en-dev}
+      - {task: st, dataset_id: covost2-ta_en-dev}
+      - {task: st, dataset_id: covost2-tr_en-dev}
+      - {task: st, dataset_id: covost2-zh_en-dev}
+
+  - name: covost2-enx-dev
+    frozen_set: ${COVOST2_DEV_SET}
+    needs_instruction: true
+    slices:
+      - {task: st, dataset_id: covost2-en_ar-dev}
+      - {task: st, dataset_id: covost2-en_ca-dev}
+      - {task: st, dataset_id: covost2-en_cy-dev}
+      - {task: st, dataset_id: covost2-en_de-dev}
+      - {task: st, dataset_id: covost2-en_et-dev}
+      - {task: st, dataset_id: covost2-en_fa-dev}
+      - {task: st, dataset_id: covost2-en_id-dev}
+      - {task: st, dataset_id: covost2-en_ja-dev}
+      - {task: st, dataset_id: covost2-en_lv-dev}
+      - {task: st, dataset_id: covost2-en_mn-dev}
+      - {task: st, dataset_id: covost2-en_sl-dev}
+      - {task: st, dataset_id: covost2-en_sv-dev}
+      - {task: st, dataset_id: covost2-en_ta-dev}
+      - {task: st, dataset_id: covost2-en_tr-dev}
+      - {task: st, dataset_id: covost2-en_zh-dev}
 
   # europarl-st-dev: EuroparlST is owned by another agent (block below); polyspeech comes next.
   # configs/shar/europarl-st-dev.yaml: EuroparlST, the 56 directions among fr/de/es/it/pt/pl/ro/nl (validation, 100 per direction).

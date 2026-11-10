@@ -289,9 +289,42 @@ class TestSpeechvalDevSpecs:
         assert _nested_value(cut, "supervisions.2.text") is None
         assert _nested_value(cut, "custom.k") == 1
 
-    def test_covost_dev_covers_the_suite_directions(self, monkeypatch):
-        ids = {s["tags"]["dataset_id"] for s in self._load("st-eval-campaign-v1-dev.yaml", monkeypatch)}
-        assert ids == {f"covost2-{s}_en-dev" for s in ("de", "es", "fr", "it", "pt")}
+    COVOST_XEN = (
+        ["ar", "ca", "cy", "de", "es", "et", "fa", "fr", "id", "it", "ja"]
+        + ["lv", "mn", "nl", "pt", "ru", "sl", "sv", "ta", "tr", "zh"]
+    )
+    COVOST_ENX = ["ar", "ca", "cy", "de", "et", "fa", "id", "ja", "lv", "mn", "sl", "sv", "ta", "tr", "zh"]
+
+    def test_covost_dev_covers_every_direction(self, monkeypatch):
+        sources = self._load("st-eval-campaign-v1-dev.yaml", monkeypatch)
+        ids = {s["tags"]["dataset_id"] for s in sources}
+        want = {f"covost2-{x}_en-dev" for x in self.COVOST_XEN} | {f"covost2-en_{x}-dev" for x in self.COVOST_ENX}
+        assert ids == want and len(sources) == 36
+
+    def test_covost_dev_is_the_test_spec_on_the_dev_split(self, monkeypatch):
+        dev = self._load("st-eval-campaign-v1-dev.yaml", monkeypatch)
+        test = self._load("st-eval-campaign-v1.yaml", monkeypatch)
+        assert [s["tags"]["dataset_id"] + "-dev" for s in test] == [s["tags"]["dataset_id"] for s in dev]
+        assert [s["shar_path"].replace("/test", "/dev") for s in test] == [s["shar_path"] for s in dev]
+        assert all("max_samples" not in s for s in test)
+
+    def test_covost_suites_run_every_dev_and_test_direction(self):
+        import yaml
+
+        for path, suffix, names in (
+            ("speechval-dev.yaml", "-dev", ("covost2-dev", "covost2-enx-dev")),
+            ("v1.yaml", "", ("covost2", "covost2-enx")),
+        ):
+            suite = yaml.safe_load((self.ROOT / "configs/eval/suites" / path).read_text())["benchmarks"]
+            by_name = {b["name"]: {sl.get("dataset_id") for sl in b["slices"]} for b in suite}
+            assert by_name[names[0]] == {f"covost2-{x}_en{suffix}" for x in self.COVOST_XEN}
+            assert by_name[names[1]] == {f"covost2-en_{x}{suffix}" for x in self.COVOST_ENX}
+
+    def test_fleurs_xen_test_has_all_23_locales(self, monkeypatch):
+        sources = self._load("fleurs24-st-xen-test.yaml", monkeypatch)
+        dev = self._load("fleurs24-st-xen-dev-full.yaml", monkeypatch)
+        assert len(sources) == 23
+        assert {s["tags"]["dataset_id"] + "-dev" for s in sources} == {s["tags"]["dataset_id"] for s in dev}
 
     @pytest.mark.parametrize("c", ["clean", "other"])
     def test_librispeech_validation_mirrors_test(self, c):
