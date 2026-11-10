@@ -3,11 +3,14 @@
 # Part of the speechval-dev suite (configs/eval/suites/speechval-dev.yaml).
 #
 # Twin of fleurs24-st-xen-test.yaml with `validation` instead of `test`, and the dev English reference
-# configs/refs/fleurs-en-reference-dev.json (FLEURS en_us `validation`, 150 ids). Reference resolution,
-# source_text_field, the ga caveat (no `custom.pnc_text`: source comes out empty, MetricX scores it without a
-# source) and the dataset_id-per-direction convention are as in that file's header. ru/uk probes are not included.
-# JUPITER's azeros tree has no FLEURS for el_gr, pl_pl, ro_ro, sk_sk, sl_si, sv_se (as for the test spec), so those 6
-# sources are commented out below; the frozen set on jupiter has 17 directions. Uncomment where the full tree exists.
+# configs/refs/fleurs-en-reference-dev.json (FLEURS en_us `validation`, 150 ids). Reference resolution and the
+# dataset_id-per-direction convention are as in that file's header. ru/uk probes are not included.
+#
+# source_text_field: supervisions.0.text, the transcript that ships with the corpus (not `custom.pnc_text`, which
+# the test spec uses). It is what MetricX gets as source, and it exists for every locale, ga included (the test
+# spec's ga source comes out empty because ga has no `custom.pnc_text`).
+# JUPITER's azeros tree has no FLEURS for el_gr, pl_pl, ro_ro, sk_sk, sl_si, sv_se; those 6 validation splits were
+# copied there from the nyx tree (docs/speechval.md), so all 23 directions are frozen.
 # Not to be confused with fleurs24-st-xen-dev.yaml (used by training), which is subsampled to 100 per language.
 #
 # Freeze:  melteval freeze configs/shar/fleurs24-st-xen-dev-full.yaml -o <frozen>/fleurs24-st-xen-dev-full
@@ -18,138 +21,138 @@ seed: 0
 input_cfg:
   - type: lhotse_shar
     shar_path: ${LOCAL_DATASETS_DIR}/fleurs/es_419/validation
-    source_text_field: custom.pnc_text
+    source_text_field: supervisions.0.text
     reference_map: configs/refs/fleurs-en-reference-dev.json
     tags: {task: st, src_lang: es, tgt_lang: en, dataset_id: fleurs-es_en-dev}
 
   - type: lhotse_shar
     shar_path: ${LOCAL_DATASETS_DIR}/fleurs/fr_fr/validation
-    source_text_field: custom.pnc_text
+    source_text_field: supervisions.0.text
     reference_map: configs/refs/fleurs-en-reference-dev.json
     tags: {task: st, src_lang: fr, tgt_lang: en, dataset_id: fleurs-fr_en-dev}
 
   - type: lhotse_shar
     shar_path: ${LOCAL_DATASETS_DIR}/fleurs/de_de/validation
-    source_text_field: custom.pnc_text
+    source_text_field: supervisions.0.text
     reference_map: configs/refs/fleurs-en-reference-dev.json
     tags: {task: st, src_lang: de, tgt_lang: en, dataset_id: fleurs-de_en-dev}
 
   - type: lhotse_shar
     shar_path: ${LOCAL_DATASETS_DIR}/fleurs/it_it/validation
-    source_text_field: custom.pnc_text
+    source_text_field: supervisions.0.text
     reference_map: configs/refs/fleurs-en-reference-dev.json
     tags: {task: st, src_lang: it, tgt_lang: en, dataset_id: fleurs-it_en-dev}
 
   - type: lhotse_shar
     shar_path: ${LOCAL_DATASETS_DIR}/fleurs/nl_nl/validation
-    source_text_field: custom.pnc_text
+    source_text_field: supervisions.0.text
     reference_map: configs/refs/fleurs-en-reference-dev.json
     tags: {task: st, src_lang: nl, tgt_lang: en, dataset_id: fleurs-nl_en-dev}
 
   - type: lhotse_shar
     shar_path: ${LOCAL_DATASETS_DIR}/fleurs/pt_br/validation
-    source_text_field: custom.pnc_text
+    source_text_field: supervisions.0.text
     reference_map: configs/refs/fleurs-en-reference-dev.json
     tags: {task: st, src_lang: pt, tgt_lang: en, dataset_id: fleurs-pt_en-dev}
 
-  # - type: lhotse_shar
-  #   shar_path: ${LOCAL_DATASETS_DIR}/fleurs/pl_pl/validation
-  #   source_text_field: custom.pnc_text
-  #   reference_map: configs/refs/fleurs-en-reference-dev.json
-  #   tags: {task: st, src_lang: pl, tgt_lang: en, dataset_id: fleurs-pl_en-dev}
+  - type: lhotse_shar
+    shar_path: ${LOCAL_DATASETS_DIR}/fleurs/pl_pl/validation
+    source_text_field: supervisions.0.text
+    reference_map: configs/refs/fleurs-en-reference-dev.json
+    tags: {task: st, src_lang: pl, tgt_lang: en, dataset_id: fleurs-pl_en-dev}
 
   - type: lhotse_shar
     shar_path: ${LOCAL_DATASETS_DIR}/fleurs/hu_hu/validation
-    source_text_field: custom.pnc_text
+    source_text_field: supervisions.0.text
     reference_map: configs/refs/fleurs-en-reference-dev.json
     tags: {task: st, src_lang: hu, tgt_lang: en, dataset_id: fleurs-hu_en-dev}
 
   - type: lhotse_shar
     shar_path: ${LOCAL_DATASETS_DIR}/fleurs/fi_fi/validation
-    source_text_field: custom.pnc_text
+    source_text_field: supervisions.0.text
     reference_map: configs/refs/fleurs-en-reference-dev.json
     tags: {task: st, src_lang: fi, tgt_lang: en, dataset_id: fleurs-fi_en-dev}
 
   - type: lhotse_shar
     shar_path: ${LOCAL_DATASETS_DIR}/fleurs/cs_cz/validation
-    source_text_field: custom.pnc_text
+    source_text_field: supervisions.0.text
     reference_map: configs/refs/fleurs-en-reference-dev.json
     tags: {task: st, src_lang: cs, tgt_lang: en, dataset_id: fleurs-cs_en-dev}
 
-  # - type: lhotse_shar
-  #   shar_path: ${LOCAL_DATASETS_DIR}/fleurs/ro_ro/validation
-  #   source_text_field: custom.pnc_text
-  #   reference_map: configs/refs/fleurs-en-reference-dev.json
-  #   tags: {task: st, src_lang: ro, tgt_lang: en, dataset_id: fleurs-ro_en-dev}
+  - type: lhotse_shar
+    shar_path: ${LOCAL_DATASETS_DIR}/fleurs/ro_ro/validation
+    source_text_field: supervisions.0.text
+    reference_map: configs/refs/fleurs-en-reference-dev.json
+    tags: {task: st, src_lang: ro, tgt_lang: en, dataset_id: fleurs-ro_en-dev}
 
-  # - type: lhotse_shar
-  #   shar_path: ${LOCAL_DATASETS_DIR}/fleurs/sv_se/validation
-  #   source_text_field: custom.pnc_text
-  #   reference_map: configs/refs/fleurs-en-reference-dev.json
-  #   tags: {task: st, src_lang: sv, tgt_lang: en, dataset_id: fleurs-sv_en-dev}
+  - type: lhotse_shar
+    shar_path: ${LOCAL_DATASETS_DIR}/fleurs/sv_se/validation
+    source_text_field: supervisions.0.text
+    reference_map: configs/refs/fleurs-en-reference-dev.json
+    tags: {task: st, src_lang: sv, tgt_lang: en, dataset_id: fleurs-sv_en-dev}
 
   - type: lhotse_shar
     shar_path: ${LOCAL_DATASETS_DIR}/fleurs/hr_hr/validation
-    source_text_field: custom.pnc_text
+    source_text_field: supervisions.0.text
     reference_map: configs/refs/fleurs-en-reference-dev.json
     tags: {task: st, src_lang: hr, tgt_lang: en, dataset_id: fleurs-hr_en-dev}
 
-  # - type: lhotse_shar
-  #   shar_path: ${LOCAL_DATASETS_DIR}/fleurs/sk_sk/validation
-  #   source_text_field: custom.pnc_text
-  #   reference_map: configs/refs/fleurs-en-reference-dev.json
-  #   tags: {task: st, src_lang: sk, tgt_lang: en, dataset_id: fleurs-sk_en-dev}
+  - type: lhotse_shar
+    shar_path: ${LOCAL_DATASETS_DIR}/fleurs/sk_sk/validation
+    source_text_field: supervisions.0.text
+    reference_map: configs/refs/fleurs-en-reference-dev.json
+    tags: {task: st, src_lang: sk, tgt_lang: en, dataset_id: fleurs-sk_en-dev}
 
   - type: lhotse_shar
     shar_path: ${LOCAL_DATASETS_DIR}/fleurs/bg_bg/validation
-    source_text_field: custom.pnc_text
+    source_text_field: supervisions.0.text
     reference_map: configs/refs/fleurs-en-reference-dev.json
     tags: {task: st, src_lang: bg, tgt_lang: en, dataset_id: fleurs-bg_en-dev}
 
   - type: lhotse_shar
     shar_path: ${LOCAL_DATASETS_DIR}/fleurs/lv_lv/validation
-    source_text_field: custom.pnc_text
+    source_text_field: supervisions.0.text
     reference_map: configs/refs/fleurs-en-reference-dev.json
     tags: {task: st, src_lang: lv, tgt_lang: en, dataset_id: fleurs-lv_en-dev}
 
   - type: lhotse_shar
     shar_path: ${LOCAL_DATASETS_DIR}/fleurs/da_dk/validation
-    source_text_field: custom.pnc_text
+    source_text_field: supervisions.0.text
     reference_map: configs/refs/fleurs-en-reference-dev.json
     tags: {task: st, src_lang: da, tgt_lang: en, dataset_id: fleurs-da_en-dev}
 
   - type: lhotse_shar
     shar_path: ${LOCAL_DATASETS_DIR}/fleurs/lt_lt/validation
-    source_text_field: custom.pnc_text
+    source_text_field: supervisions.0.text
     reference_map: configs/refs/fleurs-en-reference-dev.json
     tags: {task: st, src_lang: lt, tgt_lang: en, dataset_id: fleurs-lt_en-dev}
 
-  # - type: lhotse_shar
-  #   shar_path: ${LOCAL_DATASETS_DIR}/fleurs/el_gr/validation
-  #   source_text_field: custom.pnc_text
-  #   reference_map: configs/refs/fleurs-en-reference-dev.json
-  #   tags: {task: st, src_lang: el, tgt_lang: en, dataset_id: fleurs-el_en-dev}
+  - type: lhotse_shar
+    shar_path: ${LOCAL_DATASETS_DIR}/fleurs/el_gr/validation
+    source_text_field: supervisions.0.text
+    reference_map: configs/refs/fleurs-en-reference-dev.json
+    tags: {task: st, src_lang: el, tgt_lang: en, dataset_id: fleurs-el_en-dev}
 
   - type: lhotse_shar
     shar_path: ${LOCAL_DATASETS_DIR}/fleurs/et_ee/validation
-    source_text_field: custom.pnc_text
+    source_text_field: supervisions.0.text
     reference_map: configs/refs/fleurs-en-reference-dev.json
     tags: {task: st, src_lang: et, tgt_lang: en, dataset_id: fleurs-et_en-dev}
 
-  # - type: lhotse_shar
-  #   shar_path: ${LOCAL_DATASETS_DIR}/fleurs/sl_si/validation
-  #   source_text_field: custom.pnc_text
-  #   reference_map: configs/refs/fleurs-en-reference-dev.json
-  #   tags: {task: st, src_lang: sl, tgt_lang: en, dataset_id: fleurs-sl_en-dev}
+  - type: lhotse_shar
+    shar_path: ${LOCAL_DATASETS_DIR}/fleurs/sl_si/validation
+    source_text_field: supervisions.0.text
+    reference_map: configs/refs/fleurs-en-reference-dev.json
+    tags: {task: st, src_lang: sl, tgt_lang: en, dataset_id: fleurs-sl_en-dev}
 
   - type: lhotse_shar
     shar_path: ${LOCAL_DATASETS_DIR}/fleurs/ga_ie/validation
-    source_text_field: custom.pnc_text
+    source_text_field: supervisions.0.text
     reference_map: configs/refs/fleurs-en-reference-dev.json
     tags: {task: st, src_lang: ga, tgt_lang: en, dataset_id: fleurs-ga_en-dev}
 
   - type: lhotse_shar
     shar_path: ${LOCAL_DATASETS_DIR}/fleurs/mt_mt/validation
-    source_text_field: custom.pnc_text
+    source_text_field: supervisions.0.text
     reference_map: configs/refs/fleurs-en-reference-dev.json
     tags: {task: st, src_lang: mt, tgt_lang: en, dataset_id: fleurs-mt_en-dev}

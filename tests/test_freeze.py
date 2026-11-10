@@ -271,8 +271,23 @@ class TestSpeechvalDevSpecs:
 
     def test_xen_uses_the_dev_english_reference(self, monkeypatch):
         sources = self._load("fleurs24-st-xen-dev-full.yaml", monkeypatch)
-        assert len(sources) == 17  # jupiter has no FLEURS for el/pl/ro/sk/sl/sv
+        assert len(sources) == 23
         assert {s["reference_map"] for s in sources} == {"configs/refs/fleurs-en-reference-dev.json"}
+
+    @pytest.mark.parametrize("name", ["fleurs24-st-xen-dev-full.yaml", "fleurs24-st-enx-dev.yaml"])
+    def test_fleurs_source_text_is_the_corpus_supervision(self, name, monkeypatch):
+        assert {s["source_text_field"] for s in self._load(name, monkeypatch)} == {"supervisions.0.text"}
+
+    def test_nested_value_indexes_lists(self):
+        from types import SimpleNamespace
+
+        from melteval.readers.shar import _nested_value
+
+        cut = SimpleNamespace(supervisions=[SimpleNamespace(text="a"), SimpleNamespace(text="b")], custom={"k": 1})
+        assert _nested_value(cut, "supervisions.0.text") == "a"
+        assert _nested_value(cut, "supervisions.1.text") == "b"
+        assert _nested_value(cut, "supervisions.2.text") is None
+        assert _nested_value(cut, "custom.k") == 1
 
     def test_covost_dev_covers_the_suite_directions(self, monkeypatch):
         ids = {s["tags"]["dataset_id"] for s in self._load("st-eval-campaign-v1-dev.yaml", monkeypatch)}

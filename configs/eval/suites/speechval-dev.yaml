@@ -15,7 +15,8 @@ benchmarks:
     slices:
       - {task: asr, dataset_id: librispeech-validation-other, time: "02:00:00"}
 
-  # configs/shar/voxpopuli-dev.yaml. en: English normalizer (numbers are spelled out in its reference).
+  # configs/shar/voxpopuli-dev.yaml. WER/CER use the language-agnostic `basic` normalizer (the scorer default) in every
+  # slice; only en overrides it with the English one (numbers are spelled out in its reference).
   - name: voxpopuli-dev
     frozen_set: ${VOXPOPULI_DEV_SET}
     needs_instruction: true
@@ -46,7 +47,7 @@ benchmarks:
       - {task: st, dataset_id: fleurs-cs_en-dev, post_scorers: [melteval/rescore.py@metricx_scorer]}
       - {task: st, dataset_id: fleurs-da_en-dev, post_scorers: [melteval/rescore.py@metricx_scorer]}
       - {task: st, dataset_id: fleurs-de_en-dev, post_scorers: [melteval/rescore.py@metricx_scorer]}
-      # - {task: st, dataset_id: fleurs-el_en-dev, post_scorers: [melteval/rescore.py@metricx_scorer]}  # not on jupiter
+      - {task: st, dataset_id: fleurs-el_en-dev, post_scorers: [melteval/rescore.py@metricx_scorer]}
       - {task: st, dataset_id: fleurs-es_en-dev, post_scorers: [melteval/rescore.py@metricx_scorer]}
       - {task: st, dataset_id: fleurs-et_en-dev, post_scorers: [melteval/rescore.py@metricx_scorer]}
       - {task: st, dataset_id: fleurs-fi_en-dev, post_scorers: [melteval/rescore.py@metricx_scorer]}
@@ -59,12 +60,12 @@ benchmarks:
       - {task: st, dataset_id: fleurs-lv_en-dev, post_scorers: [melteval/rescore.py@metricx_scorer]}
       - {task: st, dataset_id: fleurs-mt_en-dev, post_scorers: [melteval/rescore.py@metricx_scorer]}
       - {task: st, dataset_id: fleurs-nl_en-dev, post_scorers: [melteval/rescore.py@metricx_scorer]}
-      # - {task: st, dataset_id: fleurs-pl_en-dev, post_scorers: [melteval/rescore.py@metricx_scorer]}  # not on jupiter
+      - {task: st, dataset_id: fleurs-pl_en-dev, post_scorers: [melteval/rescore.py@metricx_scorer]}
       - {task: st, dataset_id: fleurs-pt_en-dev, post_scorers: [melteval/rescore.py@metricx_scorer]}
-      # - {task: st, dataset_id: fleurs-ro_en-dev, post_scorers: [melteval/rescore.py@metricx_scorer]}  # not on jupiter
-      # - {task: st, dataset_id: fleurs-sk_en-dev, post_scorers: [melteval/rescore.py@metricx_scorer]}  # not on jupiter
-      # - {task: st, dataset_id: fleurs-sl_en-dev, post_scorers: [melteval/rescore.py@metricx_scorer]}  # not on jupiter
-      # - {task: st, dataset_id: fleurs-sv_en-dev, post_scorers: [melteval/rescore.py@metricx_scorer]}  # not on jupiter
+      - {task: st, dataset_id: fleurs-ro_en-dev, post_scorers: [melteval/rescore.py@metricx_scorer]}
+      - {task: st, dataset_id: fleurs-sk_en-dev, post_scorers: [melteval/rescore.py@metricx_scorer]}
+      - {task: st, dataset_id: fleurs-sl_en-dev, post_scorers: [melteval/rescore.py@metricx_scorer]}
+      - {task: st, dataset_id: fleurs-sv_en-dev, post_scorers: [melteval/rescore.py@metricx_scorer]}
 
   # configs/shar/fleurs24-st-enx-dev.yaml: English audio into each EU language (one slice per target). MetricX-24 post-hoc, from the English source.
   - name: fleurs24-st-enx-dev

@@ -47,7 +47,8 @@ What was run (2026-11-06). `$LOCAL_DATASETS_DIR` is not set in a jupiter login s
 
 * **jupiter**: raw `AZEROS_DIR=/e/data1/smurf4eu-data/speech/azeros` has `voxpopuli/<lang>/validation` for all 16
   languages and `fleurs/<locale>/validation` for 18 locales (no el_gr, pl_pl, ro_ro, sk_sk, sl_si, sv_se), but both
-  are plain Shar without `.idx`. The existing indexed tree (`.../calvo-bartolome1/azeros-indexed`) holds only `test`,
+  are plain Shar without `.idx`. The 6 missing FLEURS validation splits were copied from the nyx tree (indexed already)
+  into `/e/data1/smurf4eu-data/speech/shar/fleurs/<locale>/validation` and symlinked into the indexed dev tree below. The existing indexed tree (`.../calvo-bartolome1/azeros-indexed`) holds only `test`,
   so the validation splits were indexed into `$SCRATCH/attanasio1/azeros-indexed-dev` (symlinks + `.idx`, small).
   There was no CoVoST2 on jupiter: `covost2/{de,es,fr,it,pt}_en/dev` (4.8 GB) was copied there from the nyx tree
   into `/e/data1/smurf4eu-data/speech/shar/covost2/` (`tar ch ... | ssh jupiter 'tar x'`; indexed already).
@@ -57,7 +58,7 @@ What was run (2026-11-06). `$LOCAL_DATASETS_DIR` is not set in a jupiter login s
 # jupiter (venv with lhotse: $PROJECT/calvo-bartolome1/venvs/freeze-eval; code from this repo via PYTHONPATH)
 export AZEROS_DIR=/e/data1/smurf4eu-data/speech/azeros AZEROS_INDEXED_DIR=$SCRATCH/attanasio1/azeros-indexed-dev
 python scripts/index_shar.py $AZEROS_DIR $AZEROS_INDEXED_DIR \
-    fleurs/{en_us,es_419,fr_fr,de_de,it_it,nl_nl,pt_br,hu_hu,fi_fi,cs_cz,hr_hr,bg_bg,lv_lv,da_dk,lt_lt,et_ee,ga_ie,mt_mt}/validation \
+    fleurs/{en_us,es_419,fr_fr,de_de,it_it,nl_nl,pt_br,hu_hu,fi_fi,cs_cz,hr_hr,bg_bg,lv_lv,da_dk,lt_lt,et_ee,ga_ie,mt_mt}/validation  # + el_gr pl_pl ro_ro sk_sk sl_si sv_se: copied from nyx, see above \
     voxpopuli/{en,de,fr,es,pl,it,ro,hu,cs,nl,fi,hr,sk,sl}/validation
 export LOCAL_DATASETS_DIR=$AZEROS_INDEXED_DIR F=$PROJECT/attanasio1/frozen-dev
 for s in fleurs24-st-xen-dev-full fleurs24-st-enx-dev voxpopuli-dev; do melteval freeze configs/shar/$s.yaml -o $F/$s; done
@@ -70,18 +71,23 @@ LOCAL_DATASETS_DIR=/mnt/scratch-nyx/giuseppe/melt/melt-data/shar \
   melteval freeze configs/shar/st-eval-campaign-v1-dev.yaml -o /mnt/scratch-artemis/giuseppe/frozen/speechval-dev/st-eval-campaign-v1-dev
 ```
 
+The two FLEURS sets were refrozen on 2026-11-10 after the review (23 X->en directions, `supervisions.0.text` as source
+text) into `$SCRATCH/attanasio1/frozen-dev`, because the project filesystem was at its quota and refused new files and
+directories; the other jupiter sets stay under `$PROJECT/attanasio1/frozen-dev`. The previous FLEURS sets (17 directions,
+`custom.pnc_text` source) are still there as `fleurs24-st-xen-dev-full.pnc17` and `fleurs24-st-enx-dev.pnc`.
+
 Frozen sets (locators are absolute paths, so they only work on their own machine):
 
 | env var | path |
 |---|---|
 | `VOXPOPULI_DEV_SET` | jupiter `/e/project1/e-ext-2025e01-100/attanasio1/frozen-dev/voxpopuli-dev` |
-| `FLEURS24_ST_XEN_DEV_SET` | jupiter `.../frozen-dev/fleurs24-st-xen-dev-full` (17 directions) |
-| `FLEURS24_ST_ENX_DEV_SET` | jupiter `.../frozen-dev/fleurs24-st-enx-dev` |
+| `FLEURS24_ST_XEN_DEV_SET` | jupiter `/e/scratch/e-ext-2025e01-100/attanasio1/frozen-dev/fleurs24-st-xen-dev-full` (23 directions) |
+| `FLEURS24_ST_ENX_DEV_SET` | jupiter `/e/scratch/e-ext-2025e01-100/attanasio1/frozen-dev/fleurs24-st-enx-dev` |
 | `COVOST2_DEV_SET` | jupiter `.../frozen-dev/st-eval-campaign-v1-dev`; nyx/artemis `/mnt/scratch-artemis/giuseppe/frozen/speechval-dev/st-eval-campaign-v1-dev` |
 
 Samples (capped sets, see below): VoxPopuli 13034 (1000 each for en, de, fr, es, pl, it, ro, hu, cs, nl; sl 889,
 hr 789, fi 687, sk 669). The freezer drops cuts with empty `text` (VoxPopuli validation has untranscribed cuts: hr
-loses 496 of 1285). FLEURS X->en 6234 (17 directions); FLEURS en->X 8819 (23 directions; see `dropped_no_reference`
+loses 496 of 1285). FLEURS X->en 8261 (23 directions, source text never empty); FLEURS en->X 8819 (23 directions; see `dropped_no_reference`
 per source, expected); CoVoST2 10000 (2000 per direction: de, es, fr, it, pt). The CoVoST2 jupiter and nyx/artemis
 sets are identical in size.
 
