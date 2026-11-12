@@ -47,6 +47,9 @@ fi
 if [[ -d "$_speechval_dev/st-eval-campaign-v1-dev" ]]; then
     export COVOST2_DEV_SET="${COVOST2_DEV_SET:-$_speechval_dev/st-eval-campaign-v1-dev}"
 fi
+if [[ -d "$_speechval_dev/librispeech-validation" ]]; then
+    export LIBRISPEECH_VALIDATION_SET="${LIBRISPEECH_VALIDATION_SET:-$_speechval_dev/librispeech-validation}"
+fi
 if [[ -d /mnt/scratch-artemis/giuseppe/frozen/speechval/europarl-st-dev ]]; then
     export EUROPARL_ST_DEV_SET="${EUROPARL_ST_DEV_SET:-/mnt/scratch-artemis/giuseppe/frozen/speechval/europarl-st-dev}"
 fi

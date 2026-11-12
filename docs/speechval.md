@@ -5,11 +5,18 @@ listed in `configs/eval/suites/speechval-dev.yaml`.
 
 | benchmark | spec | source | dataset_ids | env var |
 |---|---|---|---|---|
-| LibriSpeech | `configs/hf/librispeech-hf-validation-{clean,other}.yaml` | HF, read live | `librispeech-validation-{clean,other}` | - |
+| LibriSpeech | `configs/shar/librispeech-validation.yaml` | frozen | `librispeech-validation-{clean,other}` | `LIBRISPEECH_VALIDATION_SET` |
 | VoxPopuli | `configs/shar/voxpopuli-dev.yaml` | frozen | `voxpopuli-<lang>-dev` (14) | `VOXPOPULI_DEV_SET` |
 | FLEURS X->en | `configs/shar/fleurs24-st-xen-dev-full.yaml` | frozen | `fleurs-<lang>_en-dev` (23) | `FLEURS24_ST_XEN_DEV_SET` |
 | FLEURS en->X | `configs/shar/fleurs24-st-enx-dev.yaml` | frozen | `fleurs-en_<lang>-dev` (23) | `FLEURS24_ST_ENX_DEV_SET` |
 | CoVoST2 | `configs/shar/st-eval-campaign-v1-dev.yaml` | frozen | `covost2-<src>_en-dev` (21), `covost2-en_<tgt>-dev` (15) | `COVOST2_DEV_SET` |
+| EuroparlST | `configs/shar/europarl-st-dev.yaml` | frozen | `europarl-st-<src>_<tgt>-dev` (72) | `EUROPARL_ST_DEV_SET` |
+
+LibriSpeech is frozen rather than read live from the Hub: `datasets` prepares
+every split of `openslr/librispeech_asr`'s `clean`/`other` config even when only
+`validation` is requested (~60 GB of training audio), which offline compute
+nodes cannot do. The audio and transcripts are the same; the frozen set is built
+from the Lhotse `librispeech/{clean,other}/validation` tree.
 
 Not part of it: `fleurs24-asr-dev.yaml` (FLEURS ASR), and `fleurs24-st-xen-dev.yaml` (training's 100-per-language
 subsample; the full twin above is separate).
@@ -32,18 +39,18 @@ python scripts/build_fleurs_reference.py bg_bg cs_cz da_dk de_de el_gr es_419 et
 A target lacks some English sentences (nl has 117 of 150 ids), so en->X sets are smaller than the audio;
 the difference is `dropped_no_reference` in `frozen_set.json`.
 
-## LibriSpeech prefetch (login shell; compute nodes are offline)
+## LibriSpeech validation (frozen)
+
+`configs/shar/librispeech-validation.yaml` freezes `librispeech/{clean,other}/validation`
+from the Lhotse tree (5567 samples: clean 2703, other 2864). Do not use the HF
+`spec` for it: `datasets` prepares every split of `openslr/librispeech_asr`'s
+`clean`/`other` config even when asked for `validation`, ~60 GB of training
+audio, which offline compute nodes cannot fetch.
 
 ```bash
-export HF_HOME=/mnt/scratch-artemis/giuseppe/melt-data/hf_cache   # adjust on the cluster you run on
-python - <<'PY'
-from datasets import load_dataset
-for name in ("clean", "other"):
-    load_dataset("openslr/librispeech_asr", name, split="validation", revision="71cacbfb7e2354c4226d01e70d77d5fca3d04ba1")
-PY
+LOCAL_DATASETS_DIR=/path/to/shar \
+  melteval freeze configs/shar/librispeech-validation.yaml -o <frozen>/librispeech-validation
 ```
-
-The pinned revision has `clean/validation` and `other/validation` parquet files (checked).
 
 ## Freezing (CPU only)
 
@@ -80,7 +87,7 @@ LOCAL_DATASETS_DIR=/mnt/scratch-nyx/giuseppe/melt/melt-data/shar \
 
 All jupiter frozen sets live in `/e/data1/smurf4eu-data/speech/frozen-dev` (re-frozen on 2026-11-10 from the data1 indexed
 tree, with all 36 CoVoST2 directions; the previous sets, which pointed at a scratch tree, are in `frozen-dev-superseded`).
-Counts: VoxPopuli 13034, FLEURS X->en 8261, FLEURS en->X 8819, CoVoST2 61452.
+Counts: VoxPopuli 13034, FLEURS X->en 8261, FLEURS en->X 8819, CoVoST2 61452 (36 directions). LibriSpeech validation (5567) is frozen per site from that site's Lhotse tree.
 
 The test counterparts of the two sets that changed are in `/e/data1/smurf4eu-data/speech/frozen-test`:
 `covost2-test` (36 directions, 329103 samples; env `COVOST2_SET`) and `fleurs24-st-xen-test` (23 directions, 18816;
@@ -90,16 +97,17 @@ Frozen sets (locators are absolute paths, so they only work on their own machine
 
 | env var | path |
 |---|---|
-| `VOXPOPULI_DEV_SET` | jupiter `/e/data1/smurf4eu-data/speech/frozen-dev/voxpopuli-dev` |
-| `FLEURS24_ST_XEN_DEV_SET` | jupiter `/e/data1/smurf4eu-data/speech/frozen-dev/fleurs24-st-xen-dev-full` (23 directions) |
-| `FLEURS24_ST_ENX_DEV_SET` | jupiter `/e/data1/smurf4eu-data/speech/frozen-dev/fleurs24-st-enx-dev` |
-| `COVOST2_DEV_SET` | jupiter `/e/data1/smurf4eu-data/speech/frozen-dev/st-eval-campaign-v1-dev`; nyx/artemis `/mnt/scratch-artemis/giuseppe/frozen/speechval-dev/st-eval-campaign-v1-dev` |
+| `LIBRISPEECH_VALIDATION_SET` | artemis `/mnt/scratch-artemis/giuseppe/frozen/speechval-dev/librispeech-validation`; jupiter: freeze `configs/shar/librispeech-validation.yaml` there and set this |
+| `VOXPOPULI_DEV_SET` | jupiter `/e/data1/smurf4eu-data/speech/frozen-dev/voxpopuli-dev`; artemis `/mnt/scratch-artemis/giuseppe/frozen/speechval-dev/voxpopuli-dev` |
+| `FLEURS24_ST_XEN_DEV_SET` | jupiter `/e/data1/smurf4eu-data/speech/frozen-dev/fleurs24-st-xen-dev-full` (23 directions); artemis `/mnt/scratch-artemis/giuseppe/frozen/speechval-dev/fleurs24-st-xen-dev-full` |
+| `FLEURS24_ST_ENX_DEV_SET` | jupiter `/e/data1/smurf4eu-data/speech/frozen-dev/fleurs24-st-enx-dev`; artemis `/mnt/scratch-artemis/giuseppe/frozen/speechval-dev/fleurs24-st-enx-dev` |
+| `COVOST2_DEV_SET` | jupiter `/e/data1/smurf4eu-data/speech/frozen-dev/st-eval-campaign-v1-dev`; artemis `/mnt/scratch-artemis/giuseppe/frozen/speechval-dev/st-eval-campaign-v1-dev` (36 directions, 61452) |
+| `EUROPARL_ST_DEV_SET` | artemis `/mnt/scratch-artemis/giuseppe/frozen/speechval/europarl-st-dev` (72 directions, 36000) |
 
 Samples (capped sets, see below): VoxPopuli 13034 (1000 each for en, de, fr, es, pl, it, ro, hu, cs, nl; sl 889,
 hr 789, fi 687, sk 669). The freezer drops cuts with empty `text` (VoxPopuli validation has untranscribed cuts: hr
 loses 496 of 1285). FLEURS X->en 8261 (23 directions, source text never empty); FLEURS en->X 8819 (23 directions; see `dropped_no_reference`
-per source, expected); CoVoST2 10000 (2000 per direction: de, es, fr, it, pt). The CoVoST2 jupiter and nyx/artemis
-sets are identical in size.
+per source, expected); CoVoST2 61452 (36 directions, capped at 2000 each; the jupiter and artemis sets are identical in size).
 
 ## Caps
 

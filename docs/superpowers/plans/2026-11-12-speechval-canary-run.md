@@ -240,7 +240,12 @@ git commit -m "artemis: export speechval-dev frozen sets"
 
 ---
 
-### Task 4: Prefetch LibriSpeech validation
+### Task 4: LibriSpeech validation (superseded: frozen, see ledger)
+
+> Superseded during execution: LibriSpeech is now a frozen set
+> (`configs/shar/librispeech-validation.yaml`) because `datasets` prepares every
+> split of the Hub repo even for `validation` (~60 GB). The steps below were not
+> run; the freeze and the suite change are in the ledger.
 
 **Files:**
 - Modify: the artemis HF cache

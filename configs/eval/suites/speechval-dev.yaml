@@ -2,15 +2,17 @@
 # (`benchmarks: <this file>`). A config that runs part of it uses `skip`.
 
 benchmarks:
-  # LibriSpeech `validation` (HF, read live; prefetch the split from the login shell, see docs/speechval.md).
+  # LibriSpeech `validation` as a frozen set (configs/shar/librispeech-validation.yaml):
+  # the HF script prepares every split of the repo, ~60 GB, even for `validation` alone,
+  # which offline compute nodes cannot do. Frozen from the Lhotse tree instead; docs/speechval.md.
   - name: librispeech-validation-clean
-    spec: configs/hf/librispeech-hf-validation-clean.yaml
+    frozen_set: ${LIBRISPEECH_VALIDATION_SET}
     needs_instruction: true
     slices:
       - {task: asr, dataset_id: librispeech-validation-clean, time: "02:00:00"}
 
   - name: librispeech-validation-other
-    spec: configs/hf/librispeech-hf-validation-other.yaml
+    frozen_set: ${LIBRISPEECH_VALIDATION_SET}
     needs_instruction: true
     slices:
       - {task: asr, dataset_id: librispeech-validation-other, time: "02:00:00"}

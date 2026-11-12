@@ -1,0 +1,25 @@
+# LibriSpeech `validation` (dev-clean + dev-other) as a frozen set, for sites where
+# the HF `openslr/librispeech_asr` script cannot be prepared offline: `datasets`
+# generates every split of the repo's `clean`/`other` config even when asked for
+# only `validation`, which is ~60 GB of training audio and hours of prep.
+#
+# The audio is the same recordings; `text` is the corpus transcript. Part of
+# speechval-dev: `configs/eval/suites/speechval-dev.yaml` reads this set.
+#
+#   melteval freeze configs/shar/librispeech-validation.yaml -o <frozen>/librispeech-validation
+#   export LIBRISPEECH_VALIDATION_SET=<frozen>/librispeech-validation
+#
+# Expected counts: clean 2703, other 2864 (5567 total).
+name: librispeech-validation
+seed: 0
+
+input_cfg:
+  - type: lhotse_shar
+    shar_path: ${LOCAL_DATASETS_DIR}/librispeech/clean/validation
+    text_field: text
+    tags: {task: asr, lang: en, dataset_id: librispeech-validation-clean}
+
+  - type: lhotse_shar
+    shar_path: ${LOCAL_DATASETS_DIR}/librispeech/other/validation
+    text_field: text
+    tags: {task: asr, lang: en, dataset_id: librispeech-validation-other}
