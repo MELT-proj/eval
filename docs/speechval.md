@@ -154,3 +154,38 @@ per-slice corpus WER, not a pooled corpus figure):
 | CoVoST2 X->en (11) | BLEU | 38.0 |
 | CoVoST2 en->X (5) | BLEU | 30.1 |
 | EuroparlST en<->X (16) | BLEU / MetricX | 32.2 / 4.12 |
+
+## SMURF and Fondue baselines (artemis, 2026-11-12)
+
+Two more models on the same suite and frozen sets. Macro means over the slices
+the model ran; WER is a mean of per-slice corpus WER; `BLEU/MetricX` are the
+inline BLEU and the post-hoc MetricX-24 hybrid XXL score (lower is better).
+
+| model | LibriSpeech | VoxPopuli | FLEURS X->en | FLEURS en->X | CoVoST X->en | CoVoST en->X | Europarl X->en | Europarl en->X |
+|---|---|---|---|---|---|---|---|---|
+| canary-1b-v2 | 3.3 % | 9.5 % | 28.0 / 5.14 | 28.9 / 4.58 | 38.0 | 30.1 | 34.6 / 4.58 | 29.9 / 3.67 |
+| eurollm-speech-16n-step-600000 | 3.6 % | 11.8 % | 11.2 / 3.59 | 29.3 / 4.01 | – | – | 6.7 / 13.85 | 26.0 / 5.53 |
+| fondue-step-3000 | 4.0 % | 11.0 % | 22.2 / 5.31 | 18.8 / 7.22 | 28.2 | 15.2 | 28.7 / 5.34 | 24.8 / 4.99 |
+| fondue-step-17000 | 3.1 % | 9.3 % | 23.7 / 4.63 | 18.8 / 6.54 | 28.9 | 17.5 | 30.2 / 4.84 | 27.1 / 4.27 |
+
+Checkpoints and how they are loaded:
+
+- **SMURF**: `eurollm_speech_16_nodes_run_1_asr_long/checkpoints/step=600000.ckpt`
+  (21.8 GB), pulled from jupiter to
+  `/mnt/scratch-nyx/giuseppe/checkpoints/smurf/...`. Loaded with
+  `configs/smurf/eurollm_override_config.yaml` (`prompt_format: eurollm`;
+  the stored value is the training default `qwen`) and the `smurf-eval` venv.
+  CoVoST2 is skipped, as in `configs/eval/smurf-v1.yaml`.
+- **Fondue**: `checkpoint-3000` and `checkpoint-17000` from
+  `/mnt/scratch-nyx/giuseppe/fondue-keep/` (HF-format MELT checkpoints,
+  whisper-large-v3 + EuroLLM-1.7B). They were saved without a processor or
+  `training_config.yaml`; both come from the run output
+  (`/mnt/scratch-nyx/giuseppe/melt/outputs-fondue/Fondue/`). The MoE audio
+  adapter needs the `main` training checkout, layered over the melteval venv by
+  `pyextras/melt-main/activate`. Evaluation uses one fixed prompt per task
+  (`configs/melt/fondue-eval-format.yaml`), not the run's random selection.
+
+Read the SMURF row with its coverage in mind: this is the `asr_long` run, and on
+ST it translates `de/da/el` but echoes `cs/es/et/fi`, while Europarl `de->en`
+comes back in German — a model behaviour the suite is meant to surface, not a
+prompt mismatch (`FLEURS de->en` is a correct English translation).
