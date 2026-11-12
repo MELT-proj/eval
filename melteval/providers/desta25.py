@@ -36,6 +36,7 @@ from melteval.providers.base import (
     DEFAULT_BATCH_WINDOW,
     BatchedSpeechAPI,
     _Request,
+    resolve_system_prompt,
 )
 
 
@@ -76,6 +77,7 @@ class Desta25API(BatchedSpeechAPI):
         path: str | None = None,
         revision: str | None = None,
         system_prompt: str | None = None,
+        system_prompt_file: str | None = None,
         **model_args: object,
     ) -> None:
         """Load the model.
@@ -93,6 +95,8 @@ class Desta25API(BatchedSpeechAPI):
                 Llama and Whisper backbones that ``desta`` pulls in are not pinned by it.
             system_prompt: The system message sent with every request. ``None``
                 means :data:`DEFAULT_SYSTEM_PROMPT`.
+            system_prompt_file: Path of a text file holding the system message, for one
+                with commas (see :func:`resolve_system_prompt`).
             **model_args: Forwarded to ``DeSTA25AudioModel.from_pretrained``.
 
         Raises:
@@ -122,7 +126,7 @@ class Desta25API(BatchedSpeechAPI):
         self.device = device or ("cuda" if torch.cuda.is_available() else "cpu")
         self.model.to(self.device)
         self.model.eval()
-        self.system_prompt = system_prompt or DEFAULT_SYSTEM_PROMPT
+        self.system_prompt = resolve_system_prompt(system_prompt, system_prompt_file) or DEFAULT_SYSTEM_PROMPT
         self._logged_prompt = False
 
     def close(self) -> None:

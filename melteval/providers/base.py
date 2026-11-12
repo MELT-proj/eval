@@ -23,6 +23,7 @@ import logging
 import time
 from concurrent.futures import Future
 from dataclasses import dataclass, field
+from pathlib import Path
 from queue import Empty, Queue
 from threading import Lock, Thread
 
@@ -264,6 +265,28 @@ class BatchedSpeechAPI(ModelAPI):
                     for request in batch:
                         if not request.future.done():
                             request.future.set_exception(exc)
+
+
+def resolve_system_prompt(system_prompt: str | None, system_prompt_file: str | None) -> str | None:
+    """The system prompt, from ``-M system_prompt=`` or, intact, from ``-M system_prompt_file=``.
+
+    inspect splits every ``-M key=value`` on commas (quoted or not) and YAML-parses each piece,
+    so a prompt with a comma reaches a provider as a list of fragments. The launcher therefore
+    passes the prompt as a file and only the path travels through ``-M``.
+
+    Raises:
+        ValueError: If both are given, or ``system_prompt`` is not a string (a comma got split).
+    """
+    if system_prompt_file is not None:
+        if system_prompt is not None:
+            raise ValueError("Pass system_prompt or system_prompt_file, not both.")
+        return Path(system_prompt_file).read_text(encoding="utf-8")
+    if system_prompt is not None and not isinstance(system_prompt, str):
+        raise ValueError(
+            f"system_prompt arrived as {type(system_prompt).__name__}, not a string: inspect splits -M values on "
+            "commas. Use system_prompt_file=<path> instead."
+        )
+    return system_prompt
 
 
 def _extract(messages: list[ChatMessage]) -> tuple[str, dict | None]:
