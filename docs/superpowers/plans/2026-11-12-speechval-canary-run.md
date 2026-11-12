@@ -518,4 +518,23 @@ git commit -m "speechval: canary-1b-v2 baseline on artemis"
 
 ## Recorded results
 
-_(filled in by Task 9)_
+Run of 2026-11-12 on `a6000` (poseidon) plus `h200` (hades) for the smoke and
+MetricX. Campaign `${EVAL_ROOT}/speechval-canary`; 92 slices, 76 wave-1 + 16
+CoVoST; 76/76 and 16/16 successful; 60 ST logs scored with MetricX (FLEURS and
+Europarl; CoVoST declares no post-scorer).
+
+| family | slices | metric | value |
+|---|---|---|---|
+| LibriSpeech validation-clean | 1 | WER | 2.3 % |
+| LibriSpeech validation-other | 1 | WER | 4.3 % |
+| VoxPopuli dev | 14 | WER (macro) | 9.5 % |
+| FLEURS X->en | 22 | BLEU / MetricX | 28.0 / 5.14 |
+| FLEURS en->X | 22 | BLEU / MetricX | 28.9 / 4.58 |
+| CoVoST2 X->en | 11 | BLEU | 38.0 |
+| CoVoST2 en->X | 5 | BLEU | 30.1 |
+| EuroparlST en<->X | 16 | BLEU / MetricX | 32.2 / 4.12 |
+
+Frozen set hashes: librispeech-validation `6cfe26369984` (5567), voxpopuli-dev
+`6c8ac5cc07c7` (13034), fleurs24-st-xen-dev-full `968f8151b34e` (8261),
+fleurs24-st-enx-dev `e77d0be19482` (8819), st-eval-campaign-v1-dev
+`cb0993207c8e` (61452). Full table in `docs/speechval.md`.
