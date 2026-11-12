@@ -259,6 +259,10 @@ EuroparlST 8 k); wave 2 is ≈32 k. If wave 1 runs out of wall clock, the next
 
 # Part B — the worklog
 
+> Implemented as its own repository, `/home/giuseppe/melt-proj/speecheval-worklog`
+> (the human partner's call during execution), not under `projects/worklog/`.
+> The design below stands; paths in it are relative to that repo.
+
 ## B1. Where it lives
 
 `projects/worklog/`, a self-contained app:

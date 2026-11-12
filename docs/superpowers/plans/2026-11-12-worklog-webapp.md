@@ -1,5 +1,9 @@
 # SpeechEval Worklog Implementation Plan
 
+> Moved during execution to `/home/giuseppe/melt-proj/speecheval-worklog`, a
+> separate repo; the authoritative plan now lives there at
+> `docs/plans/2026-11-12-worklog-webapp.md`.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** A read-only Flask dashboard that scans artemis inspect logs and renders the speechval results as a model × benchmark matrix, per-language heatmaps and a live run feed.
