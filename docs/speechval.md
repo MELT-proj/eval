@@ -122,3 +122,35 @@ LibriSpeech are run in full.
 
 The uncapped sets are kept next to the capped ones, renamed `*.full` (CoVoST2 on both machines, VoxPopuli on jupiter;
 the uncapped VoxPopuli set still includes et and lt).
+
+## Canary-1B-v2 baseline (artemis, 2026-11-12)
+
+First row of the suite: `configs/eval/speechval-canary.yaml`, output
+`${EVAL_ROOT}/speechval-canary`. 92 supported slices (78 skipped: FLEURS `ga`,
+10 non-EU CoVoST directions each way, 56 non-English Europarl pairs). MetricX
+ran post-hoc for FLEURS and Europarl; CoVoST has the inline BLEU/chrF only, as
+the suite declares.
+
+Frozen sets used (artemis, under `/mnt/scratch-artemis/giuseppe/frozen/speechval-dev`):
+
+| set | spec_hash | samples | hours |
+|---|---|---|---|
+| librispeech-validation | `6cfe26369984` | 5567 | 10.5 |
+| voxpopuli-dev | `6c8ac5cc07c7` | 13034 | 38.0 |
+| fleurs24-st-xen-dev-full | `968f8151b34e` | 8261 | 25.9 |
+| fleurs24-st-enx-dev | `e77d0be19482` | 8819 | 23.3 |
+| st-eval-campaign-v1-dev | `cb0993207c8e` | 61452 | 94.3 |
+
+Headline numbers (macro over the slices the model supports; WER is a mean of
+per-slice corpus WER, not a pooled corpus figure):
+
+| benchmark | metric | Canary-1B-v2 |
+|---|---|---|
+| LibriSpeech validation-clean | WER | 2.3 % |
+| LibriSpeech validation-other | WER | 4.3 % |
+| VoxPopuli dev (14 languages) | WER | 9.5 % |
+| FLEURS X->en (22) | BLEU / MetricX | 28.0 / 5.14 |
+| FLEURS en->X (22) | BLEU / MetricX | 28.9 / 4.58 |
+| CoVoST2 X->en (11) | BLEU | 38.0 |
+| CoVoST2 en->X (5) | BLEU | 30.1 |
+| EuroparlST en<->X (16) | BLEU / MetricX | 32.2 / 4.12 |
