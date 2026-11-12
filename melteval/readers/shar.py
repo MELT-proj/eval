@@ -53,7 +53,7 @@ def _get(cfg, key: str, default=None):
 
 
 def _nested_value(obj, path: str, default=None):
-    """Resolve a dotted path over attributes and dict keys alike."""
+    """Resolve a dotted path over attributes, dict keys and list indices (``supervisions.0.text``)."""
     current = obj
     for part in path.split("."):
         if current is None:
@@ -62,6 +62,8 @@ def _nested_value(obj, path: str, default=None):
             current = getattr(current, part)
         elif isinstance(current, dict) and part in current:
             current = current[part]
+        elif isinstance(current, (list, tuple)) and part.isdigit() and int(part) < len(current):
+            current = current[int(part)]
         else:
             return default
     return current if current is not None else default

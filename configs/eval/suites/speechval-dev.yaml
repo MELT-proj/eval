@@ -2,6 +2,150 @@
 # (`benchmarks: <this file>`). A config that runs part of it uses `skip`.
 
 benchmarks:
+  # LibriSpeech `validation` (HF, read live; prefetch the split from the login shell, see docs/speechval.md).
+  - name: librispeech-validation-clean
+    spec: configs/hf/librispeech-hf-validation-clean.yaml
+    needs_instruction: true
+    slices:
+      - {task: asr, dataset_id: librispeech-validation-clean, time: "02:00:00"}
+
+  - name: librispeech-validation-other
+    spec: configs/hf/librispeech-hf-validation-other.yaml
+    needs_instruction: true
+    slices:
+      - {task: asr, dataset_id: librispeech-validation-other, time: "02:00:00"}
+
+  # configs/shar/voxpopuli-dev.yaml. WER/CER use the language-agnostic `basic` normalizer (the scorer default) in every
+  # slice; only en overrides it with the English one (numbers are spelled out in its reference).
+  - name: voxpopuli-dev
+    frozen_set: ${VOXPOPULI_DEV_SET}
+    needs_instruction: true
+    slices:
+      - {task: asr, dataset_id: voxpopuli-en-dev, args: [-T, normalizer=english]}
+      - {task: asr, dataset_id: voxpopuli-de-dev}
+      - {task: asr, dataset_id: voxpopuli-fr-dev}
+      - {task: asr, dataset_id: voxpopuli-es-dev}
+      - {task: asr, dataset_id: voxpopuli-it-dev}
+      - {task: asr, dataset_id: voxpopuli-pl-dev}
+      - {task: asr, dataset_id: voxpopuli-ro-dev}
+      - {task: asr, dataset_id: voxpopuli-hu-dev}
+      - {task: asr, dataset_id: voxpopuli-cs-dev}
+      - {task: asr, dataset_id: voxpopuli-nl-dev}
+      - {task: asr, dataset_id: voxpopuli-fi-dev}
+      - {task: asr, dataset_id: voxpopuli-hr-dev}
+      - {task: asr, dataset_id: voxpopuli-sk-dev}
+      - {task: asr, dataset_id: voxpopuli-sl-dev}
+
+  # configs/shar/fleurs24-st-xen-dev-full.yaml: full FLEURS validation, X->en, English reference from configs/refs/fleurs-en-reference-dev.json.
+  # MetricX-24 hybrid XXL post-hoc, from the source transcript.
+  - name: fleurs24-st-xen-dev
+    frozen_set: ${FLEURS24_ST_XEN_DEV_SET}
+    needs_instruction: true
+    post_venv: ${METRICS_VENV_PATH}
+    slices:
+      - {task: st, dataset_id: fleurs-bg_en-dev, post_scorers: [melteval/rescore.py@metricx_scorer]}
+      - {task: st, dataset_id: fleurs-cs_en-dev, post_scorers: [melteval/rescore.py@metricx_scorer]}
+      - {task: st, dataset_id: fleurs-da_en-dev, post_scorers: [melteval/rescore.py@metricx_scorer]}
+      - {task: st, dataset_id: fleurs-de_en-dev, post_scorers: [melteval/rescore.py@metricx_scorer]}
+      - {task: st, dataset_id: fleurs-el_en-dev, post_scorers: [melteval/rescore.py@metricx_scorer]}
+      - {task: st, dataset_id: fleurs-es_en-dev, post_scorers: [melteval/rescore.py@metricx_scorer]}
+      - {task: st, dataset_id: fleurs-et_en-dev, post_scorers: [melteval/rescore.py@metricx_scorer]}
+      - {task: st, dataset_id: fleurs-fi_en-dev, post_scorers: [melteval/rescore.py@metricx_scorer]}
+      - {task: st, dataset_id: fleurs-fr_en-dev, post_scorers: [melteval/rescore.py@metricx_scorer]}
+      - {task: st, dataset_id: fleurs-ga_en-dev, post_scorers: [melteval/rescore.py@metricx_scorer]}  # no source transcript: scored with an empty one
+      - {task: st, dataset_id: fleurs-hr_en-dev, post_scorers: [melteval/rescore.py@metricx_scorer]}
+      - {task: st, dataset_id: fleurs-hu_en-dev, post_scorers: [melteval/rescore.py@metricx_scorer]}
+      - {task: st, dataset_id: fleurs-it_en-dev, post_scorers: [melteval/rescore.py@metricx_scorer]}
+      - {task: st, dataset_id: fleurs-lt_en-dev, post_scorers: [melteval/rescore.py@metricx_scorer]}
+      - {task: st, dataset_id: fleurs-lv_en-dev, post_scorers: [melteval/rescore.py@metricx_scorer]}
+      - {task: st, dataset_id: fleurs-mt_en-dev, post_scorers: [melteval/rescore.py@metricx_scorer]}
+      - {task: st, dataset_id: fleurs-nl_en-dev, post_scorers: [melteval/rescore.py@metricx_scorer]}
+      - {task: st, dataset_id: fleurs-pl_en-dev, post_scorers: [melteval/rescore.py@metricx_scorer]}
+      - {task: st, dataset_id: fleurs-pt_en-dev, post_scorers: [melteval/rescore.py@metricx_scorer]}
+      - {task: st, dataset_id: fleurs-ro_en-dev, post_scorers: [melteval/rescore.py@metricx_scorer]}
+      - {task: st, dataset_id: fleurs-sk_en-dev, post_scorers: [melteval/rescore.py@metricx_scorer]}
+      - {task: st, dataset_id: fleurs-sl_en-dev, post_scorers: [melteval/rescore.py@metricx_scorer]}
+      - {task: st, dataset_id: fleurs-sv_en-dev, post_scorers: [melteval/rescore.py@metricx_scorer]}
+
+  # configs/shar/fleurs24-st-enx-dev.yaml: English audio into each EU language (one slice per target). MetricX-24 post-hoc, from the English source.
+  - name: fleurs24-st-enx-dev
+    frozen_set: ${FLEURS24_ST_ENX_DEV_SET}
+    needs_instruction: true
+    post_venv: ${METRICS_VENV_PATH}
+    slices:
+      - {task: st, dataset_id: fleurs-en_bg-dev, post_scorers: [melteval/rescore.py@metricx_scorer]}
+      - {task: st, dataset_id: fleurs-en_cs-dev, post_scorers: [melteval/rescore.py@metricx_scorer]}
+      - {task: st, dataset_id: fleurs-en_da-dev, post_scorers: [melteval/rescore.py@metricx_scorer]}
+      - {task: st, dataset_id: fleurs-en_de-dev, post_scorers: [melteval/rescore.py@metricx_scorer]}
+      - {task: st, dataset_id: fleurs-en_el-dev, post_scorers: [melteval/rescore.py@metricx_scorer]}
+      - {task: st, dataset_id: fleurs-en_es-dev, post_scorers: [melteval/rescore.py@metricx_scorer]}
+      - {task: st, dataset_id: fleurs-en_et-dev, post_scorers: [melteval/rescore.py@metricx_scorer]}
+      - {task: st, dataset_id: fleurs-en_fi-dev, post_scorers: [melteval/rescore.py@metricx_scorer]}
+      - {task: st, dataset_id: fleurs-en_fr-dev, post_scorers: [melteval/rescore.py@metricx_scorer]}
+      - {task: st, dataset_id: fleurs-en_ga-dev, post_scorers: [melteval/rescore.py@metricx_scorer]}
+      - {task: st, dataset_id: fleurs-en_hr-dev, post_scorers: [melteval/rescore.py@metricx_scorer]}
+      - {task: st, dataset_id: fleurs-en_hu-dev, post_scorers: [melteval/rescore.py@metricx_scorer]}
+      - {task: st, dataset_id: fleurs-en_it-dev, post_scorers: [melteval/rescore.py@metricx_scorer]}
+      - {task: st, dataset_id: fleurs-en_lt-dev, post_scorers: [melteval/rescore.py@metricx_scorer]}
+      - {task: st, dataset_id: fleurs-en_lv-dev, post_scorers: [melteval/rescore.py@metricx_scorer]}
+      - {task: st, dataset_id: fleurs-en_mt-dev, post_scorers: [melteval/rescore.py@metricx_scorer]}
+      - {task: st, dataset_id: fleurs-en_nl-dev, post_scorers: [melteval/rescore.py@metricx_scorer]}
+      - {task: st, dataset_id: fleurs-en_pl-dev, post_scorers: [melteval/rescore.py@metricx_scorer]}
+      - {task: st, dataset_id: fleurs-en_pt-dev, post_scorers: [melteval/rescore.py@metricx_scorer]}
+      - {task: st, dataset_id: fleurs-en_ro-dev, post_scorers: [melteval/rescore.py@metricx_scorer]}
+      - {task: st, dataset_id: fleurs-en_sk-dev, post_scorers: [melteval/rescore.py@metricx_scorer]}
+      - {task: st, dataset_id: fleurs-en_sl-dev, post_scorers: [melteval/rescore.py@metricx_scorer]}
+      - {task: st, dataset_id: fleurs-en_sv-dev, post_scorers: [melteval/rescore.py@metricx_scorer]}
+
+  # configs/shar/st-eval-campaign-v1-dev.yaml: CoVoST2 dev, all 36 directions, each capped at 2000. One benchmark per
+  # direction of travel so the 15 en->X ones can be run apart from the 21 X->en ones (same frozen set).
+  - name: covost2-dev
+    frozen_set: ${COVOST2_DEV_SET}
+    needs_instruction: true
+    slices:
+      - {task: st, dataset_id: covost2-ar_en-dev}
+      - {task: st, dataset_id: covost2-ca_en-dev}
+      - {task: st, dataset_id: covost2-cy_en-dev}
+      - {task: st, dataset_id: covost2-de_en-dev}
+      - {task: st, dataset_id: covost2-es_en-dev}
+      - {task: st, dataset_id: covost2-et_en-dev}
+      - {task: st, dataset_id: covost2-fa_en-dev}
+      - {task: st, dataset_id: covost2-fr_en-dev}
+      - {task: st, dataset_id: covost2-id_en-dev}
+      - {task: st, dataset_id: covost2-it_en-dev}
+      - {task: st, dataset_id: covost2-ja_en-dev}
+      - {task: st, dataset_id: covost2-lv_en-dev}
+      - {task: st, dataset_id: covost2-mn_en-dev}
+      - {task: st, dataset_id: covost2-nl_en-dev}
+      - {task: st, dataset_id: covost2-pt_en-dev}
+      - {task: st, dataset_id: covost2-ru_en-dev}
+      - {task: st, dataset_id: covost2-sl_en-dev}
+      - {task: st, dataset_id: covost2-sv_en-dev}
+      - {task: st, dataset_id: covost2-ta_en-dev}
+      - {task: st, dataset_id: covost2-tr_en-dev}
+      - {task: st, dataset_id: covost2-zh_en-dev}
+
+  - name: covost2-enx-dev
+    frozen_set: ${COVOST2_DEV_SET}
+    needs_instruction: true
+    slices:
+      - {task: st, dataset_id: covost2-en_ar-dev}
+      - {task: st, dataset_id: covost2-en_ca-dev}
+      - {task: st, dataset_id: covost2-en_cy-dev}
+      - {task: st, dataset_id: covost2-en_de-dev}
+      - {task: st, dataset_id: covost2-en_et-dev}
+      - {task: st, dataset_id: covost2-en_fa-dev}
+      - {task: st, dataset_id: covost2-en_id-dev}
+      - {task: st, dataset_id: covost2-en_ja-dev}
+      - {task: st, dataset_id: covost2-en_lv-dev}
+      - {task: st, dataset_id: covost2-en_mn-dev}
+      - {task: st, dataset_id: covost2-en_sl-dev}
+      - {task: st, dataset_id: covost2-en_sv-dev}
+      - {task: st, dataset_id: covost2-en_ta-dev}
+      - {task: st, dataset_id: covost2-en_tr-dev}
+      - {task: st, dataset_id: covost2-en_zh-dev}
+
+  # europarl-st-dev: EuroparlST is owned by another agent (block below); polyspeech comes next.
   # configs/shar/europarl-st-dev.yaml: EuroparlST, the 56 directions among fr/de/es/it/pt/pl/ro/nl (validation, 100 per direction).
   # MetricX-24 hybrid XXL (reference-based) post-hoc, from custom.sentence (the source transcript).
   - name: europarl-st-dev
@@ -66,3 +210,5 @@ benchmarks:
       - {task: st, dataset_id: europarl-st-nl_pl-dev, post_scorers: [melteval/rescore.py@metricx_scorer]}
       - {task: st, dataset_id: europarl-st-nl_ro-dev, post_scorers: [melteval/rescore.py@metricx_scorer]}
 
+  # TODO(polyspeech): placeholder, snippet pending from the polyspeech agent.
+  # - name: polyspeech-dev

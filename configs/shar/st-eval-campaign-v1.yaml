@@ -1,29 +1,53 @@
-# ST test sets for the checkpoint-comparison eval campaign: BLEU/spBLEU/chrF++ (and,
-# after rescoring, MetricX) for CoVoST2 in six directions. Full `test` splits,
-# no max_samples.
+# CoVoST2 ST test set, ALL directions: the full `test` split (no max_samples) of the 21 X->en and the 15 en->X
+# pairs in the Shar tree (ar ca cy de es et fa fr id it ja lv mn nl pt ru sl sv ta tr zh -> en, and en -> ar ca cy de
+# et fa id ja lv mn sl sv ta tr zh). BLEU/spBLEU/chrF++ (and, after rescoring, MetricX).
 #
-# Reference is the translation (default text field, i.e. supervisions[0].text
-# -- no override needed); custom.sentence is the source-language transcript,
-# kept via source_text_field so `melteval rescore` can build (src, mt, ref)
-# triples for MetricX-24 afterwards (see README's
-# "Rescoring ST output with COMET/MetricX" and melteval/rescore.py).
+# Reference is the translation (default text field, i.e. supervisions[0].text -- no override needed);
+# custom.sentence is the source-language transcript, kept via source_text_field so `melteval rescore` can build
+# (src, mt, ref) triples for MetricX-24 afterwards (README's "Rescoring ST output with COMET/MetricX").
 #
-# Each direction gets its own dataset_id (covost2-<src>_<tgt>), not a shared
-# "covost2": five of six directions share target language "en", and BLEU's
-# tokenizer is chosen per target language -- corpus_bleu raises
-# rather than silently pick one for a run that mixes languages (see
-# melteval/scorers.py, `_target_lang`). Run ONE `inspect eval` per direction:
+# Each direction gets its own dataset_id (covost2-<src>_<tgt>, two-letter codes: sv-SE -> sv, zh-CN -> zh), not a
+# shared "covost2": BLEU's tokenizer is chosen per target language and corpus_bleu raises rather than pick one for a
+# run that mixes languages (melteval/scorers.py, `_target_lang`; zh and ja get their own tokenizers). Run one
+# slice per direction:  -T dataset_id=covost2-de_en
 #
-#   inspect eval melteval/tasks.py@st --model melt/<checkpoint> \
-#     -T frozen_set=<this-frozen-set> -T dataset_id=covost2-de_en
+# The 15 en->X directions share one audio set (CoVoST2 en test, ~15.5k utterances), so freezing them costs 15 x that
+# many samples; the dev twin (st-eval-campaign-v1-dev.yaml) caps each direction.
 #
-# `-T dataset_id=...` alone isolates one direction -- no `-T lang=` needed on
-# top of it, since dataset_id is already unique per direction.
+# Freeze:  melteval freeze configs/shar/st-eval-campaign-v1.yaml -o <frozen>/covost2-test
+#          export COVOST2_SET=<frozen>/covost2-test
 name: st-eval-campaign-v1
 seed: 0
 
 input_cfg:
-  # --- X -> en ---------------------------------------------------------
+  # --- X -> en (21 directions) ------------------------------
+  - type: lhotse_shar
+    shar_path: ${LOCAL_DATASETS_DIR}/covost2/ar_en/test
+    source_text_field: custom.sentence
+    tags:
+      task: st
+      src_lang: ar
+      tgt_lang: en
+      dataset_id: covost2-ar_en
+
+  - type: lhotse_shar
+    shar_path: ${LOCAL_DATASETS_DIR}/covost2/ca_en/test
+    source_text_field: custom.sentence
+    tags:
+      task: st
+      src_lang: ca
+      tgt_lang: en
+      dataset_id: covost2-ca_en
+
+  - type: lhotse_shar
+    shar_path: ${LOCAL_DATASETS_DIR}/covost2/cy_en/test
+    source_text_field: custom.sentence
+    tags:
+      task: st
+      src_lang: cy
+      tgt_lang: en
+      dataset_id: covost2-cy_en
+
   - type: lhotse_shar
     shar_path: ${LOCAL_DATASETS_DIR}/covost2/de_en/test
     source_text_field: custom.sentence
@@ -32,24 +56,6 @@ input_cfg:
       src_lang: de
       tgt_lang: en
       dataset_id: covost2-de_en
-
-  - type: lhotse_shar
-    shar_path: ${LOCAL_DATASETS_DIR}/covost2/fr_en/test
-    source_text_field: custom.sentence
-    tags:
-      task: st
-      src_lang: fr
-      tgt_lang: en
-      dataset_id: covost2-fr_en
-
-  - type: lhotse_shar
-    shar_path: ${LOCAL_DATASETS_DIR}/covost2/it_en/test
-    source_text_field: custom.sentence
-    tags:
-      task: st
-      src_lang: it
-      tgt_lang: en
-      dataset_id: covost2-it_en
 
   - type: lhotse_shar
     shar_path: ${LOCAL_DATASETS_DIR}/covost2/es_en/test
@@ -61,6 +67,87 @@ input_cfg:
       dataset_id: covost2-es_en
 
   - type: lhotse_shar
+    shar_path: ${LOCAL_DATASETS_DIR}/covost2/et_en/test
+    source_text_field: custom.sentence
+    tags:
+      task: st
+      src_lang: et
+      tgt_lang: en
+      dataset_id: covost2-et_en
+
+  - type: lhotse_shar
+    shar_path: ${LOCAL_DATASETS_DIR}/covost2/fa_en/test
+    source_text_field: custom.sentence
+    tags:
+      task: st
+      src_lang: fa
+      tgt_lang: en
+      dataset_id: covost2-fa_en
+
+  - type: lhotse_shar
+    shar_path: ${LOCAL_DATASETS_DIR}/covost2/fr_en/test
+    source_text_field: custom.sentence
+    tags:
+      task: st
+      src_lang: fr
+      tgt_lang: en
+      dataset_id: covost2-fr_en
+
+  - type: lhotse_shar
+    shar_path: ${LOCAL_DATASETS_DIR}/covost2/id_en/test
+    source_text_field: custom.sentence
+    tags:
+      task: st
+      src_lang: id
+      tgt_lang: en
+      dataset_id: covost2-id_en
+
+  - type: lhotse_shar
+    shar_path: ${LOCAL_DATASETS_DIR}/covost2/it_en/test
+    source_text_field: custom.sentence
+    tags:
+      task: st
+      src_lang: it
+      tgt_lang: en
+      dataset_id: covost2-it_en
+
+  - type: lhotse_shar
+    shar_path: ${LOCAL_DATASETS_DIR}/covost2/ja_en/test
+    source_text_field: custom.sentence
+    tags:
+      task: st
+      src_lang: ja
+      tgt_lang: en
+      dataset_id: covost2-ja_en
+
+  - type: lhotse_shar
+    shar_path: ${LOCAL_DATASETS_DIR}/covost2/lv_en/test
+    source_text_field: custom.sentence
+    tags:
+      task: st
+      src_lang: lv
+      tgt_lang: en
+      dataset_id: covost2-lv_en
+
+  - type: lhotse_shar
+    shar_path: ${LOCAL_DATASETS_DIR}/covost2/mn_en/test
+    source_text_field: custom.sentence
+    tags:
+      task: st
+      src_lang: mn
+      tgt_lang: en
+      dataset_id: covost2-mn_en
+
+  - type: lhotse_shar
+    shar_path: ${LOCAL_DATASETS_DIR}/covost2/nl_en/test
+    source_text_field: custom.sentence
+    tags:
+      task: st
+      src_lang: nl
+      tgt_lang: en
+      dataset_id: covost2-nl_en
+
+  - type: lhotse_shar
     shar_path: ${LOCAL_DATASETS_DIR}/covost2/pt_en/test
     source_text_field: custom.sentence
     tags:
@@ -69,7 +156,88 @@ input_cfg:
       tgt_lang: en
       dataset_id: covost2-pt_en
 
-  # --- en -> X -----------------------------------------------------------
+  - type: lhotse_shar
+    shar_path: ${LOCAL_DATASETS_DIR}/covost2/ru_en/test
+    source_text_field: custom.sentence
+    tags:
+      task: st
+      src_lang: ru
+      tgt_lang: en
+      dataset_id: covost2-ru_en
+
+  - type: lhotse_shar
+    shar_path: ${LOCAL_DATASETS_DIR}/covost2/sl_en/test
+    source_text_field: custom.sentence
+    tags:
+      task: st
+      src_lang: sl
+      tgt_lang: en
+      dataset_id: covost2-sl_en
+
+  - type: lhotse_shar
+    shar_path: ${LOCAL_DATASETS_DIR}/covost2/sv-SE_en/test
+    source_text_field: custom.sentence
+    tags:
+      task: st
+      src_lang: sv
+      tgt_lang: en
+      dataset_id: covost2-sv_en
+
+  - type: lhotse_shar
+    shar_path: ${LOCAL_DATASETS_DIR}/covost2/ta_en/test
+    source_text_field: custom.sentence
+    tags:
+      task: st
+      src_lang: ta
+      tgt_lang: en
+      dataset_id: covost2-ta_en
+
+  - type: lhotse_shar
+    shar_path: ${LOCAL_DATASETS_DIR}/covost2/tr_en/test
+    source_text_field: custom.sentence
+    tags:
+      task: st
+      src_lang: tr
+      tgt_lang: en
+      dataset_id: covost2-tr_en
+
+  - type: lhotse_shar
+    shar_path: ${LOCAL_DATASETS_DIR}/covost2/zh-CN_en/test
+    source_text_field: custom.sentence
+    tags:
+      task: st
+      src_lang: zh
+      tgt_lang: en
+      dataset_id: covost2-zh_en
+
+  # --- en -> X (15 directions, the same English audio into each target) ----------
+  - type: lhotse_shar
+    shar_path: ${LOCAL_DATASETS_DIR}/covost2/en_ar/test
+    source_text_field: custom.sentence
+    tags:
+      task: st
+      src_lang: en
+      tgt_lang: ar
+      dataset_id: covost2-en_ar
+
+  - type: lhotse_shar
+    shar_path: ${LOCAL_DATASETS_DIR}/covost2/en_ca/test
+    source_text_field: custom.sentence
+    tags:
+      task: st
+      src_lang: en
+      tgt_lang: ca
+      dataset_id: covost2-en_ca
+
+  - type: lhotse_shar
+    shar_path: ${LOCAL_DATASETS_DIR}/covost2/en_cy/test
+    source_text_field: custom.sentence
+    tags:
+      task: st
+      src_lang: en
+      tgt_lang: cy
+      dataset_id: covost2-en_cy
+
   - type: lhotse_shar
     shar_path: ${LOCAL_DATASETS_DIR}/covost2/en_de/test
     source_text_field: custom.sentence
@@ -78,3 +246,102 @@ input_cfg:
       src_lang: en
       tgt_lang: de
       dataset_id: covost2-en_de
+
+  - type: lhotse_shar
+    shar_path: ${LOCAL_DATASETS_DIR}/covost2/en_et/test
+    source_text_field: custom.sentence
+    tags:
+      task: st
+      src_lang: en
+      tgt_lang: et
+      dataset_id: covost2-en_et
+
+  - type: lhotse_shar
+    shar_path: ${LOCAL_DATASETS_DIR}/covost2/en_fa/test
+    source_text_field: custom.sentence
+    tags:
+      task: st
+      src_lang: en
+      tgt_lang: fa
+      dataset_id: covost2-en_fa
+
+  - type: lhotse_shar
+    shar_path: ${LOCAL_DATASETS_DIR}/covost2/en_id/test
+    source_text_field: custom.sentence
+    tags:
+      task: st
+      src_lang: en
+      tgt_lang: id
+      dataset_id: covost2-en_id
+
+  - type: lhotse_shar
+    shar_path: ${LOCAL_DATASETS_DIR}/covost2/en_ja/test
+    source_text_field: custom.sentence
+    tags:
+      task: st
+      src_lang: en
+      tgt_lang: ja
+      dataset_id: covost2-en_ja
+
+  - type: lhotse_shar
+    shar_path: ${LOCAL_DATASETS_DIR}/covost2/en_lv/test
+    source_text_field: custom.sentence
+    tags:
+      task: st
+      src_lang: en
+      tgt_lang: lv
+      dataset_id: covost2-en_lv
+
+  - type: lhotse_shar
+    shar_path: ${LOCAL_DATASETS_DIR}/covost2/en_mn/test
+    source_text_field: custom.sentence
+    tags:
+      task: st
+      src_lang: en
+      tgt_lang: mn
+      dataset_id: covost2-en_mn
+
+  - type: lhotse_shar
+    shar_path: ${LOCAL_DATASETS_DIR}/covost2/en_sl/test
+    source_text_field: custom.sentence
+    tags:
+      task: st
+      src_lang: en
+      tgt_lang: sl
+      dataset_id: covost2-en_sl
+
+  - type: lhotse_shar
+    shar_path: ${LOCAL_DATASETS_DIR}/covost2/en_sv-SE/test
+    source_text_field: custom.sentence
+    tags:
+      task: st
+      src_lang: en
+      tgt_lang: sv
+      dataset_id: covost2-en_sv
+
+  - type: lhotse_shar
+    shar_path: ${LOCAL_DATASETS_DIR}/covost2/en_ta/test
+    source_text_field: custom.sentence
+    tags:
+      task: st
+      src_lang: en
+      tgt_lang: ta
+      dataset_id: covost2-en_ta
+
+  - type: lhotse_shar
+    shar_path: ${LOCAL_DATASETS_DIR}/covost2/en_tr/test
+    source_text_field: custom.sentence
+    tags:
+      task: st
+      src_lang: en
+      tgt_lang: tr
+      dataset_id: covost2-en_tr
+
+  - type: lhotse_shar
+    shar_path: ${LOCAL_DATASETS_DIR}/covost2/en_zh-CN/test
+    source_text_field: custom.sentence
+    tags:
+      task: st
+      src_lang: en
+      tgt_lang: zh
+      dataset_id: covost2-en_zh
