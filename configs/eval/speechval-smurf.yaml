@@ -1,0 +1,106 @@
+# SMURF checkpoint eurollm_speech_16_nodes_run_1_asr_long, latest (step 600000),
+# pulled from jupiter on 2026-11-12.
+#
+# Stored prompt_format is `qwen` (exp_config.yaml), so no
+# model_config_override: the system prompt goes at the start of the user turn
+# (`system_placement=user`). A eurollm-format checkpoint would need the
+# override instead; see docs/smurf-provider.md.
+#
+# CoVoST2 is skipped, as in configs/eval/smurf-v1.yaml: the run's ST data is
+# en<->EU (YODAS ast), not CoVoST's non-EU languages.
+#
+#   python scripts/evaluate.py plan configs/eval/speechval-smurf.yaml --site artemis
+#   python scripts/evaluate.py run  configs/eval/speechval-smurf.yaml --site artemis --wait
+
+name: speechval-smurf
+output_dir: ${EVAL_ROOT}/speechval-smurf
+
+models:
+  - name: eurollm-speech-16n-step-600000
+    model: smurf//mnt/scratch-artemis/giuseppe/checkpoints/smurf/eurollm_speech_16_nodes_run_1_asr_long/step=600000.ckpt
+    # map_location=cpu: load in host RAM and move to the GPU already in bf16
+    args: [-M, batch_size=8, -M, map_location=cpu, -M, system_placement=user]
+    instruction:
+      asr: "Transcribe this {lang} audio: "
+      st: "Translate this {src_lang} audio into {tgt_lang}: "
+    system:
+      default: &qa >-
+        Answer the question about the audio in the language the question is asked in.
+        Output only the answer. Do not repeat these instructions.
+      asr: &transcribe >-
+        Transcribe the speech in the audio verbatim, in the language it is spoken in.
+        Output only the transcript. Do not repeat these instructions.
+      chunked_asr: *transcribe
+      st: &translate >-
+        Translate the speech in the audio into the target language named in the instruction.
+        Output only the translation, written entirely in the target language, even if the speech
+        is in another language. Do not repeat these instructions.
+      chunked_st: *translate
+
+benchmarks: configs/eval/suites/speechval-dev.yaml
+
+skip:
+  - covost2-*
+  - fleurs-ga_en-dev
+  - fleurs-en_ga-dev
+  - europarl-st-fr_de-dev
+  - europarl-st-fr_es-dev
+  - europarl-st-fr_it-dev
+  - europarl-st-fr_pt-dev
+  - europarl-st-fr_pl-dev
+  - europarl-st-fr_ro-dev
+  - europarl-st-fr_nl-dev
+  - europarl-st-de_fr-dev
+  - europarl-st-de_es-dev
+  - europarl-st-de_it-dev
+  - europarl-st-de_pt-dev
+  - europarl-st-de_pl-dev
+  - europarl-st-de_ro-dev
+  - europarl-st-de_nl-dev
+  - europarl-st-es_fr-dev
+  - europarl-st-es_de-dev
+  - europarl-st-es_it-dev
+  - europarl-st-es_pt-dev
+  - europarl-st-es_pl-dev
+  - europarl-st-es_ro-dev
+  - europarl-st-es_nl-dev
+  - europarl-st-it_fr-dev
+  - europarl-st-it_de-dev
+  - europarl-st-it_es-dev
+  - europarl-st-it_pt-dev
+  - europarl-st-it_pl-dev
+  - europarl-st-it_ro-dev
+  - europarl-st-it_nl-dev
+  - europarl-st-pt_fr-dev
+  - europarl-st-pt_de-dev
+  - europarl-st-pt_es-dev
+  - europarl-st-pt_it-dev
+  - europarl-st-pt_pl-dev
+  - europarl-st-pt_ro-dev
+  - europarl-st-pt_nl-dev
+  - europarl-st-pl_fr-dev
+  - europarl-st-pl_de-dev
+  - europarl-st-pl_es-dev
+  - europarl-st-pl_it-dev
+  - europarl-st-pl_pt-dev
+  - europarl-st-pl_ro-dev
+  - europarl-st-pl_nl-dev
+  - europarl-st-ro_fr-dev
+  - europarl-st-ro_de-dev
+  - europarl-st-ro_es-dev
+  - europarl-st-ro_it-dev
+  - europarl-st-ro_pt-dev
+  - europarl-st-ro_pl-dev
+  - europarl-st-ro_nl-dev
+  - europarl-st-nl_fr-dev
+  - europarl-st-nl_de-dev
+  - europarl-st-nl_es-dev
+  - europarl-st-nl_it-dev
+  - europarl-st-nl_pt-dev
+  - europarl-st-nl_pl-dev
+  - europarl-st-nl_ro-dev
+
+pack:
+  time: "04:00:00"
+  max_slices: 200
+  gpus: 1
