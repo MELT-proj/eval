@@ -10,6 +10,11 @@
 # melt-eval; see README.md "Install" for how to rebuild it).
 export VENV_PATH="${VENV_PATH:-/mnt/scratch-artemis/giuseppe/venvs/melteval/bin/activate}"
 
+# The job must import the `melteval` package of the checkout this site file
+# lives in, not whatever the venv's last editable install pointed at. SLURM
+# jobs inherit PYTHONPATH from the submit shell.
+export PYTHONPATH="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)${PYTHONPATH:+:$PYTHONPATH}"
+
 # Post-hoc metrics (MCIF's official scorers, COMET), in a venv of their own —
 # infra/setup/metrics_venv.sh builds it. No external binary: mcif-bench 2.0
 # resegments with mweralign in-process.
