@@ -267,6 +267,15 @@ for s in ds.samples:
 "
 ```
 
+`configs/hf/polyspeech-100-pa_qa.yaml` and `-pa_qt.yaml` cover
+[PolySpeech-100](https://huggingface.co/datasets/youngseng/PolySpeech-100-v1), a
+spoken multiple-choice reading-comprehension set, in 24 languages (EU official
+languages plus uk and ru): `pa_qa` (passage and question as audio) and `pa_qt`
+(passage as audio, question as text), options always text, `audio_mcq` scoring.
+It reads a local reconstruction of the upstream archives rather than the HF repo,
+and the questions are not identical across all languages -- read
+[docs/polyspeech.md](docs/polyspeech.md) before comparing them.
+
 **Available sites:** `artemis` (a6000/h100/h200, working). `mn5` works, but
 through **container mode** (`infra/run_eval_container_mn5.sbatch`), not
 `submit_eval.sh`'s venv path — `mn5`'s `VENV_PATH` has still not been built,

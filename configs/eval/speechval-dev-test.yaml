@@ -1,0 +1,34 @@
+# speechval-dev smoke test: newest readable SMURF checkpoint, 5 samples per slice (--limit 5).
+name: speechval-dev-test
+output_dir: ${EVAL_ROOT}/speechval-dev-test
+pack:
+  time: "01:00:00"
+  max_slices: 20
+models:
+  - name: smurf-step-50000
+    model: smurf//e/project1/e-ext-2025e01-100/models/step=50000.ckpt
+    # map_location=cpu: load in host RAM and move to the GPU already in bf16
+    args: [-M, batch_size=8, -M, map_location=cpu]
+    # Loads the checkpoint with prompt_format=eurollm (stored: qwen)
+    # Checkpoints evaluated before this (qwen, no override) used
+    # `-M system_placement=user` instead, which opens the user turn with the system prompt.
+    model_config_override: configs/smurf/eurollm_override_config.yaml
+    instruction:
+      asr: "Transcribe this {lang} audio: "
+      st: "Translate this {src_lang} audio into {tgt_lang}: "
+    # System prompts per task (`default` covers the QA tasks: audio_chat, audio_mcq).
+    system:
+      default: &qa >-
+        Answer the question about the audio in the language the question is asked in.
+        Output only the answer. Do not repeat these instructions.
+      asr: &transcribe >-
+        Transcribe the speech in the audio verbatim, in the language it is spoken in.
+        Output only the transcript. Do not repeat these instructions.
+      chunked_asr: *transcribe
+      st: &translate >-
+        Translate the speech in the audio into the target language named in the instruction.
+        Output only the translation, written entirely in the target language, even if the speech
+        is in another language. Do not repeat these instructions.
+      chunked_st: *translate
+
+benchmarks: configs/eval/suites/speechval-dev.yaml
