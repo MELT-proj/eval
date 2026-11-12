@@ -30,6 +30,28 @@ export EVAL_ROOT="${EVAL_ROOT:-/mnt/scratch-artemis/giuseppe/melt-data/eval-runs
 export SACREBLEU="${SACREBLEU:-/mnt/scratch-artemis/giuseppe/sacrebleu}"
 export LOCAL_DATASETS_DIR="${LOCAL_DATASETS_DIR:-/mnt/scratch-nyx/giuseppe/melt/melt-data/shar}"
 
+# --- speechval-dev frozen sets (docs/speechval.md) ----------------------------
+# Guarded so a partial tree fails in `plan` with "environment variable is not
+# set", not silently. Paths are per-machine; on artemis the full dev sets were
+# frozen on 2026-11-12 (docs/speechval.md, "Canary baseline").
+_speechval_dev="${SPEECHVAL_DEV_ROOT:-/mnt/scratch-artemis/giuseppe/frozen/speechval-dev}"
+if [[ -d "$_speechval_dev/voxpopuli-dev" ]]; then
+    export VOXPOPULI_DEV_SET="${VOXPOPULI_DEV_SET:-$_speechval_dev/voxpopuli-dev}"
+fi
+if [[ -d "$_speechval_dev/fleurs24-st-xen-dev-full" ]]; then
+    export FLEURS24_ST_XEN_DEV_SET="${FLEURS24_ST_XEN_DEV_SET:-$_speechval_dev/fleurs24-st-xen-dev-full}"
+fi
+if [[ -d "$_speechval_dev/fleurs24-st-enx-dev" ]]; then
+    export FLEURS24_ST_ENX_DEV_SET="${FLEURS24_ST_ENX_DEV_SET:-$_speechval_dev/fleurs24-st-enx-dev}"
+fi
+if [[ -d "$_speechval_dev/st-eval-campaign-v1-dev" ]]; then
+    export COVOST2_DEV_SET="${COVOST2_DEV_SET:-$_speechval_dev/st-eval-campaign-v1-dev}"
+fi
+if [[ -d /mnt/scratch-artemis/giuseppe/frozen/speechval/europarl-st-dev ]]; then
+    export EUROPARL_ST_DEV_SET="${EUROPARL_ST_DEV_SET:-/mnt/scratch-artemis/giuseppe/frozen/speechval/europarl-st-dev}"
+fi
+unset _speechval_dev
+
 # Where inspect_ai keeps its own state (traces, view assets). It defaults to
 # $HOME/.local/share, which is /mnt/home here -- churn on a GlusterFS-synced
 # quota, and on some of this site's GPU nodes not even writable: a job there
