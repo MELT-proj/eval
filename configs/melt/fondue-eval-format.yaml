@@ -1,0 +1,28 @@
+# Evaluation format for the Fondue checkpoints (3000, 17000).
+#
+# The run's training_config.yaml selects a prompt template at random per epoch
+# (right for training, not for a measurement that has to be comparable across
+# checkpoints). Evaluation uses one fixed template per task, taken verbatim
+# from the training pool in melt/training/data/audio/lhotse/helpers.py
+# (TASK_TEMPLATES):
+#
+#   asr: "Transcribe the following {lang} audio: {audio_token}"
+#   st:  "Translate the following audio into {lang}: {audio_token}"
+#
+# `{lang}` is the expected output language (target for ST), which is the
+# placeholder the training pool uses; `{audio_token}` is expanded by the
+# processor. Everything else matches the run: ChatML, chat template applied.
+#
+# This file is read with `-T format_config=<path>`; the checkpoint directory
+# does not carry a training_config.yaml of its own (it was copied out of the
+# run output without one).
+data:
+  apply_chat_template: true
+  chat_template_config: chatml
+  prompt_template_selection: custom
+  prompt_template:
+    asr: "Transcribe the following {lang} audio: {audio_token}"
+    st: "Translate the following audio into {lang}: {audio_token}"
+model:
+  decoder:
+    audio_token: "<|audio|>"

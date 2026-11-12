@@ -17,17 +17,21 @@ output_dir: ${EVAL_ROOT}/speechval-fondue
 models:
   - name: fondue-step-3000
     model: melt//mnt/scratch-nyx/giuseppe/fondue-keep/checkpoint-3000
+    # MoE audio adapter: needs the `moe-experts` training checkout, layered over the
+    # melteval venv by this shim (the installed melt is older and rejects `moe`).
+    venv: /mnt/scratch-artemis/giuseppe/melt-data/pyextras/melt-moe/activate
     args: &fondue_args
       - -M
       - batch_size=8
       - -M
       - processor=/mnt/scratch-nyx/giuseppe/melt/outputs-fondue/Fondue/processor
       - -T
-      - format_config=/mnt/scratch-nyx/giuseppe/melt/outputs-fondue/Fondue/training_config.yaml
+      - format_config=/mnt/scratch-nyx/giuseppe/melt/outputs-fondue/Fondue/eval_format.yaml
       - -T
       - tokenizer=/mnt/scratch-nyx/giuseppe/melt/outputs-fondue/Fondue/processor
   - name: fondue-step-17000
     model: melt//mnt/scratch-nyx/giuseppe/fondue-keep/checkpoint-17000
+    venv: /mnt/scratch-artemis/giuseppe/melt-data/pyextras/melt-moe/activate
     args: *fondue_args
 
 benchmarks: configs/eval/suites/speechval-dev.yaml

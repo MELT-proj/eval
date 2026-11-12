@@ -18,6 +18,7 @@ output_dir: ${EVAL_ROOT}/speechval-smurf
 models:
   - name: eurollm-speech-16n-step-600000
     model: smurf//mnt/scratch-nyx/giuseppe/checkpoints/smurf/eurollm_speech_16_nodes_run_1_asr_long/step=600000.ckpt
+    venv: /mnt/scratch-artemis/giuseppe/venvs/smurf-eval/bin/activate
     # map_location=cpu: load in host RAM and move to the GPU already in bf16
     args: [-M, batch_size=8, -M, map_location=cpu, -M, system_placement=user]
     instruction:
