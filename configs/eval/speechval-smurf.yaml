@@ -1,10 +1,9 @@
 # SMURF checkpoint eurollm_speech_16_nodes_run_1_asr_long, latest (step 600000),
 # pulled from jupiter on 2026-11-12.
 #
-# Stored prompt_format is `qwen` (exp_config.yaml), so no
-# model_config_override: the system prompt goes at the start of the user turn
-# (`system_placement=user`). A eurollm-format checkpoint would need the
-# override instead; see docs/smurf-provider.md.
+# Stored prompt_format is `qwen` (exp_config.yaml), but this run is evaluated
+# with the EuroLLM chat format via configs/smurf/eurollm_override_config.yaml:
+# the system prompt then has its own turn. See docs/smurf-provider.md.
 #
 # CoVoST2 is skipped, as in configs/eval/smurf-v1.yaml: the run's ST data is
 # en<->EU (YODAS ast), not CoVoST's non-EU languages.
@@ -19,8 +18,12 @@ models:
   - name: eurollm-speech-16n-step-600000
     model: smurf//mnt/scratch-nyx/giuseppe/checkpoints/smurf/eurollm_speech_16_nodes_run_1_asr_long/step=600000.ckpt
     venv: /mnt/scratch-artemis/giuseppe/venvs/smurf-eval/bin/activate
+    # Loads the checkpoint with prompt_format=eurollm (the stored value is the
+    # training default, qwen). The EuroLLM format has a system role, so the
+    # system prompt goes in its own turn — the default placement.
+    model_config_override: configs/smurf/eurollm_override_config.yaml
     # map_location=cpu: load in host RAM and move to the GPU already in bf16
-    args: [-M, batch_size=8, -M, map_location=cpu, -M, system_placement=user]
+    args: [-M, batch_size=8, -M, map_location=cpu]
     instruction:
       asr: "Transcribe this {lang} audio: "
       st: "Translate this {src_lang} audio into {tgt_lang}: "
