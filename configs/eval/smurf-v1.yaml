@@ -64,13 +64,7 @@ benchmarks: configs/eval/suites/v1.yaml
 skip:
   - air-bench
   - covost2
+  - covost2-enx
   - mcif-long-*
   - mcif-short-mixed-*
   - "*-zh"
-  # FLEURS X->en sources missing on JUPITER.
-  - fleurs-el_en
-  - fleurs-pl_en
-  - fleurs-ro_en
-  - fleurs-sk_en
-  - fleurs-sl_en
-  - fleurs-sv_en

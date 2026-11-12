@@ -245,3 +245,125 @@ class TestEuroparlStSpecs:
         dev = {s["tags"]["dataset_id"] for s in self._load("europarl-st-dev.yaml", monkeypatch)}
         test = {s["tags"]["dataset_id"] for s in self._load("europarl-st-test.yaml", monkeypatch)}
         assert not dev & test
+
+
+class TestSpeechvalDevSpecs:
+    """The speechval-dev specs: validation/dev splits (capped only where CAPS says so), and every suite slice has a source."""
+
+    ROOT = Path(__file__).parent.parent
+    SHAR = {
+        "voxpopuli-dev.yaml": "validation",
+        "fleurs24-st-xen-dev-full.yaml": "validation",
+        "fleurs24-st-enx-dev.yaml": "validation",
+        "st-eval-campaign-v1-dev.yaml": "dev",
+    }
+    #: Specs capped for run time; the rest are the full split.
+    CAPS = {"voxpopuli-dev.yaml": 1000, "st-eval-campaign-v1-dev.yaml": 2000}
+
+    def _load(self, name: str, monkeypatch) -> list[dict]:
+        monkeypatch.setenv("LOCAL_DATASETS_DIR", "/shar")
+        monkeypatch.setenv("AZEROS_INDEXED_DIR", "/azeros")
+        return load_spec(self.ROOT / "configs" / "shar" / name)["input_cfg"]
+
+    @pytest.mark.parametrize("name,split", SHAR.items())
+    def test_full_split_and_dev_ids(self, name, split, monkeypatch):
+        sources = self._load(name, monkeypatch)
+        text = (self.ROOT / "configs" / "shar" / name).read_text()
+        assert text.count("max_samples:") == (len(sources) if name in self.CAPS else 0)  # no duplicated keys
+        ids = [s["tags"]["dataset_id"] for s in sources]
+        assert len(ids) == len(set(ids))
+        for s in sources:
+            assert s.get("max_samples") == self.CAPS.get(name)
+            assert s["shar_path"].endswith(f"/{split}")
+            assert s["tags"]["dataset_id"].endswith("-dev")
+            if "reference_map" in s:
+                assert (self.ROOT / s["reference_map"]).is_file() and "reference-dev" in s["reference_map"]
+
+    def test_enx_pairs_english_validation_audio_with_target_references(self, monkeypatch):
+        sources = self._load("fleurs24-st-enx-dev.yaml", monkeypatch)
+        assert len(sources) == 23
+        for s in sources:
+            tgt = s["tags"]["tgt_lang"]
+            assert s["shar_path"] == "/shar/fleurs/en_us/validation"
+            assert s["reference_map"] == f"configs/refs/fleurs-{tgt}-reference-dev.json"
+            assert s["tags"]["dataset_id"] == f"fleurs-en_{tgt}-dev"
+
+    def test_xen_uses_the_dev_english_reference(self, monkeypatch):
+        sources = self._load("fleurs24-st-xen-dev-full.yaml", monkeypatch)
+        assert len(sources) == 23
+        assert {s["reference_map"] for s in sources} == {"configs/refs/fleurs-en-reference-dev.json"}
+
+    @pytest.mark.parametrize("name", ["fleurs24-st-xen-dev-full.yaml", "fleurs24-st-enx-dev.yaml"])
+    def test_fleurs_source_text_is_the_corpus_supervision(self, name, monkeypatch):
+        assert {s["source_text_field"] for s in self._load(name, monkeypatch)} == {"supervisions.0.text"}
+
+    def test_nested_value_indexes_lists(self):
+        from types import SimpleNamespace
+
+        from melteval.readers.shar import _nested_value
+
+        cut = SimpleNamespace(supervisions=[SimpleNamespace(text="a"), SimpleNamespace(text="b")], custom={"k": 1})
+        assert _nested_value(cut, "supervisions.0.text") == "a"
+        assert _nested_value(cut, "supervisions.1.text") == "b"
+        assert _nested_value(cut, "supervisions.2.text") is None
+        assert _nested_value(cut, "custom.k") == 1
+
+    COVOST_XEN = (
+        ["ar", "ca", "cy", "de", "es", "et", "fa", "fr", "id", "it", "ja"]
+        + ["lv", "mn", "nl", "pt", "ru", "sl", "sv", "ta", "tr", "zh"]
+    )
+    COVOST_ENX = ["ar", "ca", "cy", "de", "et", "fa", "id", "ja", "lv", "mn", "sl", "sv", "ta", "tr", "zh"]
+
+    def test_covost_dev_covers_every_direction(self, monkeypatch):
+        sources = self._load("st-eval-campaign-v1-dev.yaml", monkeypatch)
+        ids = {s["tags"]["dataset_id"] for s in sources}
+        want = {f"covost2-{x}_en-dev" for x in self.COVOST_XEN} | {f"covost2-en_{x}-dev" for x in self.COVOST_ENX}
+        assert ids == want and len(sources) == 36
+
+    def test_covost_dev_is_the_test_spec_on_the_dev_split(self, monkeypatch):
+        dev = self._load("st-eval-campaign-v1-dev.yaml", monkeypatch)
+        test = self._load("st-eval-campaign-v1.yaml", monkeypatch)
+        assert [s["tags"]["dataset_id"] + "-dev" for s in test] == [s["tags"]["dataset_id"] for s in dev]
+        assert [s["shar_path"].replace("/test", "/dev") for s in test] == [s["shar_path"] for s in dev]
+        assert all("max_samples" not in s for s in test)
+
+    def test_covost_suites_run_every_dev_and_test_direction(self):
+        import yaml
+
+        for path, suffix, names in (
+            ("speechval-dev.yaml", "-dev", ("covost2-dev", "covost2-enx-dev")),
+            ("v1.yaml", "", ("covost2", "covost2-enx")),
+        ):
+            suite = yaml.safe_load((self.ROOT / "configs/eval/suites" / path).read_text())["benchmarks"]
+            by_name = {b["name"]: {sl.get("dataset_id") for sl in b["slices"]} for b in suite}
+            assert by_name[names[0]] == {f"covost2-{x}_en{suffix}" for x in self.COVOST_XEN}
+            assert by_name[names[1]] == {f"covost2-en_{x}{suffix}" for x in self.COVOST_ENX}
+
+    def test_fleurs_xen_test_has_all_23_locales(self, monkeypatch):
+        sources = self._load("fleurs24-st-xen-test.yaml", monkeypatch)
+        dev = self._load("fleurs24-st-xen-dev-full.yaml", monkeypatch)
+        assert len(sources) == 23
+        assert {s["tags"]["dataset_id"] + "-dev" for s in sources} == {s["tags"]["dataset_id"] for s in dev}
+
+    @pytest.mark.parametrize("c", ["clean", "other"])
+    def test_librispeech_validation_mirrors_test(self, c):
+        val = load_spec(self.ROOT / "configs" / "hf" / f"librispeech-hf-validation-{c}.yaml")["input_cfg"][0]
+        test = load_spec(self.ROOT / "configs" / "hf" / f"librispeech-hf-test-{c}.yaml")["input_cfg"][0]
+        assert val["split"] == "validation" and "max_samples" not in val
+        assert {k: v for k, v in val.items() if k not in ("split", "tags")} == {
+            k: v for k, v in test.items() if k not in ("split", "tags")
+        }
+        assert val["tags"]["dataset_id"] == f"librispeech-validation-{c}"
+
+    def test_every_suite_slice_has_a_source(self, monkeypatch):
+        import yaml
+
+        suite = yaml.safe_load((self.ROOT / "configs/eval/suites/speechval-dev.yaml").read_text())["benchmarks"]
+        known = {f"librispeech-validation-{c}" for c in ("clean", "other")}
+        for name in self.SHAR:
+            known |= {s["tags"]["dataset_id"] for s in self._load(name, monkeypatch)}
+        for b in suite:
+            if b["name"].startswith("europarl"):
+                continue
+            for sl in b["slices"]:
+                assert sl["dataset_id"] in known, sl

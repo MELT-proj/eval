@@ -1,0 +1,15 @@
+# LibriSpeech validation-clean via HF (speechval dev; same repo/revision as test-clean).
+name: librispeech-hf-validation-clean
+seed: 0
+
+input_cfg:
+  - type: hf_dataset
+    repo: openslr/librispeech_asr
+    revision: 71cacbfb7e2354c4226d01e70d77d5fca3d04ba1
+    name: clean
+    split: validation
+    id_column: id
+    tags:
+      task: asr
+      lang: en
+      dataset_id: librispeech-validation-clean
