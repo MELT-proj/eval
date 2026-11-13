@@ -169,6 +169,7 @@ inline BLEU and the post-hoc MetricX-24 hybrid XXL score (lower is better).
 | fondue-step-17000 | 3.1 % | 9.3 % | 23.7 / 4.63 | 18.8 / 6.54 | 28.9 / 5.90 | 17.5 / 7.63 | 30.2 / 4.84 | 27.1 / 4.27 |
 | fondue-step-20000 | 3.0 % | 9.4 % | 23.6 / 4.57 | 18.1 / 6.69 | 29.1 / 5.89 | 17.8 / 7.51 | 29.8 / 4.87 | 27.0 / 4.28 |
 | cohere-transcribe-03-2026 | 1.9 % | 7.8 % | – | – | – | – | – | – |
+| fondue-step-26000 | 2.9 % | 9.3 % | 23.1 / 4.70 | 18.2 / 6.83 | 28.8 / 5.86 | 18.1 / 7.36 | 29.9 / 4.94 | 27.0 / 4.33 |
 
 Checkpoints and how they are loaded:
 
@@ -178,7 +179,8 @@ Checkpoints and how they are loaded:
   `configs/smurf/eurollm_override_config.yaml` (`prompt_format: eurollm`;
   the stored value is the training default `qwen`) and the `smurf-eval` venv.
   CoVoST2 runs in the 16 en<->EU directions the model covers (MetricX now included).
-- **Fondue**: `checkpoint-3000`, `checkpoint-17000` and `checkpoint-20000` (newest verified on 2026-11-13) from
+- **Fondue**: `checkpoint-3000`, `checkpoint-17000`, `checkpoint-20000` and `checkpoint-26000`
+  (newest verified on 2026-11-13) from
   `/mnt/scratch-nyx/giuseppe/fondue-keep/` (HF-format MELT checkpoints,
   whisper-large-v3 + EuroLLM-1.7B). They were saved without a processor or
   `training_config.yaml`; both come from the run output
