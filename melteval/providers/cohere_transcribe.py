@@ -26,13 +26,13 @@ from __future__ import annotations
 
 from inspect_ai.model import GenerateConfig
 
-from melteval.providers.base import _Request, _generate_kwargs
+from melteval.providers.base import _generate_kwargs, _Request
 from melteval.providers.hf import HFSpeechChatAPI, check_audio
 
 
 FAMILY = "Cohere Transcribe"
 #: The languages the model covers (``CohereAsrProcessor.LANGUAGES``), ISO 639-1.
-LANGUAGES = frozenset("ar de el en es fr it ja ko nl pl pt vi zh".split())
+LANGUAGES = frozenset(["ar", "de", "el", "en", "es", "fr", "it", "ja", "ko", "nl", "pl", "pt", "vi", "zh"])
 
 
 class CohereTranscribeAPI(HFSpeechChatAPI):
@@ -89,7 +89,8 @@ def parse_language(text: str) -> str:
     if code not in LANGUAGES:
         raise ValueError(
             f"{FAMILY} needs its language as the instruction, e.g. 'en'; got {text!r}. "
-            f"Supported: {', '.join(sorted(LANGUAGES))}."
+            f"Supported: {', '.join(sorted(LANGUAGES))}. A benchmark whose samples carry their own "
+            "prompt (MCIF, AIR-Bench) keeps it unless the task is run with -T instruction_override=true."
         )
     return code
 

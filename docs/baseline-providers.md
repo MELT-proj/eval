@@ -137,6 +137,12 @@ ko nl pl pt vi zh`.
   sample.
 - **Needs `transformers>=5.4`** (`CohereAsrForConditionalGeneration`). No
   separate venv.
+- **A benchmark that ships its own prompt needs `-T instruction_override=true`.**
+  MCIF and AIR-Bench samples carry an instruction of their own, and
+  `instruction_prompt` prefers it to `-T instruction=`. Here the instruction *is*
+  the language, so such a sample would reach the parser as free text; the
+  override makes the campaign's `{lang_code}` win (the error message names the
+  flag).
 - **The Hub repository is gated.** `scripts/evaluate.py prefetch` (or
   `huggingface-cli download <repo> --revision <sha>`) needs an account that has
   accepted the terms, and `HF_TOKEN` on the login node; the compute nodes then

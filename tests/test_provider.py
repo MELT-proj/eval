@@ -883,6 +883,58 @@ class TestCohereTranscribe:
                 GenerateConfig(),
             )
 
+    def test_a_chunked_sample_decodes_to_one_completion(self):
+        """The processor returns one feature row per chunk; decode reassembles per sample.
+
+        An unchunked fake cannot catch a decode call that dropped
+        ``audio_chunk_index``, which would turn one sample's chunks into several
+        completions (or one truncated one) with no error.
+        """
+        import torch
+
+        pytest.importorskip("torch")
+        from melteval.providers.cohere_transcribe import CohereTranscribeAPI
+
+        class _ChunkingProcessor(TestCohereTranscribe._Processor):
+            def __call__(self, audios, **kwargs):
+                self.calls.append({"n": len(audios), **kwargs})
+                # The first request was split into two chunks; the second was not.
+                return {
+                    "input_features": torch.zeros(3, 2, dtype=torch.float32),
+                    "attention_mask": torch.ones(3, 2, dtype=torch.long),
+                    "decoder_input_ids": torch.zeros(3, 3, dtype=torch.long),
+                    "audio_chunk_index": [(0, 0), (0, 1), (1, None)],
+                }
+
+            def decode(self, ids, **kwargs):
+                self.decode_kwargs = kwargs
+                rows = [f"row{i}" for i in range(ids.shape[0])]
+                grouped: dict[int, list[str]] = {}
+                for (sample, _), text in zip(kwargs["audio_chunk_index"], rows):
+                    grouped.setdefault(sample, []).append(text)
+                return [" ".join(grouped[sample]) for sample in sorted(grouped)]
+
+        api = object.__new__(CohereTranscribeAPI)
+        api.model, api.processor, api.device = self._Model(), _ChunkingProcessor(), "cpu"
+        api.text_only = False
+        batch = [_QwenRequest(text="fr", duration=40.0), _QwenRequest(text="fr")]
+        assert api._generate_batch(batch) == ["row0 row1", "row2"]
+        assert api.processor.decode_kwargs["audio_chunk_index"] == [(0, 0), (0, 1), (1, None)]
+
+    def test_a_completion_that_decodes_to_a_bare_string_is_wrapped(self):
+        """A single request with no chunking comes back from decode as one string, not a list."""
+        pytest.importorskip("torch")
+        from melteval.providers.cohere_transcribe import _transcribe
+
+        class _StringProcessor(TestCohereTranscribe._Processor):
+            def decode(self, ids, **kwargs):
+                return " bonjour "
+
+        completions = _transcribe(
+            self._Model(), _StringProcessor(), "cpu", [_QwenRequest(text="fr")], "fr", GenerateConfig()
+        )
+        assert completions == ["bonjour"]
+
 
 class TestCohereTranscribeLanguage:
     """The language is the instruction: the model has no language detection."""
@@ -897,6 +949,17 @@ class TestCohereTranscribeLanguage:
 
         with pytest.raises(ValueError, match="Supported: ar, de, el, en, es, fr, it, ja, ko, nl, pl, pt, vi, zh"):
             parse_language("xx")
+
+    def test_a_sample_that_ships_its_own_prompt_is_told_about_the_override(self):
+        """MCIF and AIR-Bench samples carry their own instruction, which here is the language.
+
+        Without the flag the run fails on every sample with an ISO-code error that
+        says nothing about what to do, so the message has to name the fix.
+        """
+        from melteval.providers.cohere_transcribe import parse_language
+
+        with pytest.raises(ValueError, match="instruction_override"):
+            parse_language("Transcribe this audio.")
 
 
 def test_cohere_transcribe_is_registered_as_an_hf_model():
