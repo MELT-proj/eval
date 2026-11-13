@@ -155,7 +155,7 @@ per-slice corpus WER, not a pooled corpus figure):
 | CoVoST2 en->X (5) | BLEU | 30.1 |
 | EuroparlST en<->X (16) | BLEU / MetricX | 32.2 / 4.12 |
 
-## SMURF and Fondue baselines (artemis, 2026-11-12)
+## SMURF and Fondue baselines (artemis, 2026-11-12/13)
 
 Two more models on the same suite and frozen sets. Macro means over the slices
 the model ran; WER is a mean of per-slice corpus WER; `BLEU/MetricX` are the
@@ -163,10 +163,11 @@ inline BLEU and the post-hoc MetricX-24 hybrid XXL score (lower is better).
 
 | model | LibriSpeech | VoxPopuli | FLEURS X->en | FLEURS en->X | CoVoST X->en | CoVoST en->X | Europarl X->en | Europarl en->X |
 |---|---|---|---|---|---|---|---|---|
-| canary-1b-v2 | 3.3 % | 9.5 % | 28.0 / 5.14 | 28.9 / 4.58 | 38.0 | 30.1 | 34.6 / 4.58 | 29.9 / 3.67 |
-| eurollm-speech-16n-step-600000 | 3.6 % | 11.8 % | 11.2 / 3.59 | 29.3 / 4.01 | – | – | 6.7 / 13.85 | 26.0 / 5.53 |
-| fondue-step-3000 | 4.0 % | 11.0 % | 22.2 / 5.31 | 18.8 / 7.22 | 28.2 | 15.2 | 28.7 / 5.34 | 24.8 / 4.99 |
-| fondue-step-17000 | 3.1 % | 9.3 % | 23.7 / 4.63 | 18.8 / 6.54 | 28.9 | 17.5 | 30.2 / 4.84 | 27.1 / 4.27 |
+| canary-1b-v2 | 3.3 % | 9.5 % | 28.0 / 5.14 | 28.9 / 4.58 | 38.0 / 5.43 | 30.1 / 5.62 | 34.6 / 4.58 | 29.9 / 3.67 |
+| eurollm-speech-16n-step-600000 | 3.6 % | 11.8 % | 11.2 / 3.59 | 29.3 / 4.01 | 20.8 / 10.23 | 28.5 / 5.87 | 6.7 / 13.85 | 26.0 / 5.53 |
+| fondue-step-3000 | 4.0 % | 11.0 % | 22.2 / 5.31 | 18.8 / 7.22 | 28.2 / 6.58 | 15.2 / 9.28 | 28.7 / 5.34 | 24.8 / 4.99 |
+| fondue-step-17000 | 3.1 % | 9.3 % | 23.7 / 4.63 | 18.8 / 6.54 | 28.9 / 5.90 | 17.5 / 7.63 | 30.2 / 4.84 | 27.1 / 4.27 |
+| fondue-step-20000 | 3.0 % | 9.4 % | 23.6 / 4.57 | 18.1 / 6.69 | 29.1 / 5.89 | 17.8 / 7.51 | 29.8 / 4.87 | 27.0 / 4.28 |
 
 Checkpoints and how they are loaded:
 
@@ -175,8 +176,8 @@ Checkpoints and how they are loaded:
   `/mnt/scratch-nyx/giuseppe/checkpoints/smurf/...`. Loaded with
   `configs/smurf/eurollm_override_config.yaml` (`prompt_format: eurollm`;
   the stored value is the training default `qwen`) and the `smurf-eval` venv.
-  CoVoST2 is skipped, as in `configs/eval/smurf-v1.yaml`.
-- **Fondue**: `checkpoint-3000` and `checkpoint-17000` from
+  CoVoST2 runs in the 16 en<->EU directions the model covers (MetricX now included).
+- **Fondue**: `checkpoint-3000`, `checkpoint-17000` and `checkpoint-20000` (newest verified on 2026-11-13) from
   `/mnt/scratch-nyx/giuseppe/fondue-keep/` (HF-format MELT checkpoints,
   whisper-large-v3 + EuroLLM-1.7B). They were saved without a processor or
   `training_config.yaml`; both come from the run output
