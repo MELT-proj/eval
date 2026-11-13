@@ -5,8 +5,10 @@
 # with the EuroLLM chat format via configs/smurf/eurollm_override_config.yaml:
 # the system prompt then has its own turn. See docs/smurf-provider.md.
 #
-# CoVoST2 is skipped, as in configs/eval/smurf-v1.yaml: the run's ST data is
-# en<->EU (YODAS ast), not CoVoST's non-EU languages.
+# CoVoST2 runs only in the directions both sides of which the model covers
+# (en<->EU: 11 X->en, 5 en->X); the rest are skipped explicitly, as in the
+# canary config. smurf-v1 skipped the whole benchmark instead, which was a
+# campaign choice, not a model limitation.
 #
 #   python scripts/evaluate.py plan configs/eval/speechval-smurf.yaml --site artemis
 #   python scripts/evaluate.py run  configs/eval/speechval-smurf.yaml --site artemis --wait
@@ -44,7 +46,26 @@ models:
 benchmarks: configs/eval/suites/speechval-dev.yaml
 
 skip:
-  - covost2-*
+  - covost2-ar_en-dev
+  - covost2-ca_en-dev
+  - covost2-cy_en-dev
+  - covost2-fa_en-dev
+  - covost2-id_en-dev
+  - covost2-ja_en-dev
+  - covost2-mn_en-dev
+  - covost2-ta_en-dev
+  - covost2-tr_en-dev
+  - covost2-zh_en-dev
+  - covost2-en_ar-dev
+  - covost2-en_ca-dev
+  - covost2-en_cy-dev
+  - covost2-en_fa-dev
+  - covost2-en_id-dev
+  - covost2-en_ja-dev
+  - covost2-en_mn-dev
+  - covost2-en_ta-dev
+  - covost2-en_tr-dev
+  - covost2-en_zh-dev
   - fleurs-ga_en-dev
   - fleurs-en_ga-dev
   - europarl-st-fr_de-dev
