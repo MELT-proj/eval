@@ -155,9 +155,9 @@ per-slice corpus WER, not a pooled corpus figure):
 | CoVoST2 en->X (5) | BLEU | 30.1 |
 | EuroparlST en<->X (16) | BLEU / MetricX | 32.2 / 4.12 |
 
-## SMURF and Fondue baselines (artemis, 2026-11-12/13)
+## SMURF, Fondue and Cohere baselines (artemis, 2026-11-12/13)
 
-Two more models on the same suite and frozen sets. Macro means over the slices
+Three more families on the same suite and frozen sets. Macro means over the slices
 the model ran; WER is a mean of per-slice corpus WER; `BLEU/MetricX` are the
 inline BLEU and the post-hoc MetricX-24 hybrid XXL score (lower is better).
 
@@ -168,6 +168,7 @@ inline BLEU and the post-hoc MetricX-24 hybrid XXL score (lower is better).
 | fondue-step-3000 | 4.0 % | 11.0 % | 22.2 / 5.31 | 18.8 / 7.22 | 28.2 / 6.58 | 15.2 / 9.28 | 28.7 / 5.34 | 24.8 / 4.99 |
 | fondue-step-17000 | 3.1 % | 9.3 % | 23.7 / 4.63 | 18.8 / 6.54 | 28.9 / 5.90 | 17.5 / 7.63 | 30.2 / 4.84 | 27.1 / 4.27 |
 | fondue-step-20000 | 3.0 % | 9.4 % | 23.6 / 4.57 | 18.1 / 6.69 | 29.1 / 5.89 | 17.8 / 7.51 | 29.8 / 4.87 | 27.0 / 4.28 |
+| cohere-transcribe-03-2026 | 1.9 % | 7.8 % | – | – | – | – | – | – |
 
 Checkpoints and how they are loaded:
 
@@ -185,6 +186,15 @@ Checkpoints and how they are loaded:
   adapter needs the `main` training checkout, layered over the melteval venv by
   `pyextras/melt-main/activate`. Evaluation uses one fixed prompt per task
   (`configs/melt/fondue-eval-format.yaml`), not the run's random selection.
+- **Cohere Transcribe**: `CohereLabs/cohere-transcribe-03-2026` (2B conformer
+  encoder-decoder), pinned revision `d552dadc2922`,
+  `melt/hf/cohere_transcribe` (see `docs/baseline-providers.md`). ASR only,
+  so the five ST benchmarks are skipped, and of VoxPopuli's 14 slices only
+  the seven languages it covers ran (`en de es fr it nl pl`): nine slices in
+  all. The language is the instruction (`asr: "{lang_code}"`) because the
+  processor takes one language per call and the model has no language
+  detection. Its Hub repo is gated; the checkpoint was staged into the
+  site's HF cache with `prefetch` from a login node.
 
 Read the SMURF row with its coverage in mind: this is the `asr_long` run, and on
 ST it translates `de/da/el` but echoes `cs/es/et/fi`, while Europarl `de->en`

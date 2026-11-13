@@ -1,0 +1,45 @@
+# Cohere Transcribe (ASR-only, 14 languages) on speechval-dev's ASR slices.
+#
+# The model cannot translate and has no language detection: the language is the
+# instruction (the processor takes one language per call), so the campaign asks
+# for the bare ISO code and the provider validates it. Every ST benchmark is
+# skipped, as are the VoxPopuli languages outside the model's 14.
+#
+#   python scripts/evaluate.py plan configs/eval/speechval-cohere.yaml --site artemis
+#   python scripts/evaluate.py run  configs/eval/speechval-cohere.yaml --site artemis --wait
+
+name: speechval-cohere
+output_dir: ${EVAL_ROOT}/speechval-cohere
+
+models:
+  - name: cohere-transcribe-03-2026
+    model: melt/hf/cohere_transcribe
+    args: [-M, batch_size=8]
+    instruction:
+      asr: "{lang_code}"
+
+benchmarks: configs/eval/suites/speechval-dev.yaml
+
+skip:
+  # ASR only: no speech translation.
+  - fleurs24-st-xen-dev
+  - fleurs24-st-enx-dev
+  - covost2-dev
+  - covost2-enx-dev
+  - europarl-st-dev
+  # VoxPopuli languages outside the model's 14 (en de el es fr it ja ko nl pl pt
+  # vi zh): ro hu cs fi hr sk sl.
+  - voxpopuli-ro-dev
+  - voxpopuli-hu-dev
+  - voxpopuli-cs-dev
+  - voxpopuli-fi-dev
+  - voxpopuli-hr-dev
+  - voxpopuli-sk-dev
+  - voxpopuli-sl-dev
+
+# One SLURM job, one model load for the nine slices (artemis has no
+# MELT_PACK_GPUS by default; this is the only pack setting needed).
+pack:
+  time: "04:00:00"
+  max_slices: 200
+  gpus: 1
