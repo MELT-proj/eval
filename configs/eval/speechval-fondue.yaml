@@ -33,6 +33,12 @@ models:
     model: melt//mnt/scratch-nyx/giuseppe/fondue-keep/checkpoint-17000
     venv: /mnt/scratch-artemis/giuseppe/melt-data/pyextras/melt-main/activate
     args: *fondue_args
+  # Newest verified checkpoint on the nyx copy as of 2026-11-13 (21000 was still
+  # being written). Same architecture and format as 3000/17000.
+  - name: fondue-step-20000
+    model: melt//mnt/scratch-nyx/giuseppe/fondue-keep/checkpoint-20000
+    venv: /mnt/scratch-artemis/giuseppe/melt-data/pyextras/melt-main/activate
+    args: *fondue_args
 
 benchmarks: configs/eval/suites/speechval-dev.yaml
 
