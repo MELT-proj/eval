@@ -1,4 +1,5 @@
-# Fondue (MELT + EuroLLM-1.7B) checkpoints 3000 and 17000 on speechval-dev.
+# Fondue (MELT + EuroLLM-1.7B) checkpoints on speechval-dev (3000, 17000, 20000,
+# 26000; the latest verified checkpoint of the live run).
 #
 # The checkpoints are HF-format MELT directories; they were saved without the
 # processor and without a training_config.yaml beside them, so both come from
@@ -33,10 +34,14 @@ models:
     model: melt//mnt/scratch-nyx/giuseppe/fondue-keep/checkpoint-17000
     venv: /mnt/scratch-artemis/giuseppe/melt-data/pyextras/melt-main/activate
     args: *fondue_args
-  # Newest verified checkpoint on the nyx copy as of 2026-11-13 (21000 was still
-  # being written). Same architecture and format as 3000/17000.
   - name: fondue-step-20000
     model: melt//mnt/scratch-nyx/giuseppe/fondue-keep/checkpoint-20000
+    venv: /mnt/scratch-artemis/giuseppe/melt-data/pyextras/melt-main/activate
+    args: *fondue_args
+  # Newest verified checkpoint on the nyx copy as of 2026-11-13 15:00 (27000 had
+  # not been written yet). Same architecture and format as the ones above.
+  - name: fondue-step-26000
+    model: melt//mnt/scratch-nyx/giuseppe/fondue-keep/checkpoint-26000
     venv: /mnt/scratch-artemis/giuseppe/melt-data/pyextras/melt-main/activate
     args: *fondue_args
 

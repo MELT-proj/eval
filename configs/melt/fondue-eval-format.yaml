@@ -1,4 +1,4 @@
-# Evaluation format for the Fondue checkpoints (3000, 17000).
+# Evaluation format for the Fondue checkpoints (all steps of the run).
 #
 # The run's training_config.yaml selects a prompt template at random per epoch
 # (right for training, not for a measurement that has to be comparable across
