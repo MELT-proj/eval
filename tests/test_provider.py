@@ -899,6 +899,15 @@ class TestCohereTranscribeLanguage:
             parse_language("xx")
 
 
+def test_cohere_transcribe_is_registered_as_an_hf_model():
+    from melteval.providers import family_of
+    from melteval.providers.cohere_transcribe import CohereTranscribeAPI
+    from melteval.providers.router import HF_MODELS
+
+    assert HF_MODELS["cohere_transcribe"] is CohereTranscribeAPI
+    assert family_of("melt/hf/cohere_transcribe") == "hf"
+
+
 class TestDesta25:
     """DeSTA2.5's request handling with a fake model -- the real one needs the `desta` package."""
 
