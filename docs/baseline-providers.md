@@ -1,16 +1,17 @@
 # Baseline providers
 
-Baselines are reference points next to MELT and SMURF: off-the-shelf models loaded through `transformers` (Qwen2-Audio, Qwen3-Omni, Whisper, Apertus-1.5) and DeSTA2.5-Audio, which comes from its own package.
+Baselines are reference points next to MELT and SMURF: off-the-shelf models loaded through `transformers` (Qwen2-Audio, Qwen3-Omni, Whisper, Apertus-1.5, Cohere Transcribe) and DeSTA2.5-Audio, which comes from its own package.
 
 Each is a thin subclass of `melteval/providers/hf.py`, which owns what they share. A subclass says which classes to load, how long a clip the model takes in one piece, and how its `generate()` takes arguments and returns output. Whisper and DeSTA2.5 override the batch step.
 
-| Model                         | `--model`             | Hub revision (pinned)                        | Longest clip         |
-| ----------------------------- | ----------------------- | -------------------------------------------- | -------------------- |
-| Qwen2-Audio-7B-Instruct       | `melt/hf/qwen2_audio` | `0a095220c30b7b31434169c3086508ef3ea5bf0a` | 30 s                 |
-| Qwen3-Omni-30B-A3B-Instruct   | `melt/hf/qwen3_omni`  | `26291f793822fb6be9555850f06dfe95f2d7e695` | no fixed limit       |
-| Whisper large-v3              | `melt/hf/whisper`     | `06f233fe06e710322aca913c1bc4249a0d71fce1` | no limit (long-form) |
-| DeSTA2.5-Audio (Llama-3.1-8B) | `melt/hf/desta25`     | `1427f8725d35a0c9da0c7c54b1ffcc157a5948af` | 30 s                 |
-| Apertus-v1.5-8B               | `melt/hf/apertus`     | `1519de0ae7f3d114879291810a58259966f64c99` | no fixed limit       |
+| Model                         | `--model`                   | Hub revision (pinned)                      | Longest clip         |
+| ----------------------------- | --------------------------- | ------------------------------------------ | -------------------- |
+| Qwen2-Audio-7B-Instruct       | `melt/hf/qwen2_audio`       | `0a095220c30b7b31434169c3086508ef3ea5bf0a` | 30 s                 |
+| Qwen3-Omni-30B-A3B-Instruct   | `melt/hf/qwen3_omni`        | `26291f793822fb6be9555850f06dfe95f2d7e695` | no fixed limit       |
+| Whisper large-v3              | `melt/hf/whisper`           | `06f233fe06e710322aca913c1bc4249a0d71fce1` | no limit (long-form) |
+| Cohere Transcribe (2B)        | `melt/hf/cohere_transcribe` | `d552dadc2922ba6f6c1f994f8db904d52dcaf942` | no limit (chunked)   |
+| DeSTA2.5-Audio (Llama-3.1-8B) | `melt/hf/desta25`           | `1427f8725d35a0c9da0c7c54b1ffcc157a5948af` | 30 s                 |
+| Apertus-v1.5-8B               | `melt/hf/apertus`           | `1519de0ae7f3d114879291810a58259966f64c99` | no fixed limit       |
 
 All run with `-T prompt_style=hf` (the launcher and `run_eval.sbatch` set it). The revision is set on the class (`repo`, `revision` in `melteval/providers/qwen*.py`) and loaded from the HF cache, offline too once downloaded (`scripts/evaluate.py prefetch`, or `huggingface-cli download <repo> --revision <sha>`). `-M revision=<sha>` loads another commit; `-M path=<dir>` loads a local checkpoint of the same architecture.
 
@@ -113,6 +114,35 @@ entry and one run per direction.
 - **Language is auto-detected.** A provider never sees a sample's metadata, so a short clip can get the wrong language.
 - **Long audio** is decoded long-form (sequential 30 s windows, `return_timestamps=True`), not refused.
 - Only ASR and X->en ST apply; the matrix skips AIR-Bench and MCIF for it.
+
+## Cohere Transcribe (cohere-transcribe-03-2026)
+
+```bash
+infra/runners/submit_eval.sh <site> melt/hf/cohere_transcribe <frozen-set-or-spec.yaml> \
+  -T task_filter=asr -T instruction='"{lang_code}"' -M batch_size=8
+```
+
+A dedicated 2B conformer encoder-decoder, transcription only: no translation,
+no chat, no timestamps, no diarization. 14 languages: `ar de el en es fr it ja
+ko nl pl pt vi zh`.
+
+- **The language is the instruction.** The processor takes one language per call
+  and builds the decoder prompt from it, and the model has no language detection
+  of its own. The instruction is therefore the bare ISO code (`{lang_code}`);
+  the provider validates it against the 14 and raises on anything else. A batch
+  that mixes languages is split into one processor call per language.
+- **Long audio is chunked, not truncated.** Past ~35 s the feature extractor
+  splits the clip at quiet boundaries and returns `audio_chunk_index`; the
+  provider hands it to `processor.decode`, which reassembles one string per
+  sample.
+- **Needs `transformers>=5.4`** (`CohereAsrForConditionalGeneration`). No
+  separate venv.
+- **The Hub repository is gated.** `scripts/evaluate.py prefetch` (or
+  `huggingface-cli download <repo> --revision <sha>`) needs an account that has
+  accepted the terms, and `HF_TOKEN` on the login node; the compute nodes then
+  load it offline from the cache.
+- ASR only, so every ST benchmark is skipped, as are the VoxPopuli languages
+  outside the 14.
 
 ## DeSTA2.5-Audio
 
