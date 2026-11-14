@@ -784,6 +784,193 @@ class TestWhisper:
             WhisperAPI("melt/hf/whisper", task="detect")
 
 
+class TestCohereTranscribe:
+    """Cohere Transcribe's batch step, with a fake model and processor.
+
+    The processor is language-conditioned: one language per call, long audio
+    chunked with the chunk index returned for decode to reassemble.
+    """
+
+    class _Processor:
+        def __init__(self):
+            self.feature_extractor = types.SimpleNamespace(sampling_rate=16000)
+            self.calls: list[dict] = []
+            self.decode_kwargs: dict = {}
+
+        def __call__(self, audios, **kwargs):
+            import torch
+
+            self.calls.append({"n": len(audios), **kwargs})
+            n = len(audios)
+            return {
+                "input_features": torch.zeros(n, 2, dtype=torch.float32),
+                "attention_mask": torch.ones(n, 2, dtype=torch.long),
+                "decoder_input_ids": torch.zeros(n, 3, dtype=torch.long),
+                "audio_chunk_index": [(i, None) for i in range(n)],
+            }
+
+        def decode(self, ids, **kwargs):
+            self.decode_kwargs = kwargs
+            language = kwargs.get("language", "?")
+            return [f" {language}{i} " for i in range(ids.shape[0])]
+
+    class _Model:
+        def __init__(self):
+            import torch
+
+            self.dtype = torch.bfloat16
+            self.seen: dict = {}
+
+        def generate(self, **kwargs):
+            import torch
+
+            self.seen = kwargs
+            return torch.arange(kwargs["input_features"].shape[0]).unsqueeze(1)
+
+    def _run(self, languages, config=None):
+        pytest.importorskip("torch")
+        from melteval.providers.cohere_transcribe import _transcribe
+
+        processor, model = self._Processor(), self._Model()
+        batch = [_QwenRequest(text=code) for code in languages]
+        config = config or GenerateConfig()
+        return _transcribe(model, processor, "cpu", batch, languages[0], config), processor, model
+
+    def test_completions_come_back_in_order_and_stripped(self):
+        completions, _, _ = self._run(["en", "en"])
+        assert completions == ["en0", "en1"]
+
+    def test_a_batch_is_split_by_language(self):
+        """One language per processor call, results back in request order."""
+        pytest.importorskip("torch")
+        from melteval.providers.cohere_transcribe import CohereTranscribeAPI
+
+        api = object.__new__(CohereTranscribeAPI)
+        api.model, api.processor, api.device = self._Model(), self._Processor(), "cpu"
+        api.text_only = False
+        batch = [_QwenRequest(text="en"), _QwenRequest(text="de"), _QwenRequest(text="en")]
+        assert api._generate_batch(batch) == ["en0", "de0", "en1"]
+        assert [call["language"] for call in api.processor.calls] == ["en", "de"]
+        assert [call["n"] for call in api.processor.calls] == [2, 1]
+
+    def test_chunk_indices_and_language_reach_decode(self):
+        _, processor, _ = self._run(["de"])
+        assert processor.decode_kwargs["language"] == "de"
+        assert processor.decode_kwargs["audio_chunk_index"] == [(0, None)]
+        assert processor.decode_kwargs["skip_special_tokens"] is True
+
+    def test_generation_is_greedy_and_capped(self):
+        _, _, model = self._run(["en"])
+        assert model.seen["do_sample"] is False
+        assert model.seen["max_new_tokens"] == 256
+
+    def test_input_features_take_the_model_dtype(self):
+        _, _, model = self._run(["en"])
+        assert model.seen["input_features"].dtype == model.dtype
+
+    def test_audio_at_the_wrong_rate_is_refused(self):
+        with pytest.raises(ValueError, match="16000 Hz"):
+            pytest.importorskip("torch")
+            from melteval.providers.cohere_transcribe import _transcribe
+
+            processor, model = self._Processor(), self._Model()
+            _transcribe(
+                model,
+                processor,
+                "cpu",
+                [_QwenRequest(text="en", sample_rate=8000)],
+                "en",
+                GenerateConfig(),
+            )
+
+    def test_a_chunked_sample_decodes_to_one_completion(self):
+        """The processor returns one feature row per chunk; decode reassembles per sample.
+
+        An unchunked fake cannot catch a decode call that dropped
+        ``audio_chunk_index``, which would turn one sample's chunks into several
+        completions (or one truncated one) with no error.
+        """
+        import torch
+
+        pytest.importorskip("torch")
+        from melteval.providers.cohere_transcribe import CohereTranscribeAPI
+
+        class _ChunkingProcessor(TestCohereTranscribe._Processor):
+            def __call__(self, audios, **kwargs):
+                self.calls.append({"n": len(audios), **kwargs})
+                # The first request was split into two chunks; the second was not.
+                return {
+                    "input_features": torch.zeros(3, 2, dtype=torch.float32),
+                    "attention_mask": torch.ones(3, 2, dtype=torch.long),
+                    "decoder_input_ids": torch.zeros(3, 3, dtype=torch.long),
+                    "audio_chunk_index": [(0, 0), (0, 1), (1, None)],
+                }
+
+            def decode(self, ids, **kwargs):
+                self.decode_kwargs = kwargs
+                rows = [f"row{i}" for i in range(ids.shape[0])]
+                grouped: dict[int, list[str]] = {}
+                for (sample, _), text in zip(kwargs["audio_chunk_index"], rows):
+                    grouped.setdefault(sample, []).append(text)
+                return [" ".join(grouped[sample]) for sample in sorted(grouped)]
+
+        api = object.__new__(CohereTranscribeAPI)
+        api.model, api.processor, api.device = self._Model(), _ChunkingProcessor(), "cpu"
+        api.text_only = False
+        batch = [_QwenRequest(text="fr", duration=40.0), _QwenRequest(text="fr")]
+        assert api._generate_batch(batch) == ["row0 row1", "row2"]
+        assert api.processor.decode_kwargs["audio_chunk_index"] == [(0, 0), (0, 1), (1, None)]
+
+    def test_a_completion_that_decodes_to_a_bare_string_is_wrapped(self):
+        """A single request with no chunking comes back from decode as one string, not a list."""
+        pytest.importorskip("torch")
+        from melteval.providers.cohere_transcribe import _transcribe
+
+        class _StringProcessor(TestCohereTranscribe._Processor):
+            def decode(self, ids, **kwargs):
+                return " bonjour "
+
+        completions = _transcribe(
+            self._Model(), _StringProcessor(), "cpu", [_QwenRequest(text="fr")], "fr", GenerateConfig()
+        )
+        assert completions == ["bonjour"]
+
+
+class TestCohereTranscribeLanguage:
+    """The language is the instruction: the model has no language detection."""
+
+    def test_a_code_is_lowercased_and_stripped(self):
+        from melteval.providers.cohere_transcribe import parse_language
+
+        assert parse_language(" EN\n") == "en"
+
+    def test_an_unsupported_code_is_refused_with_the_supported_list(self):
+        from melteval.providers.cohere_transcribe import parse_language
+
+        with pytest.raises(ValueError, match="Supported: ar, de, el, en, es, fr, it, ja, ko, nl, pl, pt, vi, zh"):
+            parse_language("xx")
+
+    def test_a_sample_that_ships_its_own_prompt_is_told_about_the_override(self):
+        """MCIF and AIR-Bench samples carry their own instruction, which here is the language.
+
+        Without the flag the run fails on every sample with an ISO-code error that
+        says nothing about what to do, so the message has to name the fix.
+        """
+        from melteval.providers.cohere_transcribe import parse_language
+
+        with pytest.raises(ValueError, match="instruction_override"):
+            parse_language("Transcribe this audio.")
+
+
+def test_cohere_transcribe_is_registered_as_an_hf_model():
+    from melteval.providers import family_of
+    from melteval.providers.cohere_transcribe import CohereTranscribeAPI
+    from melteval.providers.router import HF_MODELS
+
+    assert HF_MODELS["cohere_transcribe"] is CohereTranscribeAPI
+    assert family_of("melt/hf/cohere_transcribe") == "hf"
+
+
 class TestDesta25:
     """DeSTA2.5's request handling with a fake model -- the real one needs the `desta` package."""
 
