@@ -42,8 +42,10 @@ from melteval.scorers import (
     corpus_wer_raw,
     get_normalizer,
     judge_coverage,
+    letter_mcq_scorer,
     open_judge_scorer,
     open_score,
+    parse_letter_options,
     parse_rating,
     parse_refusal,
     parse_yes_no,
@@ -52,6 +54,7 @@ from melteval.scorers import (
     refusal_judge_scorer,
     refusal_pass_rate,
     resolve_choice,
+    resolve_letter,
     unresolved_rate,
 )
 
@@ -1068,3 +1071,49 @@ class TestVoiceBenchJudgeMetrics:
         ]
         assert refusal_pass_rate()(scores) == pytest.approx(1.0)
         assert judge_coverage()(scores) == pytest.approx(2 / 3)
+
+
+class TestVoiceBenchLetterMcq:
+    PROMPT = "Which one?\nA. alpha\nB. beta\nC. gamma\nD. delta"
+
+    def test_parse_options(self):
+        assert parse_letter_options(self.PROMPT) == ["alpha", "beta", "gamma", "delta"]
+
+    def test_leading_letter(self):
+        assert resolve_letter("B. beta", ["alpha", "beta", "gamma", "delta"]) == "B"
+
+    def test_bare_letter(self):
+        assert resolve_letter("C", ["a", "b", "c", "d"]) == "C"
+
+    def test_answer_phrase(self):
+        assert resolve_letter("The answer is (D).", ["a", "b", "c", "d"]) == "D"
+
+    def test_an_article_is_not_a_label(self):
+        assert resolve_letter("a bird is singing", ["a", "b", "c", "d"]) is None
+
+    def test_scorer_compares_letters(self):
+        score = _run(
+            letter_mcq_scorer()(
+                _judge_state(self.PROMPT, "B. beta"),
+                Target("B"),
+            )
+        )
+        assert score.value == {"correct": 1, "resolved": 1}
+
+    def test_scorer_marks_unreadable_completion(self):
+        score = _run(
+            letter_mcq_scorer()(
+                _judge_state(self.PROMPT, "I cannot tell"),
+                Target("B"),
+            )
+        )
+        assert score.value == {"correct": 0, "resolved": 0}
+
+    def test_missing_options_is_an_error(self):
+        with pytest.raises(ValueError, match="options"):
+            _run(
+                letter_mcq_scorer()(
+                    _judge_state("Just a question?", "A"),
+                    Target("A"),
+                )
+            )

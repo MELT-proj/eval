@@ -1253,3 +1253,70 @@ def refusal_judge_scorer(samples: int = 1) -> Scorer:
         )
 
     return score
+
+
+_LETTER_OPTION = re.compile(r"^\s*([A-D])[.)]\s*(.+?)\s*$", re.MULTILINE)
+
+
+def parse_letter_options(text: str) -> list[str]:
+    """Extract ``A.``-``D.`` option texts from a VoiceBench prompt."""
+    return [match.group(2).strip() for match in _LETTER_OPTION.finditer(text)]
+
+
+def resolve_letter(completion: str, labels: list[str]) -> str | None:
+    """Read which option label a completion picked, or ``None`` if unreadable."""
+    if len(labels) < 2:
+        return None
+
+    stripped = completion.strip()
+    valid = "ABCD"[: len(labels)]
+
+    leading = re.match(r"^\(?([A-D])\)?(?:[.):]|\s*$)", stripped, re.IGNORECASE)
+    if leading and leading.group(1).upper() in valid:
+        return leading.group(1).upper()
+
+    answer = re.search(
+        r"\b(?:answer|option|choice)\s*(?:is|:)?\s*\(?([A-D])\)?\b",
+        stripped,
+        re.IGNORECASE,
+    )
+    if answer and answer.group(1).upper() in valid:
+        return answer.group(1).upper()
+
+    if len(stripped) == 1 and stripped.upper() in valid:
+        return stripped.upper()
+
+    return None
+
+
+@scorer(
+    metrics=[
+        choice_accuracy(),
+        unresolved_rate(),
+        grouped(choice_accuracy(), "dataset_id", all=False, name_template="accuracy_{group_name}"),
+    ]
+)
+def letter_mcq_scorer() -> Scorer:
+    """Score a VoiceBench MCQ whose reference is a letter rather than option text."""
+
+    async def score(state: TaskState, target: Target) -> Score:
+        prompt = _text_prompt(state)
+        labels = parse_letter_options(prompt)
+        if len(labels) < 2:
+            raise ValueError(
+                f"Sample {state.sample_id} has fewer than two A-D options in its text_prompt; "
+                "the letter MCQ scorer cannot score it."
+            )
+
+        completion = state.output.completion if state.output else ""
+        chosen = resolve_letter(completion, labels)
+        reference = target.text.strip().upper()
+        correct = chosen is not None and chosen == reference
+        return Score(
+            value={"correct": int(correct), "resolved": int(chosen is not None)},
+            answer=completion,
+            explanation=None if chosen is not None else "No option label could be read out of the completion.",
+            metadata={"prompt": prompt, "chosen": chosen, "reference": reference},
+        )
+
+    return score
