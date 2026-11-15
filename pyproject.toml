@@ -124,8 +124,8 @@ include = ["melteval*"]
 target-version = "py310"
 line-length = 119
 include = ["melteval/**/*.py", "tests/**/*.py", "projects/**/*.py"]
-# Vendored Apache-2.0 IFEval implementation; kept byte-for-byte where possible.
-extend-exclude = ["melteval/ifeval"]
+# Vendored Apache-2.0 IFEval/BBH implementations; kept byte-for-byte where possible.
+extend-exclude = ["melteval/ifeval", "melteval/bbh.py"]
 
 [tool.ruff.lint]
 select = ["C", "E", "F", "I", "W", "RUF013", "PERF102", "SIM", "UP", "FURB"]

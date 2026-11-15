@@ -1435,3 +1435,42 @@ def ifeval_scorer() -> Scorer:
         )
 
     return score
+
+
+@metric
+def bbh_accuracy() -> Metric:
+    """Share of BBH samples whose extracted answer matches the reference."""
+
+    def calculate(scores: list[SampleScore]) -> Value:
+        return sum(s.score.value["correct"] for s in scores) / len(scores) if scores else 0.0
+
+    return calculate
+
+
+_BBH_REFERENCE = {"yes": 1, "no": 0, "(a)": 0, "(b)": 1}
+
+
+@scorer(metrics=[bbh_accuracy()])
+def bbh_scorer() -> Scorer:
+    """Score a BBH sample with the upstream per-subtype answer extractor."""
+
+    async def score(state: TaskState, target: Target) -> Score:
+        from melteval.bbh import bbh_extract_answer
+
+        sample_id = str((state.metadata or {}).get("cut_id") or state.sample_id)
+        completion = state.output.completion if state.output else ""
+        reference = target.text.strip().lower()
+        if reference not in _BBH_REFERENCE:
+            raise ValueError(
+                f"Sample {state.sample_id} has unsupported BBH reference {reference!r}; "
+                "expected yes/no/(a)/(b)."
+            )
+        predicted = bbh_extract_answer(completion, sample_id)
+        truth = _BBH_REFERENCE[reference]
+        return Score(
+            value={"correct": int(predicted == truth)},
+            answer=completion,
+            metadata={"reference": reference, "predicted": predicted},
+        )
+
+    return score

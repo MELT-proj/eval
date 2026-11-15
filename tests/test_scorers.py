@@ -24,8 +24,11 @@ from inspect_ai.model import ModelName, ModelOutput
 from inspect_ai.scorer import SampleScore, Score, Target
 from inspect_ai.solver import TaskState
 
+from melteval.bbh import bbh_extract_answer
 from melteval.registry import TASK_MAX_TOKENS, TASK_SCORERS, default_max_tokens, default_scorer
 from melteval.scorers import (
+    bbh_accuracy,
+    bbh_scorer,
     chat_scorer,
     choice_accuracy,
     chunked_asr_scorer,
@@ -1181,3 +1184,44 @@ class TestVoiceBenchIfeval:
             ),
         ]
         assert ifeval_final()(scores) == pytest.approx(0.5)
+
+
+class TestVoiceBenchBbh:
+    def _state(self, completion: str, sample_id: str = "bbh_hyperbaton_1") -> TaskState:
+        return TaskState(
+            model=ModelName("mockllm/model"),
+            sample_id=sample_id,
+            epoch=1,
+            input=completion,
+            messages=[],
+            output=ModelOutput.from_content(model="mockllm/model", content=completion),
+            metadata={"cut_id": sample_id},
+        )
+
+    def test_hyperbaton_extraction(self):
+        assert bbh_extract_answer(
+            "The correct adjective order is option (a)", "bbh_hyperbaton_1"
+        ) == 0
+
+    def test_navigate_extraction(self):
+        assert bbh_extract_answer("Yes", "bbh_navigate_147") == 1
+
+    def test_unsupported_id_fails_loudly(self):
+        with pytest.raises(ValueError, match="bbh_unknown_1"):
+            bbh_extract_answer("Yes", "bbh_unknown_1")
+
+    def test_scorer_compares_numeric_reference(self):
+        score = _run(
+            bbh_scorer()(
+                self._state("The correct adjective order is option (a)"),
+                Target("(a)"),
+            )
+        )
+        assert score.value == {"correct": 1}
+
+    def test_accuracy_metric(self):
+        scores = [
+            SampleScore(score=Score(value={"correct": 1})),
+            SampleScore(score=Score(value={"correct": 0})),
+        ]
+        assert bbh_accuracy()(scores) == pytest.approx(0.5)
