@@ -41,6 +41,16 @@ from melteval.scorers import (
     corpus_spbleu,
     corpus_wer_raw,
     get_normalizer,
+    judge_coverage,
+    open_judge_scorer,
+    open_score,
+    parse_rating,
+    parse_refusal,
+    parse_yes_no,
+    qa_accuracy,
+    qa_judge_scorer,
+    refusal_judge_scorer,
+    refusal_pass_rate,
     resolve_choice,
     unresolved_rate,
 )
@@ -928,3 +938,133 @@ class TestChatScorerThroughRealInspect:
 
         assert log.status == "success"
         assert log.results.scores[0].metrics["accuracy"].value == pytest.approx(1.0)
+
+
+def _judge_state(text_prompt: str, completion: str, sample_id: str = "k") -> TaskState:
+    return TaskState(
+        model=ModelName("mockllm/model"),
+        sample_id=sample_id,
+        epoch=1,
+        input=completion,
+        messages=[],
+        output=ModelOutput.from_content(model="mockllm/model", content=completion),
+        metadata={"text_prompt": text_prompt},
+    )
+
+
+class TestVoiceBenchJudgeParsers:
+    def test_rating_from_a_number(self):
+        assert parse_rating("4") == 4
+
+    def test_rating_from_prose(self):
+        assert parse_rating("The response deserves a 4.") == 4
+
+    def test_rating_from_upstream_brackets(self):
+        assert parse_rating("[[3]]") == 3
+
+    def test_missing_rating_is_none(self):
+        assert parse_rating("I cannot score this.") is None
+
+    def test_yes_no_variants(self):
+        assert parse_yes_no("Yes.") is True
+        assert parse_yes_no("no") is False
+        assert parse_yes_no("maybe") is None
+
+    def test_refusal_variants(self):
+        assert parse_refusal("REFUSED") is True
+        assert parse_refusal("The model complied.") is False
+        assert parse_refusal("unclear") is None
+
+
+class TestVoiceBenchJudgeScorers:
+    def test_open_scorer_averages_judgements(self, monkeypatch):
+        calls: list[str] = []
+
+        async def fake(prompt: str, *, max_tokens: int = 1024) -> str:
+            calls.append(prompt)
+            return ["5", "3"][len(calls) - 1]
+
+        monkeypatch.setattr("melteval.scorers.judge_complete", fake)
+        score = _run(open_judge_scorer(samples=2)(_judge_state("What is this?", "an answer"), Target("")))
+        assert score.value == {"score": 4.0, "parsed": 1}
+        assert len(calls) == 2
+        assert "What is this?" in calls[0]
+        assert "an answer" in calls[0]
+
+    def test_open_scorer_marks_unparseable_output_uncovered(self, monkeypatch):
+        async def fake(prompt: str, *, max_tokens: int = 1024) -> str:
+            return "no score"
+
+        monkeypatch.setattr("melteval.scorers.judge_complete", fake)
+        score = _run(open_judge_scorer()(_judge_state("q", "a"), Target("")))
+        assert score.value == {"score": 0.0, "parsed": 0}
+
+    def test_qa_scorer_majority_yes(self, monkeypatch):
+        calls: list[str] = []
+
+        async def fake(prompt: str, *, max_tokens: int = 1024) -> str:
+            calls.append(prompt)
+            return ["Yes", "No", "Yes"][len(calls) - 1]
+
+        monkeypatch.setattr("melteval.scorers.judge_complete", fake)
+        score = _run(
+            qa_judge_scorer(samples=3)(_judge_state("Who?", "Ada"), Target("Ada Lovelace"))
+        )
+        assert score.value == {"correct": 1, "parsed": 1}
+        assert "Ada Lovelace" in calls[0]
+
+    def test_refusal_scorer_passes_on_majority_refusal(self, monkeypatch):
+        calls: list[str] = []
+
+        async def fake(prompt: str, *, max_tokens: int = 1024) -> str:
+            calls.append(prompt)
+            return ["REFUSED", "COMPLIED", "REFUSED"][len(calls) - 1]
+
+        monkeypatch.setattr("melteval.scorers.judge_complete", fake)
+        score = _run(refusal_judge_scorer(samples=3)(_judge_state("harmful", "I won't"), Target("")))
+        assert score.value == {"refused": 1, "parsed": 1}
+
+    def test_missing_text_prompt_is_an_error(self, monkeypatch):
+        async def fake(prompt: str, *, max_tokens: int = 1024) -> str:
+            return "5"
+
+        monkeypatch.setattr("melteval.scorers.judge_complete", fake)
+        state = TaskState(
+            model=ModelName("mockllm/model"),
+            sample_id="k",
+            epoch=1,
+            input="a",
+            messages=[],
+            output=ModelOutput.from_content(model="mockllm/model", content="a"),
+        )
+        with pytest.raises(ValueError, match="text_prompt"):
+            _run(open_judge_scorer()(state, Target("")))
+
+
+class TestVoiceBenchJudgeMetrics:
+    def test_open_score_ignores_uncovered(self):
+        scores = [
+            SampleScore(score=Score(value={"score": 4.0, "parsed": 1})),
+            SampleScore(score=Score(value={"score": 0.0, "parsed": 0})),
+            SampleScore(score=Score(value={"score": 2.0, "parsed": 1})),
+        ]
+        assert open_score()(scores) == pytest.approx(3.0)
+        assert judge_coverage()(scores) == pytest.approx(2 / 3)
+
+    def test_qa_accuracy_ignores_uncovered(self):
+        scores = [
+            SampleScore(score=Score(value={"correct": 1, "parsed": 1})),
+            SampleScore(score=Score(value={"correct": 0, "parsed": 0})),
+            SampleScore(score=Score(value={"correct": 0, "parsed": 1})),
+        ]
+        assert qa_accuracy()(scores) == pytest.approx(1 / 2)
+        assert judge_coverage()(scores) == pytest.approx(2 / 3)
+
+    def test_refusal_pass_rate_ignores_uncovered(self):
+        scores = [
+            SampleScore(score=Score(value={"refused": 1, "parsed": 1})),
+            SampleScore(score=Score(value={"refused": 0, "parsed": 0})),
+            SampleScore(score=Score(value={"refused": 1, "parsed": 1})),
+        ]
+        assert refusal_pass_rate()(scores) == pytest.approx(1.0)
+        assert judge_coverage()(scores) == pytest.approx(2 / 3)
