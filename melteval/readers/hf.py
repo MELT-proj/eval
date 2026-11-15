@@ -243,8 +243,8 @@ class HFReader:
                 text_prompt = row.get(text_prompt_column)
                 if text_prompt is not None and str(text_prompt).strip():
                     extra["text_prompt"] = str(text_prompt).strip()
-            for name, column in extra_columns.items():
-                extra[str(name)] = row.get(str(column))
+            for extra_name, column in extra_columns.items():
+                extra[str(extra_name)] = row.get(str(column))
 
             candidates.append(
                 EvalRecord(

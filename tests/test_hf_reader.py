@@ -181,6 +181,12 @@ class TestFreeze:
         assert records[0].extra["entry_id"] == "s0"
         assert records[0].extra["reference"] == "salut le monde"
 
+    def test_extra_columns_do_not_overwrite_the_hf_config_name(self, patched_load):
+        records = HFReader().freeze(
+            _source_cfg(name="ifeval", extra_columns={"kwargs": "kwargs"}), 0
+        ).records
+        assert records[0].audio.params["name"] == "ifeval"
+
     def test_no_text_prompt_key_when_column_is_unset(self, patched_load):
         records = HFReader().freeze(_source_cfg(), 0).records
         assert "text_prompt" not in records[0].extra
