@@ -706,3 +706,22 @@ class TestPacks:
         assert seen["MELT_GPUS"] == "4"
         assert seen["command"][:2] == ["infra/runners/submit_pack.sh", "jupiter"]
         assert seen["MELT_JOB_TAG"] == f"{evaluate.PACK_PREFIX}{seen['command'][2]}"
+
+
+def test_voicebench_spec_covers_all_non_mtbench_configs():
+    import yaml
+
+    spec = yaml.safe_load((ROOT / "configs/hf/voicebench.yaml").read_text())
+    assert len(spec["input_cfg"]) == 42
+    ids = [source["tags"]["dataset_id"] for source in spec["input_cfg"]]
+    assert len(ids) == len(set(ids))
+    assert all("mtbench" not in source["name"] for source in spec["input_cfg"])
+    assert all(source["text_prompt_column"] == "prompt" for source in spec["input_cfg"])
+
+
+def test_voicebench_smoke_has_one_slice_per_subtask():
+    import yaml
+
+    config = yaml.safe_load((ROOT / "configs/eval/voicebench-smoke.yaml").read_text())
+    assert len(config["benchmarks"]) == 11
+    assert sum(len(benchmark["slices"]) for benchmark in config["benchmarks"]) == 11
