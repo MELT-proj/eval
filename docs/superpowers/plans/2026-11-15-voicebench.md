@@ -480,12 +480,22 @@ The server side uses the existing `/mnt/scratch-artemis/giuseppe/venvs/vllm-serv
 
 - `snapshot_download("Qwen/Qwen3-8B")`
 - for each of the 11 smoke `dataset_id`, run `spec_dataset` so the split is in `HF_DATASETS_CACHE`
+- download NLTK `punkt` and `punkt_tab` (needed by the IFEval language/sentence checks) into a private `NLTK_DATA` directory
 - verify `refs/main` exists for Qwen3-8B and the VoiceBench dataset entries
 
 - [ ] **Step 4: Plan the smoke campaign**
 
+The SMURF venv has an older mirror `melteval` installed, so the job must import
+this checkout first. Set the environment for every run/score command:
+
 ```bash
+export PYTHONPATH=/mnt/scratch-artemis/sonal/eval
 export SMURF_VENV_PATH=/mnt/scratch-artemis/giuseppe/venvs/smurf-eval/bin/activate
+export HF_HOME=/mnt/scratch-artemis/sonal/melt-data/hf_cache
+export HF_DATASETS_CACHE=/mnt/scratch-artemis/sonal/melt-data/hf_cache/datasets
+export XDG_DATA_HOME=/mnt/scratch-artemis/sonal/.local/share
+export EVAL_ROOT=/mnt/scratch-artemis/sonal/melt-data/eval-runs
+export NLTK_DATA=/mnt/home/sonal/nltk_data
 python scripts/evaluate.py plan configs/eval/voicebench-smoke.yaml --site artemis
 ```
 
