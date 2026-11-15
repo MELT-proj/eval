@@ -377,6 +377,20 @@ class TestResolveJudge:
         with pytest.raises(SystemExit, match="text-only"):
             evaluate.resolve_judge({"judge": judge})
 
+    def test_a_vllm_judge_is_a_local_server(self):
+        args, kind, venv = evaluate.resolve_judge(
+            {
+                "judge": "vllm/Qwen/Qwen3-8B",
+                "judge_venv": "client",
+                "judge_args": {"max_model_len": 4096},
+            }
+        )
+        assert kind == "vllm" and venv == "client"
+        assert json.loads(args[1].removeprefix("grader=")) == {
+            "model": "vllm/Qwen/Qwen3-8B",
+            "model_args": {"max_model_len": 4096},
+        }
+
 
 class TestPostScorers:
     """Judge-free scorers run after generation (MCIF's official BERTScore, COMET)."""
@@ -447,6 +461,20 @@ class TestPostScorers:
         qa = next(j for j in jobs if j.model_name == "qwen" and j.task == "audio_chat")
         scorers, problem = evaluate.post_scorers_of(qa)
         assert scorers == [] and "not found" in problem
+
+    def test_a_vllm_judge_uses_the_persistent_server_wrapper(self, tmp_path, monkeypatch):
+        config = self._config(tmp_path)
+        bench = config["benchmarks"][0]
+        bench["judge"] = "vllm/Qwen/Qwen3-8B"
+        bench["judge_venv"] = str(tmp_path / "client")
+        bench["judge_server_venv"] = str(tmp_path / "server")
+        (tmp_path / "client").touch()
+        (tmp_path / "server").touch()
+        commands = self._score(tmp_path, monkeypatch, config)
+        command, env = next(c for c in commands if c[0][0] == "infra/runners/submit_judge_score.sh")
+        assert command[:2] == ["infra/runners/submit_judge_score.sh", "mollete"]
+        assert env["JUDGE_SERVER_VENV"] == str(tmp_path / "server")
+        assert env["VENV_PATH"] == str(tmp_path / "client")
 
 
 class TestRun:
