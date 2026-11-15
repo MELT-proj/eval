@@ -158,6 +158,33 @@ class TestFreeze:
         second = HFReader().freeze(_source_cfg(max_samples=1, seed=7), 0).records
         assert [r.cut_id for r in first] == [r.cut_id for r in second]
 
+    def test_blank_reference_is_kept_when_not_required(self, patched_load):
+        result = HFReader().freeze(_source_cfg(require_reference=False), 0)
+        assert result.stats["kept"] == 3
+        assert result.stats["dropped_no_reference"] == 0
+        assert [r.target for r in result.records] == ["hello world", "", "goodbye"]
+
+    def test_blank_reference_is_still_dropped_by_default(self, patched_load):
+        result = HFReader().freeze(_source_cfg(), 0)
+        assert result.stats["kept"] == 2
+        assert result.stats["dropped_no_reference"] == 1
+
+    def test_text_prompt_column_lands_in_extra(self, patched_load):
+        records = HFReader().freeze(_source_cfg(text_prompt_column="source_text"), 0).records
+        assert records[0].extra["text_prompt"] == "salut le monde"
+        assert records[1].extra["text_prompt"] == "au revoir"
+
+    def test_extra_columns_are_copied_verbatim(self, patched_load):
+        records = HFReader().freeze(
+            _source_cfg(extra_columns={"entry_id": "id", "reference": "source_text"}), 0
+        ).records
+        assert records[0].extra["entry_id"] == "s0"
+        assert records[0].extra["reference"] == "salut le monde"
+
+    def test_no_text_prompt_key_when_column_is_unset(self, patched_load):
+        records = HFReader().freeze(_source_cfg(), 0).records
+        assert "text_prompt" not in records[0].extra
+
     def test_registered_under_hf_dataset(self):
         assert get_reader("hf_dataset") is not None
 

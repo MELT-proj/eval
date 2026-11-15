@@ -167,6 +167,9 @@ class HFReader:
         id_column = _get(source_cfg, "id_column")
         source_text_column = _get(source_cfg, "source_text_column")
         instruction_column = _get(source_cfg, "instruction_column")
+        text_prompt_column = _get(source_cfg, "text_prompt_column")
+        extra_columns = dict(_get(source_cfg, "extra_columns") or {})
+        require_reference = bool(_get(source_cfg, "require_reference", True))
         choices_columns = [str(c) for c in (_get(source_cfg, "choices_columns") or [])]
         instruction_template = str(
             _get(source_cfg, "instruction_template")
@@ -194,8 +197,12 @@ class HFReader:
 
             target = row.get(text_column)
             if not target or not str(target).strip():
-                n_dropped_no_reference += 1
-                continue
+                if require_reference:
+                    n_dropped_no_reference += 1
+                    continue
+                target = ""
+            else:
+                target = str(target).strip()
 
             duration = row.get(duration_column)
             duration = float(duration) if duration is not None else None
@@ -229,11 +236,21 @@ class HFReader:
             row_id = str(row[id_column]) if id_column else str(index)
             source_text = row.get(source_text_column) if source_text_column else None
 
+            extra: dict[str, object] = {}
+            if choices:
+                extra["question"] = str(question).strip()
+            if text_prompt_column:
+                text_prompt = row.get(text_prompt_column)
+                if text_prompt is not None and str(text_prompt).strip():
+                    extra["text_prompt"] = str(text_prompt).strip()
+            for name, column in extra_columns.items():
+                extra[str(name)] = row.get(str(column))
+
             candidates.append(
                 EvalRecord(
                     sample_key="",  # assigned below, after subsetting
                     task=str(tags.get("task", "")),
-                    target=str(target).strip(),
+                    target=target,
                     audio=AudioLocator(
                         kind=self.locator_kind,
                         params={
@@ -255,8 +272,7 @@ class HFReader:
                     choices=choices,
                     cut_id=row_id,
                     duration=duration,
-                    # The question on its own, for a model that lays the options out itself.
-                    extra={"question": str(question).strip()} if choices else {},
+                    extra=extra,
                 )
             )
 
