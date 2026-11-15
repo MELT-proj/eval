@@ -24,6 +24,10 @@ def _load(name: str, relative: str):
 evaluate = _load("evaluate", "scripts/evaluate.py")
 
 
+def test_voicebench_judge_tasks_are_post_hoc():
+    assert {"voicebench_open", "voicebench_qa", "voicebench_refusal"} <= evaluate.JUDGE_TASKS
+
+
 def _config(tmp_path, **overrides):
     """A config over real specs in the repo, a fake MELT checkpoint and a fake SMURF one."""
     (tmp_path / "runs" / "melt-run").mkdir(parents=True)

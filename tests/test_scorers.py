@@ -735,6 +735,12 @@ class TestRegistry:
             "chunked_st",
             "audio_mcq",
             "audio_chat",
+            "voicebench_open",
+            "voicebench_qa",
+            "voicebench_refusal",
+            "voicebench_mcq",
+            "voicebench_ifeval",
+            "voicebench_bbh",
         }
 
     def test_a_graded_task_without_a_judge_still_builds(self):
@@ -744,6 +750,22 @@ class TestRegistry:
 
     def test_mcq_resolves_to_the_choice_scorer(self):
         assert default_scorer("audio_mcq") is not None
+
+    def test_judge_samples_are_forwarded_to_a_voicebench_judge(self, monkeypatch):
+        calls: list[str] = []
+
+        async def fake(prompt: str, *, max_tokens: int = 1024) -> str:
+            calls.append(prompt)
+            return "5"
+
+        monkeypatch.setattr("melteval.scorers.judge_complete", fake)
+        score = _run(
+            default_scorer("voicebench_open", judge_samples=2)(
+                _judge_state("What is this?", "an answer"), Target("")
+            )
+        )
+        assert score.value == {"score": 5.0, "parsed": 1}
+        assert len(calls) == 2
 
     def test_no_task_filter_falls_back_to_a_plumbing_check(self):
         """Not a real metric -- just proves the default_scorer() doesn't need

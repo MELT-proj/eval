@@ -41,7 +41,12 @@ import yaml
 REPO_ROOT = Path(__file__).resolve().parent.parent
 
 #: Tasks graded by a judge model: generated with --no-score, graded by ``score``.
-JUDGE_TASKS = {"audio_chat"}
+JUDGE_TASKS = {
+    "audio_chat",
+    "voicebench_open",
+    "voicebench_qa",
+    "voicebench_refusal",
+}
 
 #: The scorer ``score`` applies when a benchmark names a judge but no scorers.
 DEFAULT_JUDGE_SCORER = "melteval/scorers.py@chat_scorer"
