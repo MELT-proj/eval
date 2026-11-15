@@ -64,4 +64,7 @@ if [[ ! -f melteval/tasks.py ]]; then
     exit 2
 fi
 
+# Use this checkout ahead of any editable copy installed in the venv.
+export PYTHONPATH="${PWD}${PYTHONPATH:+:${PYTHONPATH}}"
+
 exec melteval text-prior "${FROZEN_SET}" -o "${OUT_JSON}" "${EXTRA_ARGS[@]}"

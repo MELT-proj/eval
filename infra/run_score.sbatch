@@ -40,6 +40,9 @@ if [[ ! -f melteval/tasks.py ]]; then
     exit 2
 fi
 
+# Use this checkout ahead of any editable copy installed in the venv.
+export PYTHONPATH="${PWD}${PYTHONPATH:+:${PYTHONPATH}}"
+
 echo "[run_score] venv:  ${VENV_PATH}"
 echo "[run_score] args:  ${SCORE_ARGS[*]:-(none)}"
 source "${VENV_PATH}"

@@ -161,6 +161,9 @@ if [[ ! -f melteval/tasks.py ]]; then
     exit 2
 fi
 
+# Use this checkout ahead of any editable copy installed in the venv.
+export PYTHONPATH="${PWD}${PYTHONPATH:+:${PYTHONPATH}}"
+
 exec inspect eval melteval/tasks.py@speech \
     --model "${MODEL}" \
     --log-dir "${OUTPUT_DIR}" \

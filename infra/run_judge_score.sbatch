@@ -28,6 +28,9 @@ SCORE_ARGS=("$@")
 [[ -n "${JUDGE_SERVER_VENV:-}" && -f "${JUDGE_SERVER_VENV}" ]] || { echo "ERROR: JUDGE_SERVER_VENV not set or not found"; exit 2; }
 [[ -f melteval/tasks.py ]] || { echo "ERROR: run this from the melt-eval repo root"; exit 2; }
 
+# Use this checkout ahead of any editable copy installed in the venv.
+export PYTHONPATH="${PWD}${PYTHONPATH:+:${PYTHONPATH}}"
+
 JUDGE_MODEL="${JUDGE_MODEL:-Qwen/Qwen3-8B}"
 JUDGE_PORT="${JUDGE_PORT:-8000}"
 JUDGE_API_KEY="${JUDGE_API_KEY:-inspectai}"
