@@ -32,6 +32,13 @@ python scripts/build_fleurs_reference.py bg_bg cs_cz da_dk de_de el_gr es_419 et
 A target lacks some English sentences (nl has 117 of 150 ids), so en->X sets are smaller than the audio;
 the difference is `dropped_no_reference` in `frozen_set.json`.
 
+**MetricX source text.** `metricx_scorer` reads the per-sample `source_text` (the spec's
+`source_text_field`) and falls back to an empty source only when the corpus has no transcript
+(e.g. FLEURS `ga`). A frozen set built before that field was populated has `source_text: null`
+for every sample; MetricX then scores an empty source and still reports full `metricx_coverage`,
+because that metric counts completions, not source availability. Re-freeze the FLEURS sets with
+the current freezer before a MetricX campaign.
+
 ## LibriSpeech prefetch (login shell; compute nodes are offline)
 
 ```bash
