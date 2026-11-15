@@ -42,21 +42,27 @@ models:
     model_config_override: configs/smurf/eurollm_override_config.yaml
     instruction:
       asr: "Transcribe this {lang} audio: "
-      st: "Translate this {src_lang} audio into {tgt_lang}: "
-    # System prompts per task (`default` covers the QA tasks: audio_chat, audio_mcq).
+      # The ST instruction must state the output constraint explicitly. An
+      # ASR-biased SMURF checkpoint (EuroLLM-Speech) otherwise transcribes the
+      # source instead of translating it; the generic system prompt below does
+      # not compensate for that on its own. Evidence: with this system prompt,
+      # on the same 10 bg->en samples, the old "Translate this {src_lang}
+      # audio into {tgt_lang}:" instruction produced 8/10 Bulgarian
+      # transcripts, while this explicit form produced 10/10 English
+      # translations.
+      st: "Translate the following {src_lang} speech into {tgt_lang}. Output only the {tgt_lang} translation, never the {src_lang} transcript:"
+    # One system prompt for every task (ASR, ST, and the QA tasks: audio_chat,
+    # audio_mcq). It names the three output modes and leaves the choice to the
+    # instruction, so the same text works across benchmarks and checkpoints.
     system:
-      default: &qa >-
-        Answer the question about the audio in the language the question is asked in.
-        Output only the answer. Do not repeat these instructions.
-      asr: &transcribe >-
-        Transcribe the speech in the audio verbatim, in the language it is spoken in.
-        Output only the transcript. Do not repeat these instructions.
-      chunked_asr: *transcribe
-      st: &translate >-
-        Translate the speech in the audio into the target language named in the instruction.
-        Output only the translation, written entirely in the target language, even if the speech
-        is in another language. Do not repeat these instructions.
-      chunked_st: *translate
+      default: >-
+        Follow the user's instruction exactly. If it asks you to transcribe,
+        output only the verbatim transcript in the language spoken. If it asks
+        you to translate, output only the translation, written entirely in the
+        language named as the target, never a transcript in the source language.
+        If it asks a question, answer only the question, in the language it is
+        asked. Output only the requested result and do not repeat these
+        instructions.
 
 benchmarks: configs/eval/suites/v1.yaml
 
