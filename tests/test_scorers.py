@@ -41,6 +41,8 @@ from melteval.scorers import (
     corpus_spbleu,
     corpus_wer_raw,
     get_normalizer,
+    ifeval_final,
+    ifeval_scorer,
     judge_coverage,
     letter_mcq_scorer,
     open_judge_scorer,
@@ -1117,3 +1119,65 @@ class TestVoiceBenchLetterMcq:
                     Target("A"),
                 )
             )
+
+
+class TestVoiceBenchIfeval:
+    PROMPT = "Write a sentence without commas."
+
+    def _state(self, completion: str) -> TaskState:
+        return TaskState(
+            model=ModelName("mockllm/model"),
+            sample_id="k",
+            epoch=1,
+            input=completion,
+            messages=[],
+            output=ModelOutput.from_content(model="mockllm/model", content=completion),
+            metadata={
+                "text_prompt": self.PROMPT,
+                "instruction_id_list": ["punctuation:no_comma"],
+                "kwargs": [{}],
+            },
+        )
+
+    def test_followed_instruction_scores_both_strict_and_loose(self):
+        score = _run(ifeval_scorer()(self._state("This sentence has no commas"), Target("")))
+        assert score.value["strict_prompt"] == 1
+        assert score.value["strict_instruction_correct"] == 1
+        assert score.value["strict_instruction_total"] == 1
+        assert score.value["loose_prompt"] == 1
+        assert score.value["loose_instruction_correct"] == 1
+
+    def test_comma_fails_the_instruction(self):
+        score = _run(ifeval_scorer()(self._state("Hello, world"), Target("")))
+        assert score.value["strict_prompt"] == 0
+        assert score.value["strict_instruction_correct"] == 0
+        assert score.value["loose_prompt"] == 0
+
+    def test_final_metric_is_the_mean_of_the_four_rates(self):
+        scores = [
+            SampleScore(
+                score=Score(
+                    value={
+                        "strict_prompt": 1,
+                        "strict_instruction_correct": 1,
+                        "strict_instruction_total": 1,
+                        "loose_prompt": 1,
+                        "loose_instruction_correct": 1,
+                        "loose_instruction_total": 1,
+                    }
+                )
+            ),
+            SampleScore(
+                score=Score(
+                    value={
+                        "strict_prompt": 0,
+                        "strict_instruction_correct": 0,
+                        "strict_instruction_total": 1,
+                        "loose_prompt": 0,
+                        "loose_instruction_correct": 0,
+                        "loose_instruction_total": 1,
+                    }
+                )
+            ),
+        ]
+        assert ifeval_final()(scores) == pytest.approx(0.5)

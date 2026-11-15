@@ -1320,3 +1320,118 @@ def letter_mcq_scorer() -> Scorer:
         )
 
     return score
+
+
+def _ifeval_rate(scores: list[SampleScore], correct_key: str, total_key: str) -> float:
+    correct = sum(s.score.value[correct_key] for s in scores)
+    total = sum(s.score.value[total_key] for s in scores)
+    return correct / total if total else 0.0
+
+
+@metric
+def ifeval_strict_prompt() -> Metric:
+    def calculate(scores: list[SampleScore]) -> Value:
+        return sum(s.score.value["strict_prompt"] for s in scores) / len(scores) if scores else 0.0
+
+    return calculate
+
+
+@metric
+def ifeval_strict_instruction() -> Metric:
+    def calculate(scores: list[SampleScore]) -> Value:
+        return _ifeval_rate(scores, "strict_instruction_correct", "strict_instruction_total")
+
+    return calculate
+
+
+@metric
+def ifeval_loose_prompt() -> Metric:
+    def calculate(scores: list[SampleScore]) -> Value:
+        return sum(s.score.value["loose_prompt"] for s in scores) / len(scores) if scores else 0.0
+
+    return calculate
+
+
+@metric
+def ifeval_loose_instruction() -> Metric:
+    def calculate(scores: list[SampleScore]) -> Value:
+        return _ifeval_rate(scores, "loose_instruction_correct", "loose_instruction_total")
+
+    return calculate
+
+
+@metric
+def ifeval_final() -> Metric:
+    """Upstream IFEval's final number: mean of the four strict/loose rates."""
+
+    def calculate(scores: list[SampleScore]) -> Value:
+        if not scores:
+            return 0.0
+        return (
+            ifeval_strict_prompt()(scores)
+            + ifeval_strict_instruction()(scores)
+            + ifeval_loose_prompt()(scores)
+            + ifeval_loose_instruction()(scores)
+        ) / 4
+
+    return calculate
+
+
+@scorer(
+    metrics=[
+        ifeval_strict_prompt(),
+        ifeval_strict_instruction(),
+        ifeval_loose_prompt(),
+        ifeval_loose_instruction(),
+        ifeval_final(),
+    ]
+)
+def ifeval_scorer() -> Scorer:
+    """Score VoiceBench/IFEval with the upstream strict and loose checks."""
+
+    async def score(state: TaskState, target: Target) -> Score:
+        from melteval.ifeval.evaluator import (
+            InputExample,
+            test_instruction_following_loose,
+            test_instruction_following_strict,
+        )
+
+        prompt = _text_prompt(state)
+        metadata = state.metadata or {}
+        instruction_ids = metadata.get("instruction_id_list")
+        kwargs = metadata.get("kwargs")
+        if not instruction_ids or kwargs is None:
+            raise ValueError(
+                f"Sample {state.sample_id} has no instruction_id_list/kwargs metadata; "
+                "the IFEval source must carry the upstream instruction fields."
+            )
+        if len(kwargs) != len(instruction_ids):
+            raise ValueError(
+                f"Sample {state.sample_id} has {len(instruction_ids)} instructions but "
+                f"{len(kwargs)} kwargs entries."
+            )
+
+        completion = state.output.completion if state.output else ""
+        example = InputExample(
+            key=0,
+            instruction_id_list=list(instruction_ids),
+            prompt=prompt,
+            kwargs=kwargs,
+        )
+        responses = {prompt: completion}
+        strict = test_instruction_following_strict(example, responses)
+        loose = test_instruction_following_loose(example, responses)
+        return Score(
+            value={
+                "strict_prompt": int(strict.follow_all_instructions),
+                "strict_instruction_correct": sum(strict.follow_instruction_list),
+                "strict_instruction_total": len(strict.follow_instruction_list),
+                "loose_prompt": int(loose.follow_all_instructions),
+                "loose_instruction_correct": sum(loose.follow_instruction_list),
+                "loose_instruction_total": len(loose.follow_instruction_list),
+            },
+            answer=completion,
+            metadata={"prompt": prompt},
+        )
+
+    return score
