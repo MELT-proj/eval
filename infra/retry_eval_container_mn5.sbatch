@@ -95,5 +95,6 @@ exec "${SINGULARITY_BIN}" exec --nv \
     bash -lc '
         set -euo pipefail
         source /workspace/venv/bin/activate
+        export PYTHONPATH="$PWD${PYTHONPATH:+:$PYTHONPATH}"
         exec inspect eval-retry "$@"
     ' _ "${LOGS[@]}"

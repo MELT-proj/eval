@@ -108,6 +108,7 @@ exec "${SINGULARITY_BIN}" exec --nv \
     bash -lc '
         set -euo pipefail
         source /workspace/venv/bin/activate
+        export PYTHONPATH="$PWD${PYTHONPATH:+:$PYTHONPATH}"
         exec inspect eval melteval/tasks.py@speech \
             --model "melt/$1" \
             --log-dir "$2" \
