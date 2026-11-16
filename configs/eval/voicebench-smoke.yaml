@@ -32,8 +32,8 @@ benchmarks:
     spec: configs/hf/voicebench.yaml
     needs_instruction: true
     judge: vllm/Qwen/Qwen3-8B
-    judge_venv: /mnt/scratch-artemis/sonal/venvs/judge-vllm/bin/activate
-    judge_server_venv: /mnt/scratch-artemis/giuseppe/venvs/vllm-serve-qwen3/bin/activate
+    judge_venv: ${JUDGE_CLIENT_VENV}
+    judge_server_venv: ${JUDGE_SERVER_VENV}
     scorers: [melteval/scorers.py@refusal_judge_scorer]
     slices:
       - {task: voicebench_refusal, dataset_id: voicebench-advbench}
@@ -42,8 +42,8 @@ benchmarks:
     spec: configs/hf/voicebench.yaml
     needs_instruction: true
     judge: vllm/Qwen/Qwen3-8B
-    judge_venv: /mnt/scratch-artemis/sonal/venvs/judge-vllm/bin/activate
-    judge_server_venv: /mnt/scratch-artemis/giuseppe/venvs/vllm-serve-qwen3/bin/activate
+    judge_venv: ${JUDGE_CLIENT_VENV}
+    judge_server_venv: ${JUDGE_SERVER_VENV}
     scorers: [melteval/scorers.py@open_judge_scorer]
     slices:
       - {task: voicebench_open, dataset_id: voicebench-alpacaeval}
@@ -52,8 +52,8 @@ benchmarks:
     spec: configs/hf/voicebench.yaml
     needs_instruction: true
     judge: vllm/Qwen/Qwen3-8B
-    judge_venv: /mnt/scratch-artemis/sonal/venvs/judge-vllm/bin/activate
-    judge_server_venv: /mnt/scratch-artemis/giuseppe/venvs/vllm-serve-qwen3/bin/activate
+    judge_venv: ${JUDGE_CLIENT_VENV}
+    judge_server_venv: ${JUDGE_SERVER_VENV}
     scorers: [melteval/scorers.py@open_judge_scorer]
     slices:
       - {task: voicebench_open, dataset_id: voicebench-alpacaeval-full}
@@ -62,8 +62,8 @@ benchmarks:
     spec: configs/hf/voicebench.yaml
     needs_instruction: true
     judge: vllm/Qwen/Qwen3-8B
-    judge_venv: /mnt/scratch-artemis/sonal/venvs/judge-vllm/bin/activate
-    judge_server_venv: /mnt/scratch-artemis/giuseppe/venvs/vllm-serve-qwen3/bin/activate
+    judge_venv: ${JUDGE_CLIENT_VENV}
+    judge_server_venv: ${JUDGE_SERVER_VENV}
     scorers: [melteval/scorers.py@open_judge_scorer]
     slices:
       - {task: voicebench_open, dataset_id: voicebench-alpacaeval-speaker-en_AU_Wavenet_A_1.0_0.0_0.0}
@@ -78,8 +78,8 @@ benchmarks:
     spec: configs/hf/voicebench.yaml
     needs_instruction: true
     judge: vllm/Qwen/Qwen3-8B
-    judge_venv: /mnt/scratch-artemis/sonal/venvs/judge-vllm/bin/activate
-    judge_server_venv: /mnt/scratch-artemis/giuseppe/venvs/vllm-serve-qwen3/bin/activate
+    judge_venv: ${JUDGE_CLIENT_VENV}
+    judge_server_venv: ${JUDGE_SERVER_VENV}
     scorers: [melteval/scorers.py@open_judge_scorer]
     slices:
       - {task: voicebench_open, dataset_id: voicebench-commoneval}
@@ -87,8 +87,14 @@ benchmarks:
   - name: ifeval
     spec: configs/hf/voicebench.yaml
     needs_instruction: true
+    # IFEval needs the ported instruction checks (langdetect/nltk), which are
+    # not in every model venv. Generate unscored, then grade in the scoring venv.
+    post_venv: ${JUDGE_CLIENT_VENV}
     slices:
-      - {task: voicebench_ifeval, dataset_id: voicebench-ifeval}
+      - task: voicebench_ifeval
+        dataset_id: voicebench-ifeval
+        args: ["--no-score"]
+        post_scorers: [melteval/scorers.py@ifeval_scorer]
 
   - name: mmsu
     spec: configs/hf/voicebench.yaml
@@ -106,8 +112,8 @@ benchmarks:
     spec: configs/hf/voicebench.yaml
     needs_instruction: true
     judge: vllm/Qwen/Qwen3-8B
-    judge_venv: /mnt/scratch-artemis/sonal/venvs/judge-vllm/bin/activate
-    judge_server_venv: /mnt/scratch-artemis/giuseppe/venvs/vllm-serve-qwen3/bin/activate
+    judge_venv: ${JUDGE_CLIENT_VENV}
+    judge_server_venv: ${JUDGE_SERVER_VENV}
     scorers: [melteval/scorers.py@qa_judge_scorer]
     slices:
       - {task: voicebench_qa, dataset_id: voicebench-sd-qa-aus}
@@ -116,8 +122,8 @@ benchmarks:
     spec: configs/hf/voicebench.yaml
     needs_instruction: true
     judge: vllm/Qwen/Qwen3-8B
-    judge_venv: /mnt/scratch-artemis/sonal/venvs/judge-vllm/bin/activate
-    judge_server_venv: /mnt/scratch-artemis/giuseppe/venvs/vllm-serve-qwen3/bin/activate
+    judge_venv: ${JUDGE_CLIENT_VENV}
+    judge_server_venv: ${JUDGE_SERVER_VENV}
     scorers: [melteval/scorers.py@open_judge_scorer]
     slices:
       - {task: voicebench_open, dataset_id: voicebench-wildvoice}

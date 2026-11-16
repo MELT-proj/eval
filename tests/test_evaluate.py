@@ -475,6 +475,7 @@ class TestPostScorers:
         assert command[:2] == ["infra/runners/submit_judge_score.sh", "mollete"]
         assert env["JUDGE_SERVER_VENV"] == str(tmp_path / "server")
         assert env["VENV_PATH"] == str(tmp_path / "client")
+        assert env["JUDGE_SERVER_LOG"].endswith("judge-server.log")
 
 
 class TestRun:
@@ -725,3 +726,14 @@ def test_voicebench_smoke_has_one_slice_per_subtask():
     config = yaml.safe_load((ROOT / "configs/eval/voicebench-smoke.yaml").read_text())
     assert len(config["benchmarks"]) == 11
     assert sum(len(benchmark["slices"]) for benchmark in config["benchmarks"]) == 11
+
+
+def test_voicebench_ifeval_scores_after_generation():
+    import yaml
+
+    config = yaml.safe_load((ROOT / "configs/eval/voicebench-smoke.yaml").read_text())
+    bench = next(b for b in config["benchmarks"] if b["name"] == "ifeval")
+    slice_cfg = bench["slices"][0]
+    assert slice_cfg["args"] == ["--no-score"]
+    assert slice_cfg["post_scorers"] == ["melteval/scorers.py@ifeval_scorer"]
+    assert bench["post_venv"] == "${JUDGE_CLIENT_VENV}"

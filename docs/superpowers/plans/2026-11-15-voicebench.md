@@ -470,7 +470,7 @@ Create `/mnt/scratch-artemis/sonal/venvs/judge-vllm` and install the client side
 ```bash
 uv venv --python 3.12 /mnt/scratch-artemis/sonal/venvs/judge-vllm
 VIRTUAL_ENV=/mnt/scratch-artemis/sonal/venvs/judge-vllm \
-  uv pip install -e . openai
+  uv pip install -e ".[judge]"
 ```
 
 The server side uses the existing `/mnt/scratch-artemis/giuseppe/venvs/vllm-serve-qwen3`
@@ -491,6 +491,8 @@ this checkout first. Set the environment for every run/score command:
 ```bash
 export PYTHONPATH=/mnt/scratch-artemis/sonal/eval
 export SMURF_VENV_PATH=/mnt/scratch-artemis/giuseppe/venvs/smurf-eval/bin/activate
+export JUDGE_CLIENT_VENV=/mnt/scratch-artemis/sonal/venvs/judge-vllm/bin/activate
+export JUDGE_SERVER_VENV=/mnt/scratch-artemis/giuseppe/venvs/vllm-serve-qwen3/bin/activate
 export HF_HOME=/mnt/scratch-artemis/sonal/melt-data/hf_cache
 export HF_DATASETS_CACHE=/mnt/scratch-artemis/sonal/melt-data/hf_cache/datasets
 export XDG_DATA_HOME=/mnt/scratch-artemis/sonal/.local/share

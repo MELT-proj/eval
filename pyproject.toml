@@ -74,6 +74,10 @@ metrics = [
     "sacrebleu==2.5.1",
     "sentencepiece==0.2.2",
 ]
+# Client side of a local vLLM judge (`scripts/evaluate.py score`). inspect's
+# vLLM provider requires openai>=2.45 and the httpx<1 line; the 3.x line moved
+# to httpx2 and breaks the provider at request time.
+judge = ["openai>=2.45,<3"]
 dev = [
     "pytest",
     "ruff",

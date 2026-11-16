@@ -908,6 +908,7 @@ def cmd_score(args, config) -> None:
                     "benchmark config."
                 )
             env["JUDGE_SERVER_VENV"] = group["judge_server_venv"]
+            env["JUDGE_SERVER_LOG"] = str(group["log_dir"] / "judge-server.log")
             if args.site:
                 env |= {
                     "MELT_JOB_TAG": group["tag"],
