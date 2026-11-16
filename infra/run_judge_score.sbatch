@@ -32,7 +32,9 @@ SCORE_ARGS=("$@")
 export PYTHONPATH="${PWD}${PYTHONPATH:+:${PYTHONPATH}}"
 
 JUDGE_MODEL="${JUDGE_MODEL:-Qwen/Qwen3-8B}"
-JUDGE_PORT="${JUDGE_PORT:-8000}"
+# A stable port per job: concurrent score jobs can share a node, so a fixed
+# 8000 lets one job connect to another job's server (or collide at startup).
+JUDGE_PORT="${JUDGE_PORT:-$((20000 + (${SLURM_JOB_ID:-0} % 20000)))}"
 JUDGE_API_KEY="${JUDGE_API_KEY:-inspectai}"
 JUDGE_SERVER_LOG="${JUDGE_SERVER_LOG:-judge-server-${SLURM_JOB_ID:-local}.log}"
 
