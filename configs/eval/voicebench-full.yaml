@@ -1,0 +1,158 @@
+# VoiceBench full campaign: all 42 slices except MT-Bench.
+#
+#   export SMURF_VENV_PATH=/mnt/scratch-artemis/giuseppe/venvs/smurf-eval/bin/activate
+#   export JUDGE_CLIENT_VENV=/mnt/scratch-artemis/sonal/venvs/judge-vllm/bin/activate
+#   export JUDGE_SERVER_VENV=/mnt/scratch-artemis/giuseppe/venvs/vllm-serve-qwen3/bin/activate
+#   python scripts/evaluate.py plan  configs/eval/voicebench-full.yaml --site artemis
+#   python scripts/evaluate.py run   configs/eval/voicebench-full.yaml --site artemis --wait
+#   python scripts/evaluate.py score configs/eval/voicebench-full.yaml --site artemis --wait
+#
+# The judge is one persistent Qwen3-8B vLLM server per score job. Judge-graded
+# slices generate with --no-score. IFEval generates unscored and is graded in
+# the client venv, which carries the ported IFEval dependencies.
+name: voicebench-full
+output_dir: ${EVAL_ROOT}/voicebench-full
+
+models:
+  - name: smurf-eurollm-519k
+    model: smurf//mnt/scratch-nyx/sonal/eurollm_asr_long/step=519000.ckpt
+    venv: ${SMURF_VENV_PATH}
+    args: [-M, batch_size=8, -M, map_location=cpu]
+    model_config_override: configs/smurf/eurollm_override_config.yaml
+    instruction:
+      voicebench_open: "Respond to the request in the audio."
+      voicebench_qa: "Answer the question in the audio."
+      voicebench_refusal: "Respond to the request in the audio."
+      voicebench_mcq: "Answer the multiple-choice question in the audio. Output only the letter of the correct option."
+      voicebench_ifeval: "Follow the instruction in the audio."
+      voicebench_bbh: "Answer the question in the audio. Output only the answer."
+
+benchmarks:
+  - name: advbench
+    spec: configs/hf/voicebench.yaml
+    needs_instruction: true
+    judge: vllm/Qwen/Qwen3-8B
+    judge_venv: ${JUDGE_CLIENT_VENV}
+    judge_server_venv: ${JUDGE_SERVER_VENV}
+    scorers: [melteval/scorers.py@refusal_judge_scorer]
+    slices:
+      - {task: voicebench_refusal, dataset_id: voicebench-advbench}
+
+  - name: alpacaeval
+    spec: configs/hf/voicebench.yaml
+    needs_instruction: true
+    judge: vllm/Qwen/Qwen3-8B
+    judge_venv: ${JUDGE_CLIENT_VENV}
+    judge_server_venv: ${JUDGE_SERVER_VENV}
+    scorers: [melteval/scorers.py@open_judge_scorer]
+    slices:
+      - {task: voicebench_open, dataset_id: voicebench-alpacaeval}
+
+  - name: alpacaeval-full
+    spec: configs/hf/voicebench.yaml
+    needs_instruction: true
+    judge: vllm/Qwen/Qwen3-8B
+    judge_venv: ${JUDGE_CLIENT_VENV}
+    judge_server_venv: ${JUDGE_SERVER_VENV}
+    scorers: [melteval/scorers.py@open_judge_scorer]
+    slices:
+      - {task: voicebench_open, dataset_id: voicebench-alpacaeval-full}
+
+  - name: alpacaeval-speaker
+    spec: configs/hf/voicebench.yaml
+    needs_instruction: true
+    judge: vllm/Qwen/Qwen3-8B
+    judge_venv: ${JUDGE_CLIENT_VENV}
+    judge_server_venv: ${JUDGE_SERVER_VENV}
+    scorers: [melteval/scorers.py@open_judge_scorer]
+    slices:
+      - {task: voicebench_open, dataset_id: voicebench-alpacaeval-speaker-en_AU_Wavenet_A_1.0_0.0_0.0}
+      - {task: voicebench_open, dataset_id: voicebench-alpacaeval-speaker-en_AU_Wavenet_B_1.0_0.0_0.0}
+      - {task: voicebench_open, dataset_id: voicebench-alpacaeval-speaker-en_IN_Wavenet_A_1.0_0.0_0.0}
+      - {task: voicebench_open, dataset_id: voicebench-alpacaeval-speaker-en_IN_Wavenet_B_1.0_0.0_0.0}
+      - {task: voicebench_open, dataset_id: voicebench-alpacaeval-speaker-en_GB_Wavenet_A_1.0_0.0_0.0}
+      - {task: voicebench_open, dataset_id: voicebench-alpacaeval-speaker-en_GB_Wavenet_B_1.0_0.0_0.0}
+      - {task: voicebench_open, dataset_id: voicebench-alpacaeval-speaker-en_US_Wavenet_A_1.0_0.0_0.0}
+      - {task: voicebench_open, dataset_id: voicebench-alpacaeval-speaker-en_US_Wavenet_C_1.0_0.0_0.0}
+      - {task: voicebench_open, dataset_id: voicebench-alpacaeval-speaker-en_US_Wavenet_A_1.5_0.0_0.0}
+      - {task: voicebench_open, dataset_id: voicebench-alpacaeval-speaker-en_US_Wavenet_A_2.0_0.0_0.0}
+      - {task: voicebench_open, dataset_id: voicebench-alpacaeval-speaker-en_US_Wavenet_A_0.5_0.0_0.0}
+
+  - name: bbh
+    spec: configs/hf/voicebench.yaml
+    needs_instruction: true
+    slices:
+      - {task: voicebench_bbh, dataset_id: voicebench-bbh}
+
+  - name: commoneval
+    spec: configs/hf/voicebench.yaml
+    needs_instruction: true
+    judge: vllm/Qwen/Qwen3-8B
+    judge_venv: ${JUDGE_CLIENT_VENV}
+    judge_server_venv: ${JUDGE_SERVER_VENV}
+    scorers: [melteval/scorers.py@open_judge_scorer]
+    slices:
+      - {task: voicebench_open, dataset_id: voicebench-commoneval}
+
+  - name: ifeval
+    spec: configs/hf/voicebench.yaml
+    needs_instruction: true
+    post_venv: ${JUDGE_CLIENT_VENV}
+    slices:
+      - task: voicebench_ifeval
+        dataset_id: voicebench-ifeval
+        args: ["--no-score"]
+        post_scorers: [melteval/scorers.py@ifeval_scorer]
+
+  - name: mmsu
+    spec: configs/hf/voicebench.yaml
+    needs_instruction: true
+    slices:
+      - {task: voicebench_mcq, dataset_id: voicebench-mmsu-law}
+      - {task: voicebench_mcq, dataset_id: voicebench-mmsu-engineering}
+      - {task: voicebench_mcq, dataset_id: voicebench-mmsu-other}
+      - {task: voicebench_mcq, dataset_id: voicebench-mmsu-biology}
+      - {task: voicebench_mcq, dataset_id: voicebench-mmsu-business}
+      - {task: voicebench_mcq, dataset_id: voicebench-mmsu-economics}
+      - {task: voicebench_mcq, dataset_id: voicebench-mmsu-health}
+      - {task: voicebench_mcq, dataset_id: voicebench-mmsu-philosophy}
+      - {task: voicebench_mcq, dataset_id: voicebench-mmsu-psychology}
+      - {task: voicebench_mcq, dataset_id: voicebench-mmsu-history}
+      - {task: voicebench_mcq, dataset_id: voicebench-mmsu-chemistry}
+      - {task: voicebench_mcq, dataset_id: voicebench-mmsu-physics}
+
+  - name: openbookqa
+    spec: configs/hf/voicebench.yaml
+    needs_instruction: true
+    slices:
+      - {task: voicebench_mcq, dataset_id: voicebench-openbookqa}
+
+  - name: sd-qa
+    spec: configs/hf/voicebench.yaml
+    needs_instruction: true
+    judge: vllm/Qwen/Qwen3-8B
+    judge_venv: ${JUDGE_CLIENT_VENV}
+    judge_server_venv: ${JUDGE_SERVER_VENV}
+    scorers: [melteval/scorers.py@qa_judge_scorer]
+    slices:
+      - {task: voicebench_qa, dataset_id: voicebench-sd-qa-aus}
+      - {task: voicebench_qa, dataset_id: voicebench-sd-qa-gbr}
+      - {task: voicebench_qa, dataset_id: voicebench-sd-qa-ind_n}
+      - {task: voicebench_qa, dataset_id: voicebench-sd-qa-ind_s}
+      - {task: voicebench_qa, dataset_id: voicebench-sd-qa-irl}
+      - {task: voicebench_qa, dataset_id: voicebench-sd-qa-kenya}
+      - {task: voicebench_qa, dataset_id: voicebench-sd-qa-nga}
+      - {task: voicebench_qa, dataset_id: voicebench-sd-qa-nzl}
+      - {task: voicebench_qa, dataset_id: voicebench-sd-qa-phl}
+      - {task: voicebench_qa, dataset_id: voicebench-sd-qa-usa}
+      - {task: voicebench_qa, dataset_id: voicebench-sd-qa-zaf}
+
+  - name: wildvoice
+    spec: configs/hf/voicebench.yaml
+    needs_instruction: true
+    judge: vllm/Qwen/Qwen3-8B
+    judge_venv: ${JUDGE_CLIENT_VENV}
+    judge_server_venv: ${JUDGE_SERVER_VENV}
+    scorers: [melteval/scorers.py@open_judge_scorer]
+    slices:
+      - {task: voicebench_open, dataset_id: voicebench-wildvoice}

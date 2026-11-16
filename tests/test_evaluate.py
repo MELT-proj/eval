@@ -737,3 +737,11 @@ def test_voicebench_ifeval_scores_after_generation():
     assert slice_cfg["args"] == ["--no-score"]
     assert slice_cfg["post_scorers"] == ["melteval/scorers.py@ifeval_scorer"]
     assert bench["post_venv"] == "${JUDGE_CLIENT_VENV}"
+
+
+def test_voicebench_full_has_all_42_slices():
+    import yaml
+
+    config = yaml.safe_load((ROOT / "configs/eval/voicebench-full.yaml").read_text())
+    assert len(config["benchmarks"]) == 11
+    assert sum(len(benchmark["slices"]) for benchmark in config["benchmarks"]) == 42
