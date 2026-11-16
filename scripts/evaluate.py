@@ -902,12 +902,13 @@ def cmd_score(args, config) -> None:
         print(f"\n==== score {group['label']}: {len(group['logs'])} log(s) ({group['kind']})", flush=True)
         env = {"VENV_PATH": group["venv"]} if group["venv"] else {}
         if group["kind"] == "vllm":
-            if not group["judge_server_venv"]:
+            server_venv = expand(group["judge_server_venv"]) if group["judge_server_venv"] else None
+            if not server_venv or not Path(server_venv).exists():
                 raise SystemExit(
-                    f"Judge {group['label']}: a vLLM judge needs `judge_server_venv` in its "
-                    "benchmark config."
+                    f"Judge {group['label']}: judge_server_venv "
+                    f"{group['judge_server_venv']!r} is not set or does not exist."
                 )
-            env["JUDGE_SERVER_VENV"] = group["judge_server_venv"]
+            env["JUDGE_SERVER_VENV"] = server_venv
             env["JUDGE_SERVER_LOG"] = str(group["log_dir"] / "judge-server.log")
             if args.site:
                 env |= {

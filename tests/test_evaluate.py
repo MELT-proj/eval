@@ -467,7 +467,8 @@ class TestPostScorers:
         bench = config["benchmarks"][0]
         bench["judge"] = "vllm/Qwen/Qwen3-8B"
         bench["judge_venv"] = str(tmp_path / "client")
-        bench["judge_server_venv"] = str(tmp_path / "server")
+        monkeypatch.setenv("JUDGE_SERVER_VENV", str(tmp_path / "server"))
+        bench["judge_server_venv"] = "${JUDGE_SERVER_VENV}"
         (tmp_path / "client").touch()
         (tmp_path / "server").touch()
         commands = self._score(tmp_path, monkeypatch, config)
