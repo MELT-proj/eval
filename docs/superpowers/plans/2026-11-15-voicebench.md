@@ -2,7 +2,7 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Add the VoiceBench benchmark (all configs except MT-Bench) to melt-eval, with a Qwen3-8B vLLM judge for open-ended, SD-QA and refusal tasks, and a 519k SMURF smoke run over one split per subtask.
+**Goal:** Add the VoiceBench benchmark (all configs except MT-Bench) to melt-eval, with a Qwen3-8B vLLM judge for open-ended, SD-QA and refusal tasks, and a SMURF smoke run over one split per subtask.
 
 **Architecture:** Extend the generic HF reader with an audio-only input mode plus a separate text prompt for scorers/judges. Add the new generic scorers to `melteval/scorers.py` and the ported IFEval/BBH metric logic to `melteval/ifeval.py` and `melteval/bbh.py`; do not add a benchmark-named `melteval/voicebench/` package. Judge tasks run generation with `--no-score`, then one persistent vLLM server per score job grades the logs. Programmatic tasks (MCQ, IFEval, BBH) score inline.
 
@@ -18,7 +18,7 @@
   `alpacaeval_speaker/en_AU_Wavenet_A_1.0_0.0_0.0`, `bbh/test`,
   `commoneval/test`, `ifeval/test`, `mmsu/law`, `openbookqa/test`,
   `sd-qa/aus`, `wildvoice/test`.
-- Model under test for the smoke run: `smurf//mnt/scratch-nyx/sonal/eurollm_asr_long/step=519000.ckpt`.
+- Model under test for the smoke run: `smurf/${SMURF_CHECKPOINT}`, set per run.
 - Judge: `Qwen/Qwen3-8B`, one persistent vLLM server per score job, **1 judgment per sample** for the first pass.
 - HF revision is pinned to `b02edcef1330480be3a11bd6f7434ac32f05ad08`.
 - VoiceBench data is **audio instruction + text transcript**. The audio goes to the eval model; the text transcript goes to the judge/scorer. Do not send the text prompt to the eval model. Do not implement the “audio passage + text instruction” mode.
@@ -406,7 +406,7 @@ Exact multi-split names:
   `phl`, `usa`, `zaf`
 
 Campaign model entry:
-- `model: smurf//mnt/scratch-nyx/sonal/eurollm_asr_long/step=519000.ckpt`
+- `model: smurf/${SMURF_CHECKPOINT}`
 - `venv: ${SMURF_VENV_PATH}`
 - `args: [-M, batch_size=8, -M, map_location=cpu]`
 - `model_config_override: configs/smurf/eurollm_override_config.yaml`

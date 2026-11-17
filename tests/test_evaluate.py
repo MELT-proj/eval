@@ -746,3 +746,13 @@ def test_voicebench_full_has_all_42_slices():
     config = yaml.safe_load((ROOT / "configs/eval/voicebench-full.yaml").read_text())
     assert len(config["benchmarks"]) == 11
     assert sum(len(benchmark["slices"]) for benchmark in config["benchmarks"]) == 42
+
+
+def test_voicebench_campaigns_take_the_checkpoint_from_the_environment():
+    import yaml
+
+    for path in ("configs/eval/voicebench-smoke.yaml", "configs/eval/voicebench-full.yaml"):
+        config = yaml.safe_load((ROOT / path).read_text())
+        assert len(config["models"]) == 1
+        assert config["models"][0]["name"] == "smurf"
+        assert config["models"][0]["model"] == "smurf/${SMURF_CHECKPOINT}"

@@ -1,7 +1,11 @@
 # VoiceBench smoke campaign: one split per subtask, 11 slices.
 #
-#   export SMURF_VENV_PATH=/mnt/scratch-artemis/giuseppe/venvs/smurf-eval/bin/activate
-#   export JUDGE_SERVER_VENV=/mnt/scratch-artemis/giuseppe/venvs/vllm-serve-qwen3/bin/activate
+# The checkpoint is supplied per run, so this file stays generic:
+#
+#   export SMURF_CHECKPOINT=/absolute/path/to/step=NNNNNN.ckpt
+#   export SMURF_VENV_PATH=/path/to/smurf-eval/bin/activate
+#   export JUDGE_CLIENT_VENV=/path/to/judge-client/bin/activate
+#   export JUDGE_SERVER_VENV=/path/to/vllm-server/bin/activate
 #   python scripts/evaluate.py plan  configs/eval/voicebench-smoke.yaml --site artemis
 #   python scripts/evaluate.py run   configs/eval/voicebench-smoke.yaml --site artemis --wait
 #   python scripts/evaluate.py score configs/eval/voicebench-smoke.yaml --site artemis --wait
@@ -12,10 +16,14 @@ name: voicebench-smoke
 output_dir: ${EVAL_ROOT}/voicebench-smoke
 
 models:
-  - name: smurf-eurollm-519k
-    model: smurf//mnt/scratch-nyx/sonal/eurollm_asr_long/step=519000.ckpt
+  # One checkpoint per run. Rename `name` per checkpoint when running several,
+  # as the smurf-v1 watcher does.
+  - name: smurf
+    model: smurf/${SMURF_CHECKPOINT}
     venv: ${SMURF_VENV_PATH}
     args: [-M, batch_size=8, -M, map_location=cpu]
+    # Loads the checkpoint with prompt_format=eurollm (stored: qwen). Use the
+    # checkpoint's own training format if it differs.
     model_config_override: configs/smurf/eurollm_override_config.yaml
     # The model gets the audio plus one fixed instruction; the dataset's text
     # prompt is for the judge/scorer only.
