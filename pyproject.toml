@@ -34,6 +34,10 @@ dependencies = [
     "numpy>=1.24",
     # melteval/normalizers (Whisper's normalizers) needs it.
     "regex",
+    # Ported VoiceBench/IFEval language instructions.
+    "langdetect>=1.0.9",
+    "immutabledict>=4.0",
+    "nltk>=3.9",
 ]
 
 [project.optional-dependencies]
@@ -70,6 +74,10 @@ metrics = [
     "sacrebleu==2.5.1",
     "sentencepiece==0.2.2",
 ]
+# Client side of a local vLLM judge (`scripts/evaluate.py score`). inspect's
+# vLLM provider requires openai>=2.45 and the httpx<1 line; the 3.x line moved
+# to httpx2 and breaks the provider at request time.
+judge = ["openai>=2.45,<3"]
 dev = [
     "pytest",
     "ruff",
@@ -120,6 +128,8 @@ include = ["melteval*"]
 target-version = "py310"
 line-length = 119
 include = ["melteval/**/*.py", "tests/**/*.py", "projects/**/*.py"]
+# Vendored Apache-2.0 IFEval/BBH implementations; kept byte-for-byte where possible.
+extend-exclude = ["melteval/ifeval", "melteval/bbh.py"]
 
 [tool.ruff.lint]
 select = ["C", "E", "F", "I", "W", "RUF013", "PERF102", "SIM", "UP", "FURB"]

@@ -1,0 +1,384 @@
+# VoiceBench (https://huggingface.co/datasets/hlt-lab/voicebench), all
+# configurations except MT-Bench.
+#
+# Read live, like configs/hf/air-bench.yaml: the revision below pins the corpus
+# and the benchmark's own splits decide which samples exist, so there is no
+# local mixture decision for a freeze pass to record.
+#
+# Every row carries an ``audio`` instruction and its text ``prompt``. The audio
+# is what the eval model receives; ``text_prompt`` is only for the judge and
+# for programmatic scorers (IFEval, BBH, letter MCQ). No source here sets
+# ``instruction_column``: the fixed task instruction comes from the campaign
+# model entry.
+#
+# Task mapping:
+#   voicebench_open     alpacaeval, alpacaeval_full, alpacaeval_speaker,
+#                       commoneval, wildvoice
+#   voicebench_qa       sd-qa
+#   voicebench_refusal  advbench
+#   voicebench_mcq      openbookqa, mmsu
+#   voicebench_ifeval   ifeval
+#   voicebench_bbh      bbh
+name: voicebench
+seed: 0
+revision: &revision b02edcef1330480be3a11bd6f7434ac32f05ad08
+
+input_cfg:
+  # --- safety / refusal ------------------------------------------------------
+  - type: hf_dataset
+    repo: hlt-lab/voicebench
+    name: advbench
+    split: test
+    revision: *revision
+    text_prompt_column: prompt
+    require_reference: false
+    tags: {task: voicebench_refusal, lang: en, dataset_id: voicebench-advbench}
+
+  # --- open-ended QA, judged 1-5 --------------------------------------------
+  - type: hf_dataset
+    repo: hlt-lab/voicebench
+    name: alpacaeval
+    split: test
+    revision: *revision
+    text_prompt_column: prompt
+    require_reference: false
+    tags: {task: voicebench_open, lang: en, dataset_id: voicebench-alpacaeval}
+
+  - type: hf_dataset
+    repo: hlt-lab/voicebench
+    name: alpacaeval_full
+    split: test
+    revision: *revision
+    text_prompt_column: prompt
+    require_reference: false
+    tags: {task: voicebench_open, lang: en, dataset_id: voicebench-alpacaeval-full}
+
+  # 11 speaker / rate variants.
+  - type: hf_dataset
+    repo: hlt-lab/voicebench
+    name: alpacaeval_speaker
+    split: en_AU_Wavenet_A_1.0_0.0_0.0
+    revision: *revision
+    text_prompt_column: prompt
+    require_reference: false
+    tags: {task: voicebench_open, lang: en, dataset_id: voicebench-alpacaeval-speaker-en_AU_Wavenet_A_1.0_0.0_0.0}
+  - type: hf_dataset
+    repo: hlt-lab/voicebench
+    name: alpacaeval_speaker
+    split: en_AU_Wavenet_B_1.0_0.0_0.0
+    revision: *revision
+    text_prompt_column: prompt
+    require_reference: false
+    tags: {task: voicebench_open, lang: en, dataset_id: voicebench-alpacaeval-speaker-en_AU_Wavenet_B_1.0_0.0_0.0}
+  - type: hf_dataset
+    repo: hlt-lab/voicebench
+    name: alpacaeval_speaker
+    split: en_IN_Wavenet_A_1.0_0.0_0.0
+    revision: *revision
+    text_prompt_column: prompt
+    require_reference: false
+    tags: {task: voicebench_open, lang: en, dataset_id: voicebench-alpacaeval-speaker-en_IN_Wavenet_A_1.0_0.0_0.0}
+  - type: hf_dataset
+    repo: hlt-lab/voicebench
+    name: alpacaeval_speaker
+    split: en_IN_Wavenet_B_1.0_0.0_0.0
+    revision: *revision
+    text_prompt_column: prompt
+    require_reference: false
+    tags: {task: voicebench_open, lang: en, dataset_id: voicebench-alpacaeval-speaker-en_IN_Wavenet_B_1.0_0.0_0.0}
+  - type: hf_dataset
+    repo: hlt-lab/voicebench
+    name: alpacaeval_speaker
+    split: en_GB_Wavenet_A_1.0_0.0_0.0
+    revision: *revision
+    text_prompt_column: prompt
+    require_reference: false
+    tags: {task: voicebench_open, lang: en, dataset_id: voicebench-alpacaeval-speaker-en_GB_Wavenet_A_1.0_0.0_0.0}
+  - type: hf_dataset
+    repo: hlt-lab/voicebench
+    name: alpacaeval_speaker
+    split: en_GB_Wavenet_B_1.0_0.0_0.0
+    revision: *revision
+    text_prompt_column: prompt
+    require_reference: false
+    tags: {task: voicebench_open, lang: en, dataset_id: voicebench-alpacaeval-speaker-en_GB_Wavenet_B_1.0_0.0_0.0}
+  - type: hf_dataset
+    repo: hlt-lab/voicebench
+    name: alpacaeval_speaker
+    split: en_US_Wavenet_A_1.0_0.0_0.0
+    revision: *revision
+    text_prompt_column: prompt
+    require_reference: false
+    tags: {task: voicebench_open, lang: en, dataset_id: voicebench-alpacaeval-speaker-en_US_Wavenet_A_1.0_0.0_0.0}
+  - type: hf_dataset
+    repo: hlt-lab/voicebench
+    name: alpacaeval_speaker
+    split: en_US_Wavenet_C_1.0_0.0_0.0
+    revision: *revision
+    text_prompt_column: prompt
+    require_reference: false
+    tags: {task: voicebench_open, lang: en, dataset_id: voicebench-alpacaeval-speaker-en_US_Wavenet_C_1.0_0.0_0.0}
+  - type: hf_dataset
+    repo: hlt-lab/voicebench
+    name: alpacaeval_speaker
+    split: en_US_Wavenet_A_1.5_0.0_0.0
+    revision: *revision
+    text_prompt_column: prompt
+    require_reference: false
+    tags: {task: voicebench_open, lang: en, dataset_id: voicebench-alpacaeval-speaker-en_US_Wavenet_A_1.5_0.0_0.0}
+  - type: hf_dataset
+    repo: hlt-lab/voicebench
+    name: alpacaeval_speaker
+    split: en_US_Wavenet_A_2.0_0.0_0.0
+    revision: *revision
+    text_prompt_column: prompt
+    require_reference: false
+    tags: {task: voicebench_open, lang: en, dataset_id: voicebench-alpacaeval-speaker-en_US_Wavenet_A_2.0_0.0_0.0}
+  - type: hf_dataset
+    repo: hlt-lab/voicebench
+    name: alpacaeval_speaker
+    split: en_US_Wavenet_A_0.5_0.0_0.0
+    revision: *revision
+    text_prompt_column: prompt
+    require_reference: false
+    tags: {task: voicebench_open, lang: en, dataset_id: voicebench-alpacaeval-speaker-en_US_Wavenet_A_0.5_0.0_0.0}
+
+  # --- reasoning -------------------------------------------------------------
+  - type: hf_dataset
+    repo: hlt-lab/voicebench
+    name: bbh
+    split: test
+    revision: *revision
+    text_column: reference
+    id_column: id
+    text_prompt_column: prompt
+    tags: {task: voicebench_bbh, lang: en, dataset_id: voicebench-bbh}
+
+  # --- open-ended QA, judged 1-5 --------------------------------------------
+  - type: hf_dataset
+    repo: hlt-lab/voicebench
+    name: commoneval
+    split: test
+    revision: *revision
+    text_prompt_column: prompt
+    require_reference: false
+    tags: {task: voicebench_open, lang: en, dataset_id: voicebench-commoneval}
+
+  # --- instruction following ------------------------------------------------
+  - type: hf_dataset
+    repo: hlt-lab/voicebench
+    name: ifeval
+    split: test
+    revision: *revision
+    text_prompt_column: prompt
+    require_reference: false
+    extra_columns: {key: key, instruction_id_list: instruction_id_list, kwargs: kwargs}
+    tags: {task: voicebench_ifeval, lang: en, dataset_id: voicebench-ifeval}
+
+  # --- multiple choice: 12 MMLU-Pro domains --------------------------------
+  - type: hf_dataset
+    repo: hlt-lab/voicebench
+    name: mmsu
+    split: law
+    revision: *revision
+    text_column: reference
+    text_prompt_column: prompt
+    tags: {task: voicebench_mcq, lang: en, dataset_id: voicebench-mmsu-law}
+  - type: hf_dataset
+    repo: hlt-lab/voicebench
+    name: mmsu
+    split: engineering
+    revision: *revision
+    text_column: reference
+    text_prompt_column: prompt
+    tags: {task: voicebench_mcq, lang: en, dataset_id: voicebench-mmsu-engineering}
+  - type: hf_dataset
+    repo: hlt-lab/voicebench
+    name: mmsu
+    split: other
+    revision: *revision
+    text_column: reference
+    text_prompt_column: prompt
+    tags: {task: voicebench_mcq, lang: en, dataset_id: voicebench-mmsu-other}
+  - type: hf_dataset
+    repo: hlt-lab/voicebench
+    name: mmsu
+    split: biology
+    revision: *revision
+    text_column: reference
+    text_prompt_column: prompt
+    tags: {task: voicebench_mcq, lang: en, dataset_id: voicebench-mmsu-biology}
+  - type: hf_dataset
+    repo: hlt-lab/voicebench
+    name: mmsu
+    split: business
+    revision: *revision
+    text_column: reference
+    text_prompt_column: prompt
+    tags: {task: voicebench_mcq, lang: en, dataset_id: voicebench-mmsu-business}
+  - type: hf_dataset
+    repo: hlt-lab/voicebench
+    name: mmsu
+    split: economics
+    revision: *revision
+    text_column: reference
+    text_prompt_column: prompt
+    tags: {task: voicebench_mcq, lang: en, dataset_id: voicebench-mmsu-economics}
+  - type: hf_dataset
+    repo: hlt-lab/voicebench
+    name: mmsu
+    split: health
+    revision: *revision
+    text_column: reference
+    text_prompt_column: prompt
+    tags: {task: voicebench_mcq, lang: en, dataset_id: voicebench-mmsu-health}
+  - type: hf_dataset
+    repo: hlt-lab/voicebench
+    name: mmsu
+    split: philosophy
+    revision: *revision
+    text_column: reference
+    text_prompt_column: prompt
+    tags: {task: voicebench_mcq, lang: en, dataset_id: voicebench-mmsu-philosophy}
+  - type: hf_dataset
+    repo: hlt-lab/voicebench
+    name: mmsu
+    split: psychology
+    revision: *revision
+    text_column: reference
+    text_prompt_column: prompt
+    tags: {task: voicebench_mcq, lang: en, dataset_id: voicebench-mmsu-psychology}
+  - type: hf_dataset
+    repo: hlt-lab/voicebench
+    name: mmsu
+    split: history
+    revision: *revision
+    text_column: reference
+    text_prompt_column: prompt
+    tags: {task: voicebench_mcq, lang: en, dataset_id: voicebench-mmsu-history}
+  - type: hf_dataset
+    repo: hlt-lab/voicebench
+    name: mmsu
+    split: chemistry
+    revision: *revision
+    text_column: reference
+    text_prompt_column: prompt
+    tags: {task: voicebench_mcq, lang: en, dataset_id: voicebench-mmsu-chemistry}
+  - type: hf_dataset
+    repo: hlt-lab/voicebench
+    name: mmsu
+    split: physics
+    revision: *revision
+    text_column: reference
+    text_prompt_column: prompt
+    tags: {task: voicebench_mcq, lang: en, dataset_id: voicebench-mmsu-physics}
+
+  # --- multiple choice: OpenBookQA ------------------------------------------
+  - type: hf_dataset
+    repo: hlt-lab/voicebench
+    name: openbookqa
+    split: test
+    revision: *revision
+    text_column: reference
+    text_prompt_column: prompt
+    tags: {task: voicebench_mcq, lang: en, dataset_id: voicebench-openbookqa}
+
+  # --- reference-based QA: 11 regions ---------------------------------------
+  - type: hf_dataset
+    repo: hlt-lab/voicebench
+    name: sd-qa
+    split: aus
+    revision: *revision
+    text_column: reference
+    text_prompt_column: prompt
+    tags: {task: voicebench_qa, lang: en, dataset_id: voicebench-sd-qa-aus}
+  - type: hf_dataset
+    repo: hlt-lab/voicebench
+    name: sd-qa
+    split: gbr
+    revision: *revision
+    text_column: reference
+    text_prompt_column: prompt
+    tags: {task: voicebench_qa, lang: en, dataset_id: voicebench-sd-qa-gbr}
+  - type: hf_dataset
+    repo: hlt-lab/voicebench
+    name: sd-qa
+    split: ind_n
+    revision: *revision
+    text_column: reference
+    text_prompt_column: prompt
+    tags: {task: voicebench_qa, lang: en, dataset_id: voicebench-sd-qa-ind_n}
+  - type: hf_dataset
+    repo: hlt-lab/voicebench
+    name: sd-qa
+    split: ind_s
+    revision: *revision
+    text_column: reference
+    text_prompt_column: prompt
+    tags: {task: voicebench_qa, lang: en, dataset_id: voicebench-sd-qa-ind_s}
+  - type: hf_dataset
+    repo: hlt-lab/voicebench
+    name: sd-qa
+    split: irl
+    revision: *revision
+    text_column: reference
+    text_prompt_column: prompt
+    tags: {task: voicebench_qa, lang: en, dataset_id: voicebench-sd-qa-irl}
+  - type: hf_dataset
+    repo: hlt-lab/voicebench
+    name: sd-qa
+    split: kenya
+    revision: *revision
+    text_column: reference
+    text_prompt_column: prompt
+    tags: {task: voicebench_qa, lang: en, dataset_id: voicebench-sd-qa-kenya}
+  - type: hf_dataset
+    repo: hlt-lab/voicebench
+    name: sd-qa
+    split: nga
+    revision: *revision
+    text_column: reference
+    text_prompt_column: prompt
+    tags: {task: voicebench_qa, lang: en, dataset_id: voicebench-sd-qa-nga}
+  - type: hf_dataset
+    repo: hlt-lab/voicebench
+    name: sd-qa
+    split: nzl
+    revision: *revision
+    text_column: reference
+    text_prompt_column: prompt
+    tags: {task: voicebench_qa, lang: en, dataset_id: voicebench-sd-qa-nzl}
+  - type: hf_dataset
+    repo: hlt-lab/voicebench
+    name: sd-qa
+    split: phl
+    revision: *revision
+    text_column: reference
+    text_prompt_column: prompt
+    tags: {task: voicebench_qa, lang: en, dataset_id: voicebench-sd-qa-phl}
+  - type: hf_dataset
+    repo: hlt-lab/voicebench
+    name: sd-qa
+    split: usa
+    revision: *revision
+    text_column: reference
+    text_prompt_column: prompt
+    tags: {task: voicebench_qa, lang: en, dataset_id: voicebench-sd-qa-usa}
+  - type: hf_dataset
+    repo: hlt-lab/voicebench
+    name: sd-qa
+    split: zaf
+    revision: *revision
+    text_column: reference
+    text_prompt_column: prompt
+    tags: {task: voicebench_qa, lang: en, dataset_id: voicebench-sd-qa-zaf}
+
+  # --- open-ended QA, judged 1-5 --------------------------------------------
+  - type: hf_dataset
+    repo: hlt-lab/voicebench
+    name: wildvoice
+    split: test
+    revision: *revision
+    text_prompt_column: prompt
+    require_reference: false
+    tags: {task: voicebench_open, lang: en, dataset_id: voicebench-wildvoice}

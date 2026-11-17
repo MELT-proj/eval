@@ -60,6 +60,7 @@ def speech(
     normalizer: str | None = None,
     scorer: Scorer | None = None,
     spbleu: bool = True,
+    judge_samples: int = 1,
     solver: Solver | None = None,
 ) -> Task:
     """Generate from audio and score the result.
@@ -127,6 +128,8 @@ def speech(
             substitute -- recompute them later with ``melteval st-metrics``.
             With an explicit *scorer* the check is not made (it cannot know what
             a custom scorer needs) and ``spbleu=False`` is an error.
+        judge_samples: Number of independent judgments for VoiceBench judge
+            tasks. The default of 1 is the first-pass setting; upstream uses 3.
         solver: Override the solver. Defaults to the one *prompt_style* selects.
 
     Returns:
@@ -173,7 +176,7 @@ def speech(
             # Fail now, not after the generation: sacrebleu would otherwise be first
             # asked for the model in the end-of-run scoring step.
             require_spm_model()
-        resolved_scorer = default_scorer(task_filter, spbleu=spbleu)
+        resolved_scorer = default_scorer(task_filter, spbleu=spbleu, judge_samples=judge_samples)
 
     if instruction_file is not None:
         if instruction is not None:

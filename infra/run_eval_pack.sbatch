@@ -27,6 +27,9 @@ if [[ ! -f melteval/tasks.py ]]; then
     exit 2
 fi
 
+# Use this checkout ahead of any editable copy installed in the venv.
+export PYTHONPATH="${PWD}${PYTHONPATH:+:${PYTHONPATH}}"
+
 # The GPUs SLURM gave this job, one worker each. Outside SLURM (or with no
 # CUDA_VISIBLE_DEVICES), MELT_GPUS workers on devices 0..N-1.
 if [[ -n "${CUDA_VISIBLE_DEVICES:-}" ]]; then

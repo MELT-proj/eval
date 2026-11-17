@@ -24,8 +24,11 @@ from inspect_ai.model import ModelName, ModelOutput
 from inspect_ai.scorer import SampleScore, Score, Target
 from inspect_ai.solver import TaskState
 
+from melteval.bbh import bbh_extract_answer
 from melteval.registry import TASK_MAX_TOKENS, TASK_SCORERS, default_max_tokens, default_scorer
 from melteval.scorers import (
+    bbh_accuracy,
+    bbh_scorer,
     chat_scorer,
     choice_accuracy,
     chunked_asr_scorer,
@@ -41,7 +44,22 @@ from melteval.scorers import (
     corpus_spbleu,
     corpus_wer_raw,
     get_normalizer,
+    ifeval_final,
+    ifeval_scorer,
+    judge_coverage,
+    letter_mcq_scorer,
+    open_judge_scorer,
+    open_score,
+    parse_letter_options,
+    parse_rating,
+    parse_refusal,
+    parse_yes_no,
+    qa_accuracy,
+    qa_judge_scorer,
+    refusal_judge_scorer,
+    refusal_pass_rate,
     resolve_choice,
+    resolve_letter,
     unresolved_rate,
 )
 
@@ -717,6 +735,12 @@ class TestRegistry:
             "chunked_st",
             "audio_mcq",
             "audio_chat",
+            "voicebench_open",
+            "voicebench_qa",
+            "voicebench_refusal",
+            "voicebench_mcq",
+            "voicebench_ifeval",
+            "voicebench_bbh",
         }
 
     def test_a_graded_task_without_a_judge_still_builds(self):
@@ -726,6 +750,22 @@ class TestRegistry:
 
     def test_mcq_resolves_to_the_choice_scorer(self):
         assert default_scorer("audio_mcq") is not None
+
+    def test_judge_samples_are_forwarded_to_a_voicebench_judge(self, monkeypatch):
+        calls: list[str] = []
+
+        async def fake(prompt: str, *, max_tokens: int = 1024) -> str:
+            calls.append(prompt)
+            return "5"
+
+        monkeypatch.setattr("melteval.scorers.judge_complete", fake)
+        score = _run(
+            default_scorer("voicebench_open", judge_samples=2)(
+                _judge_state("What is this?", "an answer"), Target("")
+            )
+        )
+        assert score.value == {"score": 5.0, "parsed": 1}
+        assert len(calls) == 2
 
     def test_no_task_filter_falls_back_to_a_plumbing_check(self):
         """Not a real metric -- just proves the default_scorer() doesn't need
@@ -928,3 +968,282 @@ class TestChatScorerThroughRealInspect:
 
         assert log.status == "success"
         assert log.results.scores[0].metrics["accuracy"].value == pytest.approx(1.0)
+
+
+def _judge_state(text_prompt: str, completion: str, sample_id: str = "k") -> TaskState:
+    return TaskState(
+        model=ModelName("mockllm/model"),
+        sample_id=sample_id,
+        epoch=1,
+        input=completion,
+        messages=[],
+        output=ModelOutput.from_content(model="mockllm/model", content=completion),
+        metadata={"text_prompt": text_prompt},
+    )
+
+
+class TestVoiceBenchJudgeParsers:
+    def test_rating_from_a_number(self):
+        assert parse_rating("4") == 4
+
+    def test_rating_from_prose(self):
+        assert parse_rating("The response deserves a 4.") == 4
+
+    def test_rating_from_upstream_brackets(self):
+        assert parse_rating("[[3]]") == 3
+
+    def test_missing_rating_is_none(self):
+        assert parse_rating("I cannot score this.") is None
+
+    def test_yes_no_variants(self):
+        assert parse_yes_no("Yes.") is True
+        assert parse_yes_no("no") is False
+        assert parse_yes_no("maybe") is None
+
+    def test_refusal_variants(self):
+        assert parse_refusal("REFUSED") is True
+        assert parse_refusal("The model complied.") is False
+        assert parse_refusal("unclear") is None
+
+
+class TestVoiceBenchJudgeScorers:
+    def test_open_scorer_averages_judgements(self, monkeypatch):
+        calls: list[str] = []
+
+        async def fake(prompt: str, *, max_tokens: int = 1024) -> str:
+            calls.append(prompt)
+            return ["5", "3"][len(calls) - 1]
+
+        monkeypatch.setattr("melteval.scorers.judge_complete", fake)
+        score = _run(open_judge_scorer(samples=2)(_judge_state("What is this?", "an answer"), Target("")))
+        assert score.value == {"score": 4.0, "parsed": 1}
+        assert len(calls) == 2
+        assert "What is this?" in calls[0]
+        assert "an answer" in calls[0]
+
+    def test_open_scorer_marks_unparseable_output_uncovered(self, monkeypatch):
+        async def fake(prompt: str, *, max_tokens: int = 1024) -> str:
+            return "no score"
+
+        monkeypatch.setattr("melteval.scorers.judge_complete", fake)
+        score = _run(open_judge_scorer()(_judge_state("q", "a"), Target("")))
+        assert score.value == {"score": 0.0, "parsed": 0}
+
+    def test_qa_scorer_majority_yes(self, monkeypatch):
+        calls: list[str] = []
+
+        async def fake(prompt: str, *, max_tokens: int = 1024) -> str:
+            calls.append(prompt)
+            return ["Yes", "No", "Yes"][len(calls) - 1]
+
+        monkeypatch.setattr("melteval.scorers.judge_complete", fake)
+        score = _run(
+            qa_judge_scorer(samples=3)(_judge_state("Who?", "Ada"), Target("Ada Lovelace"))
+        )
+        assert score.value == {"correct": 1, "parsed": 1}
+        assert "Ada Lovelace" in calls[0]
+
+    def test_refusal_scorer_passes_on_majority_refusal(self, monkeypatch):
+        calls: list[str] = []
+
+        async def fake(prompt: str, *, max_tokens: int = 1024) -> str:
+            calls.append(prompt)
+            return ["REFUSED", "COMPLIED", "REFUSED"][len(calls) - 1]
+
+        monkeypatch.setattr("melteval.scorers.judge_complete", fake)
+        score = _run(refusal_judge_scorer(samples=3)(_judge_state("harmful", "I won't"), Target("")))
+        assert score.value == {"refused": 1, "parsed": 1}
+
+    def test_missing_text_prompt_is_an_error(self, monkeypatch):
+        async def fake(prompt: str, *, max_tokens: int = 1024) -> str:
+            return "5"
+
+        monkeypatch.setattr("melteval.scorers.judge_complete", fake)
+        state = TaskState(
+            model=ModelName("mockllm/model"),
+            sample_id="k",
+            epoch=1,
+            input="a",
+            messages=[],
+            output=ModelOutput.from_content(model="mockllm/model", content="a"),
+        )
+        with pytest.raises(ValueError, match="text_prompt"):
+            _run(open_judge_scorer()(state, Target("")))
+
+
+class TestVoiceBenchJudgeMetrics:
+    def test_open_score_ignores_uncovered(self):
+        scores = [
+            SampleScore(score=Score(value={"score": 4.0, "parsed": 1})),
+            SampleScore(score=Score(value={"score": 0.0, "parsed": 0})),
+            SampleScore(score=Score(value={"score": 2.0, "parsed": 1})),
+        ]
+        assert open_score()(scores) == pytest.approx(3.0)
+        assert judge_coverage()(scores) == pytest.approx(2 / 3)
+
+    def test_qa_accuracy_ignores_uncovered(self):
+        scores = [
+            SampleScore(score=Score(value={"correct": 1, "parsed": 1})),
+            SampleScore(score=Score(value={"correct": 0, "parsed": 0})),
+            SampleScore(score=Score(value={"correct": 0, "parsed": 1})),
+        ]
+        assert qa_accuracy()(scores) == pytest.approx(1 / 2)
+        assert judge_coverage()(scores) == pytest.approx(2 / 3)
+
+    def test_refusal_pass_rate_ignores_uncovered(self):
+        scores = [
+            SampleScore(score=Score(value={"refused": 1, "parsed": 1})),
+            SampleScore(score=Score(value={"refused": 0, "parsed": 0})),
+            SampleScore(score=Score(value={"refused": 1, "parsed": 1})),
+        ]
+        assert refusal_pass_rate()(scores) == pytest.approx(1.0)
+        assert judge_coverage()(scores) == pytest.approx(2 / 3)
+
+
+class TestVoiceBenchLetterMcq:
+    PROMPT = "Which one?\nA. alpha\nB. beta\nC. gamma\nD. delta"
+
+    def test_parse_options(self):
+        assert parse_letter_options(self.PROMPT) == ["alpha", "beta", "gamma", "delta"]
+
+    def test_leading_letter(self):
+        assert resolve_letter("B. beta", ["alpha", "beta", "gamma", "delta"]) == "B"
+
+    def test_bare_letter(self):
+        assert resolve_letter("C", ["a", "b", "c", "d"]) == "C"
+
+    def test_answer_phrase(self):
+        assert resolve_letter("The answer is (D).", ["a", "b", "c", "d"]) == "D"
+
+    def test_an_article_is_not_a_label(self):
+        assert resolve_letter("a bird is singing", ["a", "b", "c", "d"]) is None
+
+    def test_scorer_compares_letters(self):
+        score = _run(
+            letter_mcq_scorer()(
+                _judge_state(self.PROMPT, "B. beta"),
+                Target("B"),
+            )
+        )
+        assert score.value == {"correct": 1, "resolved": 1}
+
+    def test_scorer_marks_unreadable_completion(self):
+        score = _run(
+            letter_mcq_scorer()(
+                _judge_state(self.PROMPT, "I cannot tell"),
+                Target("B"),
+            )
+        )
+        assert score.value == {"correct": 0, "resolved": 0}
+
+    def test_missing_options_is_an_error(self):
+        with pytest.raises(ValueError, match="options"):
+            _run(
+                letter_mcq_scorer()(
+                    _judge_state("Just a question?", "A"),
+                    Target("A"),
+                )
+            )
+
+
+class TestVoiceBenchIfeval:
+    PROMPT = "Write a sentence without commas."
+
+    def _state(self, completion: str) -> TaskState:
+        return TaskState(
+            model=ModelName("mockllm/model"),
+            sample_id="k",
+            epoch=1,
+            input=completion,
+            messages=[],
+            output=ModelOutput.from_content(model="mockllm/model", content=completion),
+            metadata={
+                "text_prompt": self.PROMPT,
+                "instruction_id_list": ["punctuation:no_comma"],
+                "kwargs": [{}],
+            },
+        )
+
+    def test_followed_instruction_scores_both_strict_and_loose(self):
+        score = _run(ifeval_scorer()(self._state("This sentence has no commas"), Target("")))
+        assert score.value["strict_prompt"] == 1
+        assert score.value["strict_instruction_correct"] == 1
+        assert score.value["strict_instruction_total"] == 1
+        assert score.value["loose_prompt"] == 1
+        assert score.value["loose_instruction_correct"] == 1
+
+    def test_comma_fails_the_instruction(self):
+        score = _run(ifeval_scorer()(self._state("Hello, world"), Target("")))
+        assert score.value["strict_prompt"] == 0
+        assert score.value["strict_instruction_correct"] == 0
+        assert score.value["loose_prompt"] == 0
+
+    def test_final_metric_is_the_mean_of_the_four_rates(self):
+        scores = [
+            SampleScore(
+                score=Score(
+                    value={
+                        "strict_prompt": 1,
+                        "strict_instruction_correct": 1,
+                        "strict_instruction_total": 1,
+                        "loose_prompt": 1,
+                        "loose_instruction_correct": 1,
+                        "loose_instruction_total": 1,
+                    }
+                )
+            ),
+            SampleScore(
+                score=Score(
+                    value={
+                        "strict_prompt": 0,
+                        "strict_instruction_correct": 0,
+                        "strict_instruction_total": 1,
+                        "loose_prompt": 0,
+                        "loose_instruction_correct": 0,
+                        "loose_instruction_total": 1,
+                    }
+                )
+            ),
+        ]
+        assert ifeval_final()(scores) == pytest.approx(0.5)
+
+
+class TestVoiceBenchBbh:
+    def _state(self, completion: str, sample_id: str = "bbh_hyperbaton_1") -> TaskState:
+        return TaskState(
+            model=ModelName("mockllm/model"),
+            sample_id=sample_id,
+            epoch=1,
+            input=completion,
+            messages=[],
+            output=ModelOutput.from_content(model="mockllm/model", content=completion),
+            metadata={"cut_id": sample_id},
+        )
+
+    def test_hyperbaton_extraction(self):
+        assert bbh_extract_answer(
+            "The correct adjective order is option (a)", "bbh_hyperbaton_1"
+        ) == 0
+
+    def test_navigate_extraction(self):
+        assert bbh_extract_answer("Yes", "bbh_navigate_147") == 1
+
+    def test_unsupported_id_fails_loudly(self):
+        with pytest.raises(ValueError, match="bbh_unknown_1"):
+            bbh_extract_answer("Yes", "bbh_unknown_1")
+
+    def test_scorer_compares_numeric_reference(self):
+        score = _run(
+            bbh_scorer()(
+                self._state("The correct adjective order is option (a)"),
+                Target("(a)"),
+            )
+        )
+        assert score.value == {"correct": 1}
+
+    def test_accuracy_metric(self):
+        scores = [
+            SampleScore(score=Score(value={"correct": 1})),
+            SampleScore(score=Score(value={"correct": 0})),
+        ]
+        assert bbh_accuracy()(scores) == pytest.approx(0.5)

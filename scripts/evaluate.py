@@ -41,7 +41,12 @@ import yaml
 REPO_ROOT = Path(__file__).resolve().parent.parent
 
 #: Tasks graded by a judge model: generated with --no-score, graded by ``score``.
-JUDGE_TASKS = {"audio_chat"}
+JUDGE_TASKS = {
+    "audio_chat",
+    "voicebench_open",
+    "voicebench_qa",
+    "voicebench_refusal",
+}
 
 #: The scorer ``score`` applies when a benchmark names a judge but no scorers.
 DEFAULT_JUDGE_SCORER = "melteval/scorers.py@chat_scorer"
@@ -357,7 +362,11 @@ def plan(
                 job_env = {**env, "OUTPUT_DIR": str(log_dir)}
                 if "time" in slice_cfg:
                     job_env["MELT_TIME"] = str(slice_cfg["time"])
-                judge = {k: bench[k] for k in ("judge", "judge_args", "judge_venv", "scorers") if k in bench}
+                judge = {
+                    k: bench[k]
+                    for k in ("judge", "judge_args", "judge_venv", "judge_server_venv", "scorers")
+                    if k in bench
+                }
                 jobs.append(
                     Job(name, model, bench["name"], sname, task, eval_set, log_dir, args, job_env, judge or None,
                         post_scorers, bench.get("post_venv"))
@@ -769,7 +778,9 @@ def resolve_judge(judge: dict) -> tuple[list[str], str | None, str | None]:
     model = judge["judge"]
     model_args = dict(judge.get("judge_args") or {})
     family = family_of(model)
-    if family == "hf":
+    if model.startswith("vllm/"):
+        kind = "vllm"
+    elif family == "hf":
         kind = "local"
         model_args["text_only"] = True
     elif family is None:
@@ -878,6 +889,7 @@ def cmd_score(args, config) -> None:
         group = groups.setdefault(
             item.group, {"label": f"{item.job.model_name} x {item.job.benchmark} [{item.scorer}]", "logs": [],
                          "kind": item.kind, "venv": item.venv, "tag": item.tag, "log_dir": item.job.log_dir.parent,
+                         "judge_server_venv": (item.job.judge or {}).get("judge_server_venv"),
                          # --model mockllm/model: `inspect score` rebuilds the log's own
                          # model otherwise, and our providers load weights on construction.
                          "args": ["--model", "mockllm/model", "--scorer", item.scorer,
@@ -889,7 +901,31 @@ def cmd_score(args, config) -> None:
     for group in groups.values():
         print(f"\n==== score {group['label']}: {len(group['logs'])} log(s) ({group['kind']})", flush=True)
         env = {"VENV_PATH": group["venv"]} if group["venv"] else {}
-        if group["kind"] == "local" and args.site:
+        if group["kind"] == "vllm":
+            server_venv = expand(group["judge_server_venv"]) if group["judge_server_venv"] else None
+            if not server_venv or not Path(server_venv).exists():
+                raise SystemExit(
+                    f"Judge {group['label']}: judge_server_venv "
+                    f"{group['judge_server_venv']!r} is not set or does not exist."
+                )
+            env["JUDGE_SERVER_VENV"] = server_venv
+            env["JUDGE_SERVER_LOG"] = str(group["log_dir"] / "judge-server.log")
+            if args.site:
+                env |= {
+                    "MELT_JOB_TAG": group["tag"],
+                    "MELT_SLURM_OUT": str(group["log_dir"] / "judge-score-slurm-%j.out"),
+                }
+                command = [
+                    "infra/runners/submit_judge_score.sh",
+                    args.site,
+                    *group["logs"],
+                    "--",
+                    *group["args"],
+                ]
+                wait_for_room()
+            else:
+                command = ["bash", "infra/run_judge_score.sbatch", *group["logs"], "--", *group["args"]]
+        elif group["kind"] == "local" and args.site:
             env |= {"MELT_JOB_TAG": group["tag"], "MELT_SLURM_OUT": str(group["log_dir"] / "score-slurm-%j.out")}
             command = ["infra/runners/submit_score.sh", args.site, *group["logs"], "--", *group["args"]]
             wait_for_room()

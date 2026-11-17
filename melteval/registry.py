@@ -22,10 +22,16 @@ from inspect_ai.scorer import Scorer
 
 from melteval.scorers import (
     asr_scorer,
+    bbh_scorer,
     chat_scorer,
     chunked_asr_scorer,
     chunked_st_scorer,
+    ifeval_scorer,
+    letter_mcq_scorer,
     mcq_scorer,
+    open_judge_scorer,
+    qa_judge_scorer,
+    refusal_judge_scorer,
     st_scorer,
     st_scorer_no_spbleu,
 )
@@ -35,13 +41,23 @@ from melteval.scorers import (
 #: from inspect_ai's ``grader`` model role at scoring time (see
 #: :func:`melteval.scorers.chat_scorer`), not passed in here, so it fits this
 #: table like every other task.
-TASK_SCORERS: dict[str, Callable[[], Scorer]] = {
+JUDGE_TASK_SCORERS: dict[str, Callable[..., Scorer]] = {
+    "voicebench_open": open_judge_scorer,
+    "voicebench_qa": qa_judge_scorer,
+    "voicebench_refusal": refusal_judge_scorer,
+}
+
+TASK_SCORERS: dict[str, Callable[..., Scorer]] = {
     "asr": asr_scorer,
     "st": st_scorer,
     "chunked_asr": chunked_asr_scorer,
     "chunked_st": chunked_st_scorer,
     "audio_mcq": mcq_scorer,
     "audio_chat": chat_scorer,
+    "voicebench_mcq": letter_mcq_scorer,
+    "voicebench_ifeval": ifeval_scorer,
+    "voicebench_bbh": bbh_scorer,
+    **JUDGE_TASK_SCORERS,
 }
 
 #: Generation budget per task, used when the run does not set ``--max-tokens``
@@ -56,6 +72,12 @@ TASK_MAX_TOKENS: dict[str, int] = {
     "chunked_st": 256,
     "audio_mcq": 512,
     "audio_chat": 1024,
+    "voicebench_open": 1024,
+    "voicebench_qa": 512,
+    "voicebench_refusal": 1024,
+    "voicebench_mcq": 512,
+    "voicebench_ifeval": 1024,
+    "voicebench_bbh": 1024,
 }
 
 
@@ -64,7 +86,9 @@ def default_max_tokens(task_filter: str | None) -> int | None:
     return TASK_MAX_TOKENS.get(task_filter) if task_filter else None
 
 
-def default_scorer(task_filter: str | None, spbleu: bool = True) -> Scorer:
+def default_scorer(
+    task_filter: str | None, spbleu: bool = True, judge_samples: int = 1
+) -> Scorer:
     """Return the default scorer for *task_filter*.
 
     With no task filter (a mixed or unfiltered frozen set) this falls back to
@@ -99,4 +123,6 @@ def default_scorer(task_filter: str | None, spbleu: bool = True) -> Scorer:
             f"{sorted(TASK_SCORERS)}). Pass scorer=... explicitly -- e.g. one of "
             "inspect_ai.scorer's exact()/f1()/choice()/model_graded_qa()."
         )
+    if task_filter in JUDGE_TASK_SCORERS:
+        return factory(samples=judge_samples)
     return factory()

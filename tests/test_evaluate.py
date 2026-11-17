@@ -24,6 +24,10 @@ def _load(name: str, relative: str):
 evaluate = _load("evaluate", "scripts/evaluate.py")
 
 
+def test_voicebench_judge_tasks_are_post_hoc():
+    assert {"voicebench_open", "voicebench_qa", "voicebench_refusal"} <= evaluate.JUDGE_TASKS
+
+
 def _config(tmp_path, **overrides):
     """A config over real specs in the repo, a fake MELT checkpoint and a fake SMURF one."""
     (tmp_path / "runs" / "melt-run").mkdir(parents=True)
@@ -373,6 +377,20 @@ class TestResolveJudge:
         with pytest.raises(SystemExit, match="text-only"):
             evaluate.resolve_judge({"judge": judge})
 
+    def test_a_vllm_judge_is_a_local_server(self):
+        args, kind, venv = evaluate.resolve_judge(
+            {
+                "judge": "vllm/Qwen/Qwen3-8B",
+                "judge_venv": "client",
+                "judge_args": {"max_model_len": 4096},
+            }
+        )
+        assert kind == "vllm" and venv == "client"
+        assert json.loads(args[1].removeprefix("grader=")) == {
+            "model": "vllm/Qwen/Qwen3-8B",
+            "model_args": {"max_model_len": 4096},
+        }
+
 
 class TestPostScorers:
     """Judge-free scorers run after generation (MCIF's official BERTScore, COMET)."""
@@ -443,6 +461,22 @@ class TestPostScorers:
         qa = next(j for j in jobs if j.model_name == "qwen" and j.task == "audio_chat")
         scorers, problem = evaluate.post_scorers_of(qa)
         assert scorers == [] and "not found" in problem
+
+    def test_a_vllm_judge_uses_the_persistent_server_wrapper(self, tmp_path, monkeypatch):
+        config = self._config(tmp_path)
+        bench = config["benchmarks"][0]
+        bench["judge"] = "vllm/Qwen/Qwen3-8B"
+        bench["judge_venv"] = str(tmp_path / "client")
+        monkeypatch.setenv("JUDGE_SERVER_VENV", str(tmp_path / "server"))
+        bench["judge_server_venv"] = "${JUDGE_SERVER_VENV}"
+        (tmp_path / "client").touch()
+        (tmp_path / "server").touch()
+        commands = self._score(tmp_path, monkeypatch, config)
+        command, env = next(c for c in commands if c[0][0] == "infra/runners/submit_judge_score.sh")
+        assert command[:2] == ["infra/runners/submit_judge_score.sh", "mollete"]
+        assert env["JUDGE_SERVER_VENV"] == str(tmp_path / "server")
+        assert env["VENV_PATH"] == str(tmp_path / "client")
+        assert env["JUDGE_SERVER_LOG"].endswith("judge-server.log")
 
 
 class TestRun:
@@ -674,3 +708,51 @@ class TestPacks:
         assert seen["MELT_GPUS"] == "4"
         assert seen["command"][:2] == ["infra/runners/submit_pack.sh", "jupiter"]
         assert seen["MELT_JOB_TAG"] == f"{evaluate.PACK_PREFIX}{seen['command'][2]}"
+
+
+def test_voicebench_spec_covers_all_non_mtbench_configs():
+    import yaml
+
+    spec = yaml.safe_load((ROOT / "configs/hf/voicebench.yaml").read_text())
+    assert len(spec["input_cfg"]) == 42
+    ids = [source["tags"]["dataset_id"] for source in spec["input_cfg"]]
+    assert len(ids) == len(set(ids))
+    assert all("mtbench" not in source["name"] for source in spec["input_cfg"])
+    assert all(source["text_prompt_column"] == "prompt" for source in spec["input_cfg"])
+
+
+def test_voicebench_smoke_has_one_slice_per_subtask():
+    import yaml
+
+    config = yaml.safe_load((ROOT / "configs/eval/voicebench-smoke.yaml").read_text())
+    assert len(config["benchmarks"]) == 11
+    assert sum(len(benchmark["slices"]) for benchmark in config["benchmarks"]) == 11
+
+
+def test_voicebench_ifeval_scores_after_generation():
+    import yaml
+
+    config = yaml.safe_load((ROOT / "configs/eval/voicebench-smoke.yaml").read_text())
+    bench = next(b for b in config["benchmarks"] if b["name"] == "ifeval")
+    slice_cfg = bench["slices"][0]
+    assert slice_cfg["args"] == ["--no-score"]
+    assert slice_cfg["post_scorers"] == ["melteval/scorers.py@ifeval_scorer"]
+    assert bench["post_venv"] == "${JUDGE_CLIENT_VENV}"
+
+
+def test_voicebench_full_has_all_42_slices():
+    import yaml
+
+    config = yaml.safe_load((ROOT / "configs/eval/voicebench-full.yaml").read_text())
+    assert len(config["benchmarks"]) == 11
+    assert sum(len(benchmark["slices"]) for benchmark in config["benchmarks"]) == 42
+
+
+def test_voicebench_campaigns_take_the_checkpoint_from_the_environment():
+    import yaml
+
+    for path in ("configs/eval/voicebench-smoke.yaml", "configs/eval/voicebench-full.yaml"):
+        config = yaml.safe_load((ROOT / path).read_text())
+        assert len(config["models"]) == 1
+        assert config["models"][0]["name"] == "smurf"
+        assert config["models"][0]["model"] == "smurf/${SMURF_CHECKPOINT}"

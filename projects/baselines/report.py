@@ -52,6 +52,19 @@ HEADLINE = {
     "audio_mcq": ["choice_accuracy", "unresolved_rate"],
     # Judge grade (AIR-Bench Chat) or official BERTScore (MCIF QA).
     "audio_chat": ["accuracy", "official_bertscore"],
+    # VoiceBench task ids.
+    "voicebench_open": ["open_score", "judge_coverage"],
+    "voicebench_qa": ["qa_accuracy", "judge_coverage"],
+    "voicebench_refusal": ["refusal_pass_rate", "judge_coverage"],
+    "voicebench_mcq": ["choice_accuracy", "unresolved_rate"],
+    "voicebench_ifeval": [
+        "ifeval_final",
+        "ifeval_strict_prompt",
+        "ifeval_strict_instruction",
+        "ifeval_loose_prompt",
+        "ifeval_loose_instruction",
+    ],
+    "voicebench_bbh": ["bbh_accuracy"],
 }
 
 #: Value written for a slice that ran but has no scores yet.

@@ -120,6 +120,7 @@ exec apptainer exec --nv --bind /mnt ${SACREBLEU_ARGS[@]+"${SACREBLEU_ARGS[@]}"}
         set -euo pipefail
         source /workspace/venv/bin/activate
         cd /workspace/eval
+        export PYTHONPATH="$PWD${PYTHONPATH:+:$PYTHONPATH}"
         exec inspect eval melteval/tasks.py@speech \
             --model "melt/$1" \
             --log-dir "$2" \
