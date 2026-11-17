@@ -75,8 +75,11 @@ MODEL="fondue-step-${STEP}"
 [[ -d "$CKPT" ]] || { echo "no such checkpoint: $CKPT" >&2; exit 1; }
 [[ -f "$CONFIG" ]] || { echo "no such campaign config: $CONFIG" >&2; exit 1; }
 
-# Add the model entry (once) and set the per-pack wall time. Textual, so the
-# file's comments and the `&fondue_args` anchor survive; idempotent.
+# Add the model entry and set the per-pack wall time. The entry is cloned from
+# an existing one, so the edit keeps whatever style the file has: the campaign
+# snapshot written by yaml.safe_dump puts sequence items at column 0 with
+# dumper-named anchors, while the hand-written configs in this repo indent them
+# and share a hand-named one. Both must stay valid YAML.
 edit_config() {
   "$(command -v python3)" - "$CONFIG" "$MODEL" "$CKPT" "$PACK_TIME" "$1" <<'PY'
 import re
@@ -87,24 +90,58 @@ path = Path(sys.argv[1])
 model, ckpt, pack_time, dry = sys.argv[2], sys.argv[3], sys.argv[4], sys.argv[5] == "1"
 lines = path.read_text().splitlines()
 
-venv = next((m.group(1) for line in lines if (m := re.match(r"^\s+venv:\s*(\S+)\s*$", line))), None)
-if venv is None:
-    sys.exit(f"{path}: no 'venv:' line to copy for the new model")
-entry = [
-    f"  - name: {model}",
-    f"    model: melt/{ckpt}",
-    f"    venv: {venv}",
-    "    args: *fondue_args",
+try:
+    models_at = lines.index("models:")
+except ValueError:
+    sys.exit(f"{path}: no top-level 'models:' key")
+# The block ends at the next top-level key. A sequence item can sit at column 0
+# too (yaml.safe_dump writes it there), so only a key -- not a dash -- ends it.
+end = next(
+    (i for i in range(models_at + 1, len(lines)) if re.match(r"^[^\s-]", lines[i])),
+    len(lines),
+)
+block = lines[models_at + 1 : end]
+starts = [i for i, line in enumerate(block) if re.match(r"^\s*- name:", line)]
+if not starts:
+    sys.exit(f"{path}: no model entries to clone")
+
+bounds = starts + [len(block)]
+entries = [block[starts[n] : bounds[n + 1]] for n in range(len(starts))]
+while entries and entries[-1] and not entries[-1][-1].strip():
+    entries[-1].pop()
+had_blank = any(not line.strip() for line in block)
+prefix = block[: starts[0]]
+
+# Clone the last entry whose aliases are all defined in this file, so a broken
+# entry (a dangling *alias) never becomes the template; the clone then never
+# defines an anchor of its own.
+defined = set(re.findall(r"&(\w+)", "\n".join(lines)))
+usable = [
+    entry
+    for entry in entries
+    if all(name in defined for name in re.findall(r"\*(\w+)", "\n".join(entry)))
 ]
-present = any(line.strip() == f"- name: {model}" for line in lines)
-if not present:
-    try:
-        at = lines.index("benchmarks:")
-    except ValueError:
-        sys.exit(f"{path}: no top-level 'benchmarks:' key")
-    while at > 0 and not lines[at - 1].strip():
-        at -= 1
-    lines[at:at] = entry
+if not usable:
+    sys.exit(f"{path}: no model entry with resolvable aliases to clone")
+template = usable[-1]
+entry = list(template)
+entry[0] = re.sub(r"name:\s*\S+", f"name: {model}", entry[0])
+for i, line in enumerate(entry):
+    if re.match(r"^\s*model:", line):
+        entry[i] = f"{line[: len(line) - len(line.lstrip())]}model: melt/{ckpt}"
+        break
+entry = [re.sub(r"(args:\s*)&\S+", r"\1", line) for line in entry]
+
+already = any(e[0].split("name:", 1)[1].strip() == model for e in entries)
+kept = [e for e in entries if e[0].split("name:", 1)[1].strip() != model]
+kept.append(entry)
+body = []
+for n, item in enumerate(kept):
+    if n and had_blank:
+        body.append("")
+    body.extend(item)
+new_block = prefix + body + ([""] if had_blank else [])
+lines = lines[: models_at + 1] + new_block + lines[end:]
 
 pack_at = next((i for i, line in enumerate(lines) if line.startswith("pack:")), None)
 if pack_at is not None:
@@ -118,13 +155,13 @@ if pack_at is not None:
             break
 
 if dry:
-    print("model entry " + ("already present:" if present else "would be added:"))
+    print("model entry " + ("already present, would be rewritten:" if already else "would be added:"))
     print("\n".join(entry))
     print(f'pack time would be set to "{pack_time}"')
     sys.exit(0)
 
 path.write_text("\n".join(lines) + "\n")
-print(f"{'already present' if present else 'added'} {model} in {path}")
+print(f"{'rewritten' if already else 'added'} {model} in {path}")
 PY
 }
 
