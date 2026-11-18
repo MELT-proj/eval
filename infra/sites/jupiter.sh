@@ -19,6 +19,15 @@ export AZEROS_DIR="${AZEROS_DIR:-/e/data1/smurf4eu-data/speech/azeros}"
 # Its indexed copy (scripts/index_shar.py): manifests + .idx, audio symlinked back.
 export AZEROS_INDEXED_DIR="${AZEROS_INDEXED_DIR:-${SCRATCH}/${USER}/azeros-indexed}"
 
+# --- PolySpeech (dev SQA/SLU); reconstruction and frozen set live on Jupiter ---
+if [[ -d /e/data1/smurf4eu-data/speech/polyspeech-100 ]]; then
+    export POLYSPEECH_ROOT="${POLYSPEECH_ROOT:-/e/data1/smurf4eu-data/speech/polyspeech-100}"
+fi
+_polyspeech_frozen="${POLYSPEECH_FROZEN_ROOT:-${PROJECT}/${USER}/frozen-dev/polyspeech-100-pa_qt-200}"
+if [[ -d "$_polyspeech_frozen" ]]; then
+    export POLYSPEECH_PA_QT_SET="${POLYSPEECH_PA_QT_SET:-$_polyspeech_frozen}"
+fi
+
 # --- misc ------------------------------------------------------------------------
 export HF_HUB_OFFLINE="${HF_HUB_OFFLINE:-1}"
 export TRANSFORMERS_OFFLINE="${TRANSFORMERS_OFFLINE:-1}"

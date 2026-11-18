@@ -38,6 +38,19 @@ revision, which the reader checks against the reconstruction's `README.md`.
 Prompts follow the AIR-Bench `audio_mcq` layout (letters, "Answer with the letter
 of the correct option."); `instruction_template` on a source overrides it.
 
+## Dev subset
+
+`configs/hf/polyspeech-100-pa_qt-200.yaml` is the `pa_qt` spec with
+`max_samples: 200` and `seed: 0` on every source: 4,800 samples, ~107 h. It is
+the dev SQA/SLU row, frozen as `POLYSPEECH_PA_QT_SET` and consumed by the
+separate suite `configs/eval/suites/speechval-polyspeech.yaml` (not
+`speechval-dev.yaml`, which artemis runs). It is a screening subset, **not
+comparable with full-set PolySpeech numbers**; the 200 are a seeded draw after
+the pa_qt validity filter, so `pa_qa` would pick a slightly different 200.
+`scripts/frozen_length_stats.py` reports the selected subset's duration
+distribution — the passages are long-form (89% of the full set exceeds SMURF's
+40 s training window), so read accuracy with `unresolved_rate`.
+
 ## The reconstruction the reader needs
 
 Upstream ships 110 parquet files that are *file archives* (one row = one wav or

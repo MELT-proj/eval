@@ -367,3 +367,44 @@ class TestSpeechvalDevSpecs:
                 continue
             for sl in b["slices"]:
                 assert sl["dataset_id"] in known, sl
+
+    def test_polyspeech_dev_spec_is_the_full_spec_with_a_200_cap(self):
+        full = load_spec(self.ROOT / "configs/hf/polyspeech-100-pa_qt.yaml")
+        dev = load_spec(self.ROOT / "configs/hf/polyspeech-100-pa_qt-200.yaml")
+        assert len(full["input_cfg"]) == len(dev["input_cfg"]) == 24
+        assert [s["tags"]["dataset_id"] for s in full["input_cfg"]] == [
+            s["tags"]["dataset_id"] for s in dev["input_cfg"]
+        ]
+        for source in dev["input_cfg"]:
+            assert source["variant"] == "pa_qt"
+            assert source["max_samples"] == 200
+            assert source["seed"] == 0
+        for full_source, dev_source in zip(full["input_cfg"], dev["input_cfg"]):
+            def strip_cap(source: dict) -> dict:
+                return {k: v for k, v in source.items() if k not in ("max_samples", "seed")}
+
+            assert strip_cap(full_source) == strip_cap(dev_source)
+
+    def test_polyspeech_suite_has_one_slice_per_language(self):
+        import yaml
+
+        dev = load_spec(self.ROOT / "configs/hf/polyspeech-100-pa_qt-200.yaml")
+        suite = yaml.safe_load(
+            (self.ROOT / "configs/eval/suites/speechval-polyspeech.yaml").read_text()
+        )["benchmarks"]
+        assert len(suite) == 1
+        [bench] = suite
+        assert bench["name"] == "polyspeech-100-pa_qt-200"
+        assert bench["frozen_set"] == "${POLYSPEECH_PA_QT_SET}"
+        assert len(bench["slices"]) == 24
+        assert {s["task"] for s in bench["slices"]} == {"audio_mcq"}
+        assert len({s["dataset_id"] for s in bench["slices"]}) == 24
+        assert {s["dataset_id"] for s in bench["slices"]} == {
+            source["tags"]["dataset_id"] for source in dev["input_cfg"]
+        }
+
+    def test_polyspeech_is_not_in_the_main_dev_suite(self):
+        import yaml
+
+        suite = yaml.safe_load((self.ROOT / "configs/eval/suites/speechval-dev.yaml").read_text())["benchmarks"]
+        assert all("polyspeech" not in bench["name"].lower() for bench in suite)

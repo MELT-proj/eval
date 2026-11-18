@@ -11,6 +11,7 @@ listed in `configs/eval/suites/speechval-dev.yaml`.
 | FLEURS en->X | `configs/shar/fleurs24-st-enx-dev.yaml` | frozen | `fleurs-en_<lang>-dev` (23) | `FLEURS24_ST_ENX_DEV_SET` |
 | CoVoST2 | `configs/shar/st-eval-campaign-v1-dev.yaml` | frozen | `covost2-<src>_en-dev` (21), `covost2-en_<tgt>-dev` (15) | `COVOST2_DEV_SET` |
 | EuroparlST | `configs/shar/europarl-st-dev.yaml` | frozen | `europarl-st-<src>_<tgt>-dev` (72) | `EUROPARL_ST_DEV_SET` |
+| PolySpeech-100 (SQA/SLU) | `configs/hf/polyspeech-100-pa_qt-200.yaml` | frozen, Jupiter-only | `polyspeech-pa_qt-<lang>` (24) | `POLYSPEECH_PA_QT_SET` |
 
 LibriSpeech is frozen rather than read live from the Hub: `datasets` prepares
 every split of `openslr/librispeech_asr`'s `clean`/`other` config even when only
@@ -103,6 +104,7 @@ Frozen sets (locators are absolute paths, so they only work on their own machine
 | `FLEURS24_ST_ENX_DEV_SET` | jupiter `/e/data1/smurf4eu-data/speech/frozen-dev/fleurs24-st-enx-dev`; artemis `/mnt/scratch-artemis/giuseppe/frozen/speechval-dev/fleurs24-st-enx-dev` |
 | `COVOST2_DEV_SET` | jupiter `/e/data1/smurf4eu-data/speech/frozen-dev/st-eval-campaign-v1-dev`; artemis `/mnt/scratch-artemis/giuseppe/frozen/speechval-dev/st-eval-campaign-v1-dev` (36 directions, 61452) |
 | `EUROPARL_ST_DEV_SET` | artemis `/mnt/scratch-artemis/giuseppe/frozen/speechval/europarl-st-dev` (72 directions, 36000) |
+| `POLYSPEECH_PA_QT_SET` | jupiter `/e/project1/e-ext-2025e01-100/attanasio1/frozen-dev/polyspeech-100-pa_qt-200` (24 languages, 4800; `POLYSPEECH_ROOT` is the reconstruction) |
 
 Samples (capped sets, see below): VoxPopuli 13034 (1000 each for en, de, fr, es, pl, it, ro, hu, cs, nl; sl 889,
 hr 789, fi 687, sk 669). The freezer drops cuts with empty `text` (VoxPopuli validation has untranscribed cuts: hr
@@ -122,6 +124,42 @@ LibriSpeech are run in full.
 
 The uncapped sets are kept next to the capped ones, renamed `*.full` (CoVoST2 on both machines, VoxPopuli on jupiter;
 the uncapped VoxPopuli set still includes et and lt).
+
+## PolySpeech (SQA/SLU, Jupiter only)
+
+The dev partition's SQA/SLU row. It lives in its own suite,
+`configs/eval/suites/speechval-polyspeech.yaml`, rather than in
+`speechval-dev.yaml`: the reconstruction
+(`/e/data1/smurf4eu-data/speech/polyspeech-100`, revision `5c92353`) is on
+Jupiter only, so folding it into the shared suite would make every artemis
+dev-suite run fail on an unset `${POLYSPEECH_PA_QT_SET}`. The dev partition is
+the union of the two suites.
+
+`pa_qt` (passage audio, question and options as text), 24 languages (EU-24 plus
+uk and ru), **200 samples per language, seed 0: 4,800 records, ~107 h**. The
+spec is `configs/hf/polyspeech-100-pa_qt-200.yaml`: the full `pa_qt` spec with
+`max_samples: 200` on every source. This is a screening subset — do not compare
+it with full-set PolySpeech numbers, whose 24 × 801 samples cost ~5× the GPU
+time. Freeze it where the audio is:
+
+```bash
+export POLYSPEECH_ROOT=/e/data1/smurf4eu-data/speech/polyspeech-100
+melteval freeze configs/hf/polyspeech-100-pa_qt-200.yaml -o <frozen>/polyspeech-100-pa_qt-200
+python scripts/frozen_length_stats.py <frozen>/polyspeech-100-pa_qt-200 --json <frozen>/polyspeech-100-pa_qt-200/length_stats.json
+```
+
+**Passages are long-form.** The SMURF run trains with `max_duration: 40 s`; the
+full reconstruction's passages have median 78.6 s, p95 145.6 s, max 264.6 s, and
+89% exceed 40 s. The selected subset's distribution (n, median, p95, fraction
+over 40 s) is in `length_stats.json` next to the frozen set and quoted in the
+campaign notes. Read the accuracy with that in mind: at the 25% chance level
+with a high `unresolved_rate`, the passages are beyond the model rather than a
+result. The row is SMURF-only for now; the 30–40 s baselines cannot run it.
+
+Seven languages (de et hu lt nl ro ru) use a different 801-question set from
+the other 17. Per-language numbers are still comparable on their own; a
+cross-language mean is not a parallel split, so compare those seven on the
+question overlap (`extra.index` / `extra.qid`).
 
 ## Canary-1B-v2 baseline (artemis, 2026-11-12)
 
