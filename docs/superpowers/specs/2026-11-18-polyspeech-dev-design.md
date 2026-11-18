@@ -131,6 +131,13 @@ No judge and no post-scorer: `audio_mcq` uses `mcq_scorer` and reports
   Acceptance: `frozen_set.json` reports 4,800 samples, 24 dataset_ids, exactly
   200 per language, and every record's `cut_id` is present in the manifest.
 
+- **Length distribution of the selected subset**, recorded next to the frozen
+  set: pooled and per language, n, mean, median, p90, p95, min, max, and the
+  fraction above 40 s (the training window). A small
+  `scripts/frozen_length_stats.py <frozen-dir>` reads `manifest.jsonl`, prints
+  the table and writes `length_stats.json`; `docs/speechval.md` quotes the
+  pooled line. This is the evidence behind the extrapolation caveat.
+
 ### 4. Jupiter environment
 
 The shared venv is readable but not writable, and its editable installs point at
@@ -200,7 +207,8 @@ the model list with anchors; the rendered config is kept next to the campaign.
 2. Sync the repo to `eval-polyspeech`, export `PYTHONPATH`, and verify
    `import fbk_speechllm.prompts, melteval` resolves to the repo copy (login
    node, no GPU).
-3. Freeze the 200 subset and validate the counts.
+3. Freeze the 200 subset, run `scripts/frozen_length_stats.py` on it, and
+   validate the counts.
 4. Smoke: 1 GPU, `-T dataset_id=polyspeech-pa_qt-en -T limit=20` on 102k.
 5. Pilot: 102k and 594k × 24 slices, one 4-GPU pack each; record wall time,
    submit→start wait, and accuracy against the 25% chance level.
