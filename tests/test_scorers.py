@@ -818,6 +818,24 @@ class TestResolveChoice:
     def test_the_option_text_alone(self):
         assert resolve_choice("Female", self.CHOICES) == "Female"
 
+    def test_an_explicit_answer_statement_mid_sentence(self):
+        """A model that announces the answer and then explains should resolve:
+        the letter is explicit even when the explanation names other options."""
+        completion = (
+            "The correct answer is **C. Nonbinary**. The passage mentions "
+            "Male (A) and Female (B), but the speaker says they are nonbinary."
+        )
+        assert resolve_choice(completion, self.CHOICES) == "Nonbinary"
+
+    def test_an_explicit_answer_statement_without_emphasis(self):
+        assert resolve_choice("Correct answer: D. The rest of the explanation follows.", self.CHOICES) == "Unclear"
+
+    def test_contradictory_answer_statements_resolve_to_nothing(self):
+        assert resolve_choice("The answer is A. Later: the answer is B, I think.", self.CHOICES) is None
+
+    def test_the_indefinite_article_is_not_a_label(self):
+        assert resolve_choice("The answer is a bird.", self.CHOICES) is None
+
     def test_option_text_inside_a_sentence(self):
         assert resolve_choice("I think the speaker is female.", self.CHOICES) == "Female"
 

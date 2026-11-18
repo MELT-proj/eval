@@ -163,7 +163,7 @@ _PREAMBLE_RE = re.compile(
     r"""^\s*(?P<lead>[^'"‘’“”:\n]{3,120}?)\s*:\s*(?P<open>['"‘“])(?P<body>.+)(?P<close>['"’”])\s*[.!?]?\s*$""",
     re.DOTALL,
 )
-_PREAMBLE_LEAD_WORDS = re.compile(r"\b(audio|speech|transcri\w*|recording|content|speaker|clip|utterance)\b", re.I)
+_PREAMBLE_LEAD_WORDS = re.compile(r"\b(audio|speech|transcri\w*|recording|content|speaker|clip|utterance)\b", re.IGNORECASE)
 _CLOSING_QUOTE = {"'": "'", '"': '"', "‘": "’", "“": "”"}
 
 
@@ -768,6 +768,15 @@ _LEADING_LABEL = re.compile(r"^\W*([a-z])\s*(?:[.):\-]|$)", re.IGNORECASE)
 #: prompt.
 _TRAILING_LABEL = re.compile(r"(?:^|\W)\(?([A-Z])\)?\.?\s*$")
 
+#: An explicit answer statement anywhere in the completion -- "The correct
+#: answer is **C. ...", "Correct answer: D". Same case guard as the trailing
+#: label: "the answer is a bird" names the article, not option A. Markdown
+#: emphasis and punctuation are allowed between the phrase and the letter
+#: because chat models bold their answers.
+_ANSWER_IS_LABEL = re.compile(
+    r"(?i:(?:the\s+)?(?:correct\s+)?answer)\s*(?i:is|:)\s*[\s*_`(\"']*([A-Z])\b"
+)
+
 _PUNCTUATION = re.compile(r"[^\w\s]", re.UNICODE)
 _WHITESPACE = re.compile(r"\s+")
 
@@ -795,8 +804,9 @@ def resolve_choice(completion: str, choices: list[str]) -> str | None:
 
     1. a leading option label (``"B"``, ``"B."``, ``"(b)"``);
     2. a capitalised label the completion ends on ("The answer is B.");
-    3. the whole completion equal to one option's text;
-    4. exactly one option's text appearing somewhere in the completion.
+    3. an explicit answer statement anywhere ("The answer is **C. ...**");
+    4. the whole completion equal to one option's text;
+    5. exactly one option's text appearing somewhere in the completion.
 
     Step 4 requires the match to be *unique*: a model that echoes the full
     option list has not answered, and crediting it with the first option it
@@ -821,6 +831,16 @@ def resolve_choice(completion: str, choices: list[str]) -> str | None:
             position = ord(label.group(1).upper()) - ord("A")
             if 0 <= position < len(choices):
                 return choices[position]
+
+    # An explicit "the answer is C" outranks option texts mentioned in the
+    # explanation. Two different statements are a contradiction, not a choice.
+    answer_labels = {match.group(1) for match in _ANSWER_IS_LABEL.finditer(stripped)}
+    if len(answer_labels) > 1:
+        return None
+    if answer_labels:
+        position = ord(answer_labels.pop()) - ord("A")
+        if 0 <= position < len(choices):
+            return choices[position]
 
     normalized = _normalize_choice_text(stripped)
     if not normalized:
