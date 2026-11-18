@@ -206,3 +206,92 @@ def test_config_only_repairs_a_broken_entry(tmp_path):
     doc = yaml.safe_load(config.read_text())
     assert [m["name"] for m in doc["models"]].count("fondue-step-45000") == 1
     assert doc["models"][-1]["args"] == ["-M", "batch_size=8"]
+
+
+#: A stand-in for ssh: records the remote command and answers `evaluate.py
+#: status` from a script of canned outputs, one line per call.
+STUB_SSH = """\
+#!/usr/bin/env bash
+echo "$*" >> "$SSH_LOG"
+shift
+case "$*" in
+  *"evaluate.py status "*)
+    n=$(( $(cat "$SSH_COUNT" 2>/dev/null || echo 0) + 1 ))
+    echo "$n" > "$SSH_COUNT"
+    sed -n "${n}p" "$STATUS_SCRIPT"
+    ;;
+esac
+exit 0
+"""
+
+
+def scheduling_run(tmp_path, status_lines, rounds="3"):
+    """Run the script end to end against the ssh stub; return (result, invocations)."""
+    stub = tmp_path / "bin"
+    stub.mkdir()
+    (stub / "ssh").write_text(STUB_SSH)
+    (stub / "ssh").chmod(0o755)
+    status = tmp_path / "status.txt"
+    status.write_text("\n".join(status_lines) + "\n")
+    env = {
+        "PATH": f"{stub}:/usr/bin:/bin",
+        "MELT_FONDUE_CONFIG": str(tmp_path / "config.yaml"),
+        "MELT_FONDUE_CKPT_ROOT": str(tmp_path / "fondue-keep"),
+        "SSH_LOG": str(tmp_path / "ssh.log"),
+        "SSH_COUNT": str(tmp_path / "ssh.count"),
+        "STATUS_SCRIPT": str(status),
+        "MELT_ROUNDS": rounds,
+    }
+    result = subprocess.run(
+        ["bash", str(SCRIPT), "33000"], capture_output=True, text=True, env=env, check=False
+    )
+    log = (tmp_path / "ssh.log").read_text() if (tmp_path / "ssh.log").exists() else ""
+    return result, log.splitlines()
+
+
+@pytest.fixture
+def sched(tmp_path):
+    config = tmp_path / "config.yaml"
+    config.write_text(GENERATED)
+    (tmp_path / "fondue-keep" / "checkpoint-33000").mkdir(parents=True)
+    return tmp_path
+
+
+def test_every_launcher_call_carries_the_site(sched):
+    result, calls = scheduling_run(sched, ["", ""])
+    assert result.returncode == 0, result.stderr
+    assert calls, "the script never reached the launcher"
+    assert all("--site artemis" in call for call in calls), calls
+
+
+def test_a_round_with_missing_slices_is_retried(sched):
+    result, calls = scheduling_run(sched, ["missing  fondue-step-33000 x a/b", ""])
+    assert result.returncode == 0, result.stderr
+    packs = [call for call in calls if "--benchmarks librispeech-validation-clean" in call]
+    assert len(packs) == 2, calls
+
+
+def test_a_failing_status_call_is_not_read_as_done(sched):
+    status = sched / "status.txt"
+    status.write_text("\n\n")
+    stub = sched / "bin"
+    stub.mkdir(exist_ok=True)
+    fail_status = STUB_SSH.replace(
+        "exit 0", 'case "$*" in *"evaluate.py status "*) exit 1;; esac\nexit 0'
+    )
+    (stub / "ssh").write_text(fail_status)
+    (stub / "ssh").chmod(0o755)
+    env = {
+        "PATH": f"{stub}:/usr/bin:/bin",
+        "MELT_FONDUE_CONFIG": str(sched / "config.yaml"),
+        "MELT_FONDUE_CKPT_ROOT": str(sched / "fondue-keep"),
+        "SSH_LOG": str(sched / "ssh.log"),
+        "SSH_COUNT": str(sched / "ssh.count"),
+        "STATUS_SCRIPT": str(status),
+    }
+    result = subprocess.run(
+        ["bash", str(SCRIPT), "33000"], capture_output=True, text=True, env=env, check=False
+    )
+    assert result.returncode != 0
+    assert "every slice has a successful log" not in result.stdout
+    assert "status" in result.stderr.lower()

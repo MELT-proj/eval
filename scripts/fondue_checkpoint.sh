@@ -211,7 +211,11 @@ launch() {
 # Slices still without a successful log, from the launcher's own status view.
 needs_work() {
   local out
-  out="$(launch status "$CONFIG" --models "$MODEL" 2>&1)" || return 1
+  if ! out="$(launch status "$CONFIG" --models "$MODEL" --site "$SITE" 2>&1)"; then
+    echo "could not read the run's status; refusing to guess whether work remains:" >&2
+    echo "$out" >&2
+    exit 1
+  fi
   grep -qE '^(missing|failed)[[:space:]]' <<<"$out"
 }
 
@@ -239,4 +243,4 @@ fi
 
 echo
 echo "== final status"
-launch status "$CONFIG" --models "$MODEL"
+launch status "$CONFIG" --models "$MODEL" --site "$SITE"
