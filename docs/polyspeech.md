@@ -38,6 +38,41 @@ revision, which the reader checks against the reconstruction's `README.md`.
 Prompts follow the AIR-Bench `audio_mcq` layout (letters, "Answer with the letter
 of the correct option."); `instruction_template` on a source overrides it.
 
+## Dev subset
+
+`configs/hf/polyspeech-100-pa_qt-200.yaml` is the `pa_qt` spec with
+`max_samples: 200` and `seed: 0` on every source: 4,800 samples, ~107 h. It is
+the dev SQA/SLU row, frozen as `POLYSPEECH_PA_QT_SET` and consumed by the
+separate suite `configs/eval/suites/speechval-polyspeech.yaml` (not
+`speechval-dev.yaml`, which artemis runs). It is a screening subset, **not
+comparable with full-set PolySpeech numbers**; the 200 are a seeded draw after
+the pa_qt validity filter, so `pa_qa` would pick a slightly different 200.
+`scripts/frozen_length_stats.py` reports the selected subset's duration
+distribution — the passages are long-form (89% of the full set exceeds SMURF's
+40 s training window), so read accuracy with `unresolved_rate`.
+
+## What `mcq_scorer` accepts
+
+The reference is the option's **text**, so the scorer has to read an option out
+of a free-form completion. `resolve_choice` tries these, most explicit first:
+
+| form | example |
+|---|---|
+| a leading label | `B`, `B.`, `(b)`, `b:` |
+| a capitalised label the completion ends on | `The answer is B.` |
+| an explicit answer/option/choice statement | `The correct answer is **C. …**`, `The correct answer is: D`, `The correct option is B`, `The correct choice is C` |
+| the option text alone | `Nonbinary` |
+| exactly one option's text inside a sentence | `I think the speaker is nonbinary.` |
+
+Text matching ignores case and punctuation. Three guards matter in practice:
+the letter in the trailing and explicit forms must be **capitalised** (`the
+answer is a bird` names the article, not option A); two different explicit
+letters (`the answer is A … the answer is B`) are a contradiction and resolve
+to nothing; and a completion that mentions several options without an explicit
+letter is unresolved. An explicit letter outranks option text when they
+disagree. `unresolved_rate` reports the share of completions none of this could
+read.
+
 ## The reconstruction the reader needs
 
 Upstream ships 110 parquet files that are *file archives* (one row = one wav or

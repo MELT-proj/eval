@@ -818,6 +818,46 @@ class TestResolveChoice:
     def test_the_option_text_alone(self):
         assert resolve_choice("Female", self.CHOICES) == "Female"
 
+    def test_an_explicit_answer_statement_mid_sentence(self):
+        """A model that announces the answer and then explains should resolve:
+        the letter is explicit even when the explanation names other options."""
+        completion = (
+            "The correct answer is **C. Nonbinary**. The passage mentions "
+            "Male (A) and Female (B), but the speaker says they are nonbinary."
+        )
+        assert resolve_choice(completion, self.CHOICES) == "Nonbinary"
+
+    def test_an_explicit_answer_statement_without_emphasis(self):
+        assert resolve_choice("Correct answer: D. The rest of the explanation follows.", self.CHOICES) == "Unclear"
+
+    def test_an_explicit_answer_with_a_colon_after_is(self):
+        completion = (
+            "The correct answer is: **D. Unclear**. Options A (Male), "
+            "B (Female) and C (Nonbinary) are all wrong."
+        )
+        assert resolve_choice(completion, self.CHOICES) == "Unclear"
+
+    def test_an_explicit_option_statement(self):
+        completion = (
+            "The correct option is B. Options A (Male), C (Nonbinary) and D (Unclear) are all wrong."
+        )
+        assert resolve_choice(completion, self.CHOICES) == "Female"
+
+    def test_an_explicit_choice_statement(self):
+        completion = (
+            "The correct choice is C. Options A (Male), B (Female) and D (Unclear) are all wrong."
+        )
+        assert resolve_choice(completion, self.CHOICES) == "Nonbinary"
+
+    def test_a_statement_about_an_option_is_not_an_answer(self):
+        assert resolve_choice("The option C is wrong, and B too.", self.CHOICES) is None
+
+    def test_contradictory_answer_statements_resolve_to_nothing(self):
+        assert resolve_choice("The answer is A. Later: the answer is B, I think.", self.CHOICES) is None
+
+    def test_the_indefinite_article_is_not_a_label(self):
+        assert resolve_choice("The answer is a bird.", self.CHOICES) is None
+
     def test_option_text_inside_a_sentence(self):
         assert resolve_choice("I think the speaker is female.", self.CHOICES) == "Female"
 

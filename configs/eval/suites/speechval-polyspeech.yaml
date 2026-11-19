@@ -1,0 +1,34 @@
+# SQA/SLU half of the speechval-dev partition. Separate from speechval-dev.yaml
+# on purpose: the reconstruction is Jupiter-only, so folding it into the main
+# suite would break every artemis run on an unset ${POLYSPEECH_PA_QT_SET}.
+# Paired with configs/hf/polyspeech-100-pa_qt-200.yaml (200 samples/language,
+# seed 0). Scored by mcq_scorer (accuracy per dataset_id, unresolved_rate), no judge.
+
+benchmarks:
+  - name: polyspeech-100-pa_qt-200
+    frozen_set: ${POLYSPEECH_PA_QT_SET}
+    slices:
+      - {task: audio_mcq, dataset_id: polyspeech-pa_qt-bg}
+      - {task: audio_mcq, dataset_id: polyspeech-pa_qt-cs}
+      - {task: audio_mcq, dataset_id: polyspeech-pa_qt-da}
+      - {task: audio_mcq, dataset_id: polyspeech-pa_qt-nl}
+      - {task: audio_mcq, dataset_id: polyspeech-pa_qt-en}
+      - {task: audio_mcq, dataset_id: polyspeech-pa_qt-et}
+      - {task: audio_mcq, dataset_id: polyspeech-pa_qt-fi}
+      - {task: audio_mcq, dataset_id: polyspeech-pa_qt-fr}
+      - {task: audio_mcq, dataset_id: polyspeech-pa_qt-de}
+      - {task: audio_mcq, dataset_id: polyspeech-pa_qt-el}
+      - {task: audio_mcq, dataset_id: polyspeech-pa_qt-hu}
+      - {task: audio_mcq, dataset_id: polyspeech-pa_qt-it}
+      - {task: audio_mcq, dataset_id: polyspeech-pa_qt-lv}
+      - {task: audio_mcq, dataset_id: polyspeech-pa_qt-lt}
+      - {task: audio_mcq, dataset_id: polyspeech-pa_qt-mt}
+      - {task: audio_mcq, dataset_id: polyspeech-pa_qt-pl}
+      - {task: audio_mcq, dataset_id: polyspeech-pa_qt-pt}
+      - {task: audio_mcq, dataset_id: polyspeech-pa_qt-ro}
+      - {task: audio_mcq, dataset_id: polyspeech-pa_qt-sk}
+      - {task: audio_mcq, dataset_id: polyspeech-pa_qt-sl}
+      - {task: audio_mcq, dataset_id: polyspeech-pa_qt-es}
+      - {task: audio_mcq, dataset_id: polyspeech-pa_qt-sv}
+      - {task: audio_mcq, dataset_id: polyspeech-pa_qt-uk}
+      - {task: audio_mcq, dataset_id: polyspeech-pa_qt-ru}

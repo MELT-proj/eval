@@ -115,6 +115,26 @@ Useful options: `--models a b`, `--benchmarks x`, `--out DIR` (instead of
 `output_dir`), and `run --limit 5` for a smoke test (5 samples per job, written
 to `<output_dir>/smoke-limit5/` so it never counts as the real run).
 
+### Scheduling one checkpoint's whole battery
+
+`scripts/fondue_checkpoint.sh <step>` does the four commands above for a single
+Fondue checkpoint, in the one order that fits `gpu-short`'s 4 h job cap: it adds
+`fondue-step-<step>` to the campaign config (textually, reusing the
+`&fondue_args` anchor, so it is idempotent and keeps the comments), runs the
+eval as three sub-4 h packs — ASR, FLEURS ST, the rest of ST — repeating any
+phase that timed out, and then scores the ST logs with MetricX. `--dry-run`
+prints the plan and changes nothing; `--no-score` stops after the eval;
+`--config-only` just adds the model entry.
+
+```bash
+nohup scripts/fondue_checkpoint.sh 33000 > /tmp/fondue-33000.log 2>&1 &
+```
+
+It runs for several hours, so start it detached. It drives the launcher over
+ssh when the local host has no SLURM client, and in place when it does; the
+campaign config it edits defaults to
+`$EVAL_ROOT/speechval-fondue/config.yaml` (`MELT_FONDUE_CONFIG` overrides).
+
 ### Where it runs
 
 - `--site <name>`: through SLURM, using `infra/sites/<name>.sh` for the venv,

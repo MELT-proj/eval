@@ -1,0 +1,113 @@
+# Canary-1B-v2 on speechval-dev (dev). Canary is NeMo, not a chat model: its
+# "instruction" is <task>|<source>|<target>, turned into transcribe() arguments.
+# It covers 25 European languages and translates only with English on one side,
+# so every unsupported direction is skipped explicitly (see docs/speechval.md).
+#
+#   python scripts/evaluate.py plan configs/eval/speechval-canary.yaml --site artemis
+#   python scripts/evaluate.py run  configs/eval/speechval-canary.yaml --site artemis --wait
+
+name: speechval-canary
+output_dir: ${EVAL_ROOT}/speechval-canary
+
+models:
+  - name: canary-1b-v2
+    model: melt/hf/canary
+    venv: /mnt/scratch-artemis/giuseppe/melt-data/pyextras/canary-shim/activate
+    args: [-M, batch_size=16]
+    instruction:
+      asr: "asr|{lang_code}|{lang_code}"
+      st: "st|{src_lang_code}|{tgt_lang_code}"
+
+benchmarks: configs/eval/suites/speechval-dev.yaml
+
+skip:
+  # FLEURS ga: Irish is not one of the 25 languages canary covers.
+  - fleurs-ga_en-dev
+  - fleurs-en_ga-dev
+  # CoVoST2 directions with a language canary does not cover (ar ca cy fa id ja
+  # mn ta tr zh), both ways.
+  - covost2-ar_en-dev
+  - covost2-ca_en-dev
+  - covost2-cy_en-dev
+  - covost2-fa_en-dev
+  - covost2-id_en-dev
+  - covost2-ja_en-dev
+  - covost2-mn_en-dev
+  - covost2-ta_en-dev
+  - covost2-tr_en-dev
+  - covost2-zh_en-dev
+  - covost2-en_ar-dev
+  - covost2-en_ca-dev
+  - covost2-en_cy-dev
+  - covost2-en_fa-dev
+  - covost2-en_id-dev
+  - covost2-en_ja-dev
+  - covost2-en_mn-dev
+  - covost2-en_ta-dev
+  - covost2-en_tr-dev
+  - covost2-en_zh-dev
+  # EuroparlST pairs with no English side (56 of 72). All eight languages are
+  # covered by canary, but it translates only en<->X.
+  - europarl-st-fr_de-dev
+  - europarl-st-fr_es-dev
+  - europarl-st-fr_it-dev
+  - europarl-st-fr_pt-dev
+  - europarl-st-fr_pl-dev
+  - europarl-st-fr_ro-dev
+  - europarl-st-fr_nl-dev
+  - europarl-st-de_fr-dev
+  - europarl-st-de_es-dev
+  - europarl-st-de_it-dev
+  - europarl-st-de_pt-dev
+  - europarl-st-de_pl-dev
+  - europarl-st-de_ro-dev
+  - europarl-st-de_nl-dev
+  - europarl-st-es_fr-dev
+  - europarl-st-es_de-dev
+  - europarl-st-es_it-dev
+  - europarl-st-es_pt-dev
+  - europarl-st-es_pl-dev
+  - europarl-st-es_ro-dev
+  - europarl-st-es_nl-dev
+  - europarl-st-it_fr-dev
+  - europarl-st-it_de-dev
+  - europarl-st-it_es-dev
+  - europarl-st-it_pt-dev
+  - europarl-st-it_pl-dev
+  - europarl-st-it_ro-dev
+  - europarl-st-it_nl-dev
+  - europarl-st-pt_fr-dev
+  - europarl-st-pt_de-dev
+  - europarl-st-pt_es-dev
+  - europarl-st-pt_it-dev
+  - europarl-st-pt_pl-dev
+  - europarl-st-pt_ro-dev
+  - europarl-st-pt_nl-dev
+  - europarl-st-pl_fr-dev
+  - europarl-st-pl_de-dev
+  - europarl-st-pl_es-dev
+  - europarl-st-pl_it-dev
+  - europarl-st-pl_pt-dev
+  - europarl-st-pl_ro-dev
+  - europarl-st-pl_nl-dev
+  - europarl-st-ro_fr-dev
+  - europarl-st-ro_de-dev
+  - europarl-st-ro_es-dev
+  - europarl-st-ro_it-dev
+  - europarl-st-ro_pt-dev
+  - europarl-st-ro_pl-dev
+  - europarl-st-ro_nl-dev
+  - europarl-st-nl_fr-dev
+  - europarl-st-nl_de-dev
+  - europarl-st-nl_es-dev
+  - europarl-st-nl_it-dev
+  - europarl-st-nl_pt-dev
+  - europarl-st-nl_pl-dev
+  - europarl-st-nl_ro-dev
+
+# One SLURM job per wave, one model load for all its slices (artemis has no
+# MELT_PACK_GPUS by default; this is the only pack setting needed).
+pack:
+  time: "04:00:00"
+  max_slices: 200
+  gpus: 1
