@@ -166,6 +166,13 @@ the model is far above chance but not improving on this extrapolated setting.
 a completion, not an explicit mid-sentence "the correct answer is C", which
 counted 55% of a smoke's answers as unresolved.
 
+**Full battery (2026-11-19).** All 84 checkpoints, 24 slices each (2,016 runs),
+0 failed. Macro choice accuracy **0.443–0.474, median 0.457**; mean
+`unresolved_rate` 0.0005. The trend is flat from 102k to 600k (0.464 at 102k,
+0.455 at 600k), with Polish (0.409) hardest and Romanian (0.515) easiest. At
+~15.5 min per 24-slice pack on 4 GPUs the whole battery cost roughly 90
+GPU-hours.
+
 Seven languages (de et hu lt nl ro ru) use a different 801-question set from
 the other 17. Per-language numbers are still comparable on their own; a
 cross-language mean is not a parallel split, so compare those seven on the
