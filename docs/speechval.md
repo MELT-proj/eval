@@ -136,7 +136,7 @@ dev-suite run fail on an unset `${POLYSPEECH_PA_QT_SET}`. The dev partition is
 the union of the two suites.
 
 `pa_qt` (passage audio, question and options as text), 24 languages (EU-24 plus
-uk and ru), **200 samples per language, seed 0: 4,800 records, ~107 h**. The
+uk and ru), **200 samples per language, seed 0: 4,800 records, 109.1 h**. The
 spec is `configs/hf/polyspeech-100-pa_qt-200.yaml`: the full `pa_qt` spec with
 `max_samples: 200` on every source. This is a screening subset — do not compare
 it with full-set PolySpeech numbers, whose 24 × 801 samples cost ~5× the GPU
@@ -148,13 +148,23 @@ melteval freeze configs/hf/polyspeech-100-pa_qt-200.yaml -o <frozen>/polyspeech-
 python scripts/frozen_length_stats.py <frozen>/polyspeech-100-pa_qt-200 --json <frozen>/polyspeech-100-pa_qt-200/length_stats.json
 ```
 
-**Passages are long-form.** The SMURF run trains with `max_duration: 40 s`; the
-full reconstruction's passages have median 78.6 s, p95 145.6 s, max 264.6 s, and
-89% exceed 40 s. The selected subset's distribution (n, median, p95, fraction
-over 40 s) is in `length_stats.json` next to the frozen set and quoted in the
-campaign notes. Read the accuracy with that in mind: at the 25% chance level
-with a high `unresolved_rate`, the passages are beyond the model rather than a
-result. The row is SMURF-only for now; the 30–40 s baselines cannot run it.
+**Passages are long-form.** The SMURF run trains with `max_duration: 40 s`, and
+the selected subset is well outside it: **n = 4,800, mean 81.8 s, median 79.2 s,
+p90 127.8 s, p95 145.0 s, max 255.5 s, and 88.8% exceed 40 s**. Only mt (23.0%)
+and uk (37.5%) are substantially inside the window; the other 22 languages are
+81–99% over it. The per-language table is next to the frozen set
+(`length_stats.json`). The row is SMURF-only for now; the 30–40 s baselines
+cannot run it.
+
+**Pilot (2026-11-19).** Two checkpoints (102k and 594k), 24 slices each, 4 GPUs:
+both finished in ~15.5 min with 0 failed slices, after a 4 h 33 m queue wait.
+Macro choice accuracy was **0.464 (102k)** and **0.454 (594k)** against 0.25
+chance, with mean `unresolved_rate` 0.001 and 0.000; per-language accuracy ranged
+0.41–0.53 and 0.41–0.52. The near-flat 102k→594k trend is the useful signal:
+the model is far above chance but not improving on this extrapolated setting.
+`mcq_scorer` needed one fix first: it only read a letter at the start or end of
+a completion, not an explicit mid-sentence "the correct answer is C", which
+counted 55% of a smoke's answers as unresolved.
 
 Seven languages (de et hu lt nl ro ru) use a different 801-question set from
 the other 17. Per-language numbers are still comparable on their own; a
