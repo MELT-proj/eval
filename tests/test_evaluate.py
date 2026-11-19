@@ -326,6 +326,17 @@ class TestSuite:
         config = evaluate.load_config(self._write(tmp_path, [{"name": "a", "slices": []}]), None)
         assert config["benchmarks"] == [{"name": "a", "slices": []}]
 
+    def test_a_list_of_suite_paths_is_concatenated_in_order(self, tmp_path):
+        import yaml
+
+        paths = []
+        for name in ("a", "b"):
+            path = tmp_path / f"{name}.yaml"
+            path.write_text(yaml.safe_dump({"benchmarks": [{"name": name, "slices": []}]}))
+            paths.append(str(path))
+        config = evaluate.load_config(self._write(tmp_path, paths), None)
+        assert [b["name"] for b in config["benchmarks"]] == ["a", "b"]
+
     def test_a_missing_suite_stops_with_its_path(self, tmp_path):
         with pytest.raises(SystemExit, match="nope.yaml"):
             evaluate.load_config(self._write(tmp_path, "configs/eval/suites/nope.yaml"), None)

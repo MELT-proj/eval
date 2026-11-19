@@ -98,13 +98,33 @@ Frozen sets (locators are absolute paths, so they only work on their own machine
 
 | env var | path |
 |---|---|
-| `LIBRISPEECH_VALIDATION_SET` | artemis `/mnt/scratch-artemis/giuseppe/frozen/speechval-dev/librispeech-validation`; jupiter: freeze `configs/shar/librispeech-validation.yaml` there and set this |
+| `LIBRISPEECH_VALIDATION_SET` | artemis `/mnt/scratch-artemis/giuseppe/frozen/speechval-dev/librispeech-validation`; jupiter `${PROJECT}/${USER}/frozen-dev/librispeech-validation` (the two validation shards copied from artemis, see below) |
 | `VOXPOPULI_DEV_SET` | jupiter `/e/data1/smurf4eu-data/speech/frozen-dev/voxpopuli-dev`; artemis `/mnt/scratch-artemis/giuseppe/frozen/speechval-dev/voxpopuli-dev` |
 | `FLEURS24_ST_XEN_DEV_SET` | jupiter `/e/data1/smurf4eu-data/speech/frozen-dev/fleurs24-st-xen-dev-full` (23 directions); artemis `/mnt/scratch-artemis/giuseppe/frozen/speechval-dev/fleurs24-st-xen-dev-full` |
 | `FLEURS24_ST_ENX_DEV_SET` | jupiter `/e/data1/smurf4eu-data/speech/frozen-dev/fleurs24-st-enx-dev`; artemis `/mnt/scratch-artemis/giuseppe/frozen/speechval-dev/fleurs24-st-enx-dev` |
 | `COVOST2_DEV_SET` | jupiter `/e/data1/smurf4eu-data/speech/frozen-dev/st-eval-campaign-v1-dev`; artemis `/mnt/scratch-artemis/giuseppe/frozen/speechval-dev/st-eval-campaign-v1-dev` (36 directions, 61452) |
-| `EUROPARL_ST_DEV_SET` | artemis `/mnt/scratch-artemis/giuseppe/frozen/speechval/europarl-st-dev` (72 directions, 36000) |
+| `EUROPARL_ST_DEV_SET` | artemis `/mnt/scratch-artemis/giuseppe/frozen/speechval/europarl-st-dev` (72 directions, 36000); jupiter `${PROJECT}/${USER}/frozen/europarl-st-dev` |
 | `POLYSPEECH_PA_QT_SET` | jupiter `/e/project1/e-ext-2025e01-100/attanasio1/frozen-dev/polyspeech-100-pa_qt-200` (24 languages, 4800; `POLYSPEECH_ROOT` is the reconstruction) |
+
+`infra/sites/jupiter.sh` exports the six dev variables when the set is present,
+looking in `$SPEECHVAL_DEV_FROZEN_ROOT`, then the shared data1 tree, then
+`${PROJECT}/${USER}/frozen-dev`; on a site without them the suite's slice fails
+at plan time rather than reading someone else's audio.
+
+**LibriSpeech on jupiter.** The HF `spec` is not usable there (see above) and
+the site has no LibriSpeech Shar tree. Copy just the validation shards, with
+their `.idx` files, into the per-user Shar root and freeze with the same spec
+and seed, which reproduces the artemis set exactly (5567 samples):
+
+```bash
+cd /mnt/scratch-nyx/giuseppe/melt/melt-data/shar
+rsync -aR librispeech/clean/validation librispeech/other/validation \
+  jupiter:${PROJECT}/${USER}/melt-data/shar/
+
+# on jupiter, in a venv with melt + lhotse (freeze-eval) and this repo on PYTHONPATH
+LOCAL_DATASETS_DIR=${PROJECT}/${USER}/melt-data/shar \
+  melteval freeze configs/shar/librispeech-validation.yaml -o ${PROJECT}/${USER}/frozen-dev/librispeech-validation
+```
 
 Samples (capped sets, see below): VoxPopuli 13034 (1000 each for en, de, fr, es, pl, it, ro, hu, cs, nl; sl 889,
 hr 789, fi 687, sk 669). The freezer drops cuts with empty `text` (VoxPopuli validation has untranscribed cuts: hr

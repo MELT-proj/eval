@@ -28,6 +28,34 @@ if [[ -d "$_polyspeech_frozen" ]]; then
     export POLYSPEECH_PA_QT_SET="${POLYSPEECH_PA_QT_SET:-$_polyspeech_frozen}"
 fi
 
+# --- speechval-dev frozen sets (dev partition of the baseline matrix) -----------
+# The four Shar sets are in the shared data1 tree (frozen 2026-11-10); the sets
+# frozen on Jupiter later -- LibriSpeech validation, Europarl -- are per-user.
+# Locators are absolute paths, so a set is only usable on the machine it was
+# frozen on: each export is guarded, and a site without them behaves as before
+# (the suite's slice fails loudly at plan time instead of reading someone
+# else's audio). Recipes: docs/speechval.md, "Freezing (CPU only)".
+_dev_roots=(
+    "${SPEECHVAL_DEV_FROZEN_ROOT:-}"
+    /e/data1/smurf4eu-data/speech/frozen-dev
+    "${PROJECT}/${USER}/frozen-dev"
+)
+_speechval_set() {
+    local var=$1 name=$2 root
+    for root in "${_dev_roots[@]}"; do
+        if [[ -n "$root" && -d "$root/$name" ]]; then
+            export "$var=${!var:-$root/$name}"
+            return
+        fi
+    done
+}
+_speechval_set FLEURS24_ST_XEN_DEV_SET fleurs24-st-xen-dev-full
+_speechval_set FLEURS24_ST_ENX_DEV_SET fleurs24-st-enx-dev
+_speechval_set COVOST2_DEV_SET st-eval-campaign-v1-dev
+_speechval_set VOXPOPULI_DEV_SET voxpopuli-dev
+_speechval_set LIBRISPEECH_VALIDATION_SET librispeech-validation
+_speechval_set EUROPARL_ST_DEV_SET europarl-st-dev
+
 # --- misc ------------------------------------------------------------------------
 export HF_HUB_OFFLINE="${HF_HUB_OFFLINE:-1}"
 export TRANSFORMERS_OFFLINE="${TRANSFORMERS_OFFLINE:-1}"
