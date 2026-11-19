@@ -769,12 +769,13 @@ _LEADING_LABEL = re.compile(r"^\W*([a-z])\s*(?:[.):\-]|$)", re.IGNORECASE)
 _TRAILING_LABEL = re.compile(r"(?:^|\W)\(?([A-Z])\)?\.?\s*$")
 
 #: An explicit answer statement anywhere in the completion -- "The correct
-#: answer is **C. ...", "Correct answer: D". Same case guard as the trailing
-#: label: "the answer is a bird" names the article, not option A. Markdown
-#: emphasis and punctuation are allowed between the phrase and the letter
-#: because chat models bold their answers.
+#: answer is **C. ...", "The correct answer is: D", "The correct option is B".
+#: Same case guard as the trailing label: "the answer is a bird" names the
+#: article, not option A. Markdown emphasis and punctuation are allowed
+#: between the phrase and the letter because chat models bold their answers.
 _ANSWER_IS_LABEL = re.compile(
-    r"(?i:(?:the\s+)?(?:correct\s+)?answer)\s*(?i:is|:)\s*[\s*_`(\"']*([A-Z])\b"
+    r"(?i:(?:the\s+)?(?:correct\s+)?(?:answer|option|choice))"
+    r"\s*(?i:is\s*:?|:)\s*[\s*_`(\"']*([A-Z])\b"
 )
 
 _PUNCTUATION = re.compile(r"[^\w\s]", re.UNICODE)
@@ -804,14 +805,20 @@ def resolve_choice(completion: str, choices: list[str]) -> str | None:
 
     1. a leading option label (``"B"``, ``"B."``, ``"(b)"``);
     2. a capitalised label the completion ends on ("The answer is B.");
-    3. an explicit answer statement anywhere ("The answer is **C. ...**");
+    3. an explicit answer/option/choice statement anywhere ("The correct
+       answer is **C. ...", "The correct answer is: D", "The correct option
+       is B");
     4. the whole completion equal to one option's text;
     5. exactly one option's text appearing somewhere in the completion.
 
-    Step 4 requires the match to be *unique*: a model that echoes the full
+    Step 5 requires the match to be *unique*: a model that echoes the full
     option list has not answered, and crediting it with the first option it
     happens to mention would turn a non-answer into a coin flip weighted by
     option order.
+
+    An explicit letter outranks option text: a completion that says C while
+    quoting D's text is credited to C. Two different explicit letters are a
+    contradiction, not a choice, and resolve to nothing.
 
     Args:
         completion: What the model generated.
@@ -907,7 +914,9 @@ def mcq_scorer() -> Scorer:
     The reference is the option's **text**, not its label: benchmarks that ship
     their options as columns (AIR-Bench's ``choice_a``…``choice_d``) give the
     right answer the same way, and the letter a given option gets is an
-    artefact of the order this harness rendered them in.
+    artefact of the order this harness rendered them in. A completion that
+    states a letter explicitly is still credited to that letter, even when it
+    also names another option's text.
 
     Returns:
         A scorer whose ``Score.value`` carries ``{correct, resolved}`` as 0/1
