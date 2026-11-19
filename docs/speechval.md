@@ -169,9 +169,10 @@ counted 55% of a smoke's answers as unresolved.
 **Full battery (2026-11-19).** All 84 checkpoints, 24 slices each (2,016 runs),
 0 failed. Macro choice accuracy **0.443–0.474, median 0.457**; mean
 `unresolved_rate` 0.0005. The trend is flat from 102k to 600k (0.464 at 102k,
-0.455 at 600k), with Polish (0.409) hardest and Romanian (0.515) easiest. At
-~15.5 min per 24-slice pack on 4 GPUs the whole battery cost roughly 90
-GPU-hours.
+0.455 at 600k). Per-language values ranged 0.41–0.52; the seven-language
+question set (de et hu lt nl ro ru) is not a parallel split, so do not read that
+range as a language ranking. At ~15.5 min per 24-slice pack on 4 GPUs the whole
+battery cost roughly 90 GPU-hours.
 
 Seven languages (de et hu lt nl ro ru) use a different 801-question set from
 the other 17. Per-language numbers are still comparable on their own; a
