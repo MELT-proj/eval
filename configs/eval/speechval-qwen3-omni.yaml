@@ -28,10 +28,11 @@ output_dir: ${EVAL_ROOT}/speechval-qwen3-omni
 
 # One whole node (4 GH200) per pack, as for the PolySpeech battery: the 30B-A3B
 # weights are ~66 GB, so one slice per GPU at a time and one load per worker.
-# The cap is set from the measured pass (see docs/speechval.md).
+# Two slices per GPU: a CoVoST2 or Europarl direction takes 40-70 min, and 24
+# slices per pack (six per GPU) overran a 6 h cap on the first attempt.
 pack:
-  time: "06:00:00"
-  max_slices: 24
+  time: "04:00:00"
+  max_slices: 8
 
 models:
   - name: qwen3-omni-30b-a3b-instruct
