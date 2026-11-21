@@ -135,6 +135,16 @@ class TestRenderSmurfPrompt:
         with pytest.raises(ValueError, match="Unsupported language ISO code"):
             render_smurf_prompt("Transcribe this {lang} audio: ", lang="zz")
 
+    def test_a_covost2_language_outside_europe_renders(self, monkeypatch):
+        """CoVoST2's ar/ja/zh/... are not in the training package's EU table."""
+        monkeypatch.setitem(sys.modules, "melt.training.data.audio.lhotse.helpers", None)
+        assert render_smurf_prompt("Translate this {src_lang} audio into {tgt_lang}: ", src_lang="ja", tgt_lang="en") == (
+            "Translate this Japanese audio into English: "
+        )
+        assert render_smurf_prompt("Translate this {src_lang} audio into {tgt_lang}: ", src_lang="en", tgt_lang="zh") == (
+            "Translate this English audio into Chinese: "
+        )
+
     @pytest.mark.skipif(not HAS_MELT, reason="needs the training package's language table to compare against")
     def test_the_fallback_table_agrees_with_the_training_package(self):
         from melt.training.data.audio.lhotse.helpers import LANGUAGE_ISO_TO_NAME

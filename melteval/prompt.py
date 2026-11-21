@@ -489,13 +489,16 @@ def render_smurf_prompt(
 
 #: Copy of ``LANGUAGE_ISO_TO_NAME`` (training package, ``melt-proj``) for
 #: environments without it, limited to the codes the benchmarks use (EU-24 plus
-#: ru/uk), so ``{lang}`` renders the same name with or without melt-proj.
+#: ru/uk, plus the CoVoST2 languages outside Europe that a baseline like
+#: Qwen3-Omni can hear), so ``{lang}`` renders the same name with or without
+#: melt-proj.
 SMURF_LANGUAGE_NAMES: dict[str, str] = {
-    "bg": "Bulgarian", "cs": "Czech", "da": "Danish", "de": "German", "el": "Greek", "en": "English",
-    "es": "Spanish", "et": "Estonian", "fi": "Finnish", "fr": "French", "ga": "Irish", "hr": "Croatian",
-    "hu": "Hungarian", "it": "Italian", "lt": "Lithuanian", "lv": "Latvian", "mt": "Maltese", "nl": "Dutch",
-    "pl": "Polish", "pt": "Portuguese", "ro": "Romanian", "ru": "Russian", "sk": "Slovak", "sl": "Slovenian",
-    "sv": "Swedish", "uk": "Ukrainian",
+    "ar": "Arabic", "bg": "Bulgarian", "ca": "Catalan", "cs": "Czech", "cy": "Welsh", "da": "Danish",
+    "de": "German", "el": "Greek", "en": "English", "es": "Spanish", "et": "Estonian", "fa": "Persian",
+    "fi": "Finnish", "fr": "French", "ga": "Irish", "hr": "Croatian", "hu": "Hungarian", "id": "Indonesian",
+    "it": "Italian", "ja": "Japanese", "lt": "Lithuanian", "lv": "Latvian", "mn": "Mongolian", "mt": "Maltese",
+    "nl": "Dutch", "pl": "Polish", "pt": "Portuguese", "ro": "Romanian", "ru": "Russian", "sk": "Slovak",
+    "sl": "Slovenian", "sv": "Swedish", "ta": "Tamil", "tr": "Turkish", "uk": "Ukrainian", "zh": "Chinese",
 }  # fmt: skip
 
 
