@@ -246,6 +246,13 @@ inline BLEU and the post-hoc MetricX-24 hybrid XXL score (lower is better).
 | fondue-step-20000 | 3.0 % | 9.4 % | 23.6 / 4.57 | 18.1 / 6.69 | 29.1 / 5.89 | 17.8 / 7.51 | 29.8 / 4.87 | 27.0 / 4.28 |
 | cohere-transcribe-03-2026 | 1.9 % | 7.8 % | – | – | – | – | – | – |
 | fondue-step-26000 | 2.9 % | 9.3 % | 23.1 / 4.70 | 18.2 / 6.83 | 28.8 / 5.86 | 18.1 / 7.36 | 29.9 / 4.94 | 27.0 / 4.33 |
+| qwen3-omni-30b-a3b-instruct † | 1.9 % | 9.6 % | 34.4 / – | 27.1 / – | 42.1 / – | 27.2 / – | 38.9 / – | 33.0 / – |
+
+† Qwen3-Omni's macro is over the slices it can hear, and fewer of them: 6 of
+14 VoxPopuli languages, 6 of 23 FLEURS X->en sources, 10 of 21 CoVoST2 X->en
+sources, 6 of 8 Europarl X->en. Its BLEU is therefore not a like-for-like
+number against the rows above; see its section below for the coverage and the
+per-benchmark split.
 
 Checkpoints and how they are loaded:
 
@@ -278,3 +285,65 @@ Read the SMURF row with its coverage in mind: this is the `asr_long` run, and on
 ST it translates `de/da/el` but echoes `cs/es/et/fi`, while Europarl `de->en`
 comes back in German — a model behaviour the suite is meant to surface, not a
 prompt mismatch (`FLEURS de->en` is a correct English translation).
+
+## Qwen3-Omni baseline (jupiter, 2026-11-20/21)
+
+`configs/eval/speechval-qwen3-omni.yaml`, output
+`${EVAL_ROOT}/speechval-qwen3-omni`: `melt/hf/qwen3_omni`
+(`Qwen/Qwen3-Omni-30B-A3B-Instruct`, revision `26291f79`, 66 GB bf16, from the
+shared HF cache), the two dev suites together as one row of the baseline
+matrix, 142 slices. The talker is dropped and the provider turns the
+processor's 30 s truncation off, so PolySpeech's long passages go in whole.
+
+**Coverage.** Qwen3-Omni takes speech in 19 languages (en zh ko ja de ru it fr
+es pt ms nl id tr vi yue ar ur), so the model entry skips the 52 dev slices
+whose *source audio* is another language, the Canary/Whisper convention: 8
+VoxPopuli, 17 FLEURS X->en, 11 CoVoST2 X->en, and 16 Europarl pairs with Polish
+or Romanian on the source side. Every en->X direction runs (the target side is
+text, 119 languages), as does every Europarl pair between the other eight
+languages. The macro is therefore over a smaller language set than the other
+rows and is not like-for-like — see the footnote on the table above.
+
+| benchmark | slices | metric | Qwen3-Omni |
+|---|---|---|---|
+| LibriSpeech validation clean / other | 2 | WER | 1.37 % / 2.47 % |
+| VoxPopuli dev (en de fr es it nl) | 6 | WER | 9.62 % |
+| FLEURS X->en (de es fr it nl pt) | 6 | BLEU | 34.4 |
+| FLEURS en->X (all 23) | 23 | BLEU | 27.1 |
+| CoVoST2 X->en (10 of 21) | 10 | BLEU | 42.1 |
+| CoVoST2 en->X (all 15) | 15 | BLEU | 27.2 |
+| Europarl X->en | 6 | BLEU | 38.9 |
+| Europarl en->X | 8 | BLEU | 33.0 |
+| Europarl, pairs without English | 42 | BLEU | 25.3 |
+| PolySpeech pa_qt (24 languages) | 24 | accuracy | 0.750, unresolved 0.000 |
+
+PolySpeech is where this row earns its place: 0.750 macro accuracy against
+0.46 for the SMURF battery, with per-language values from 0.42 (mt) to 0.94
+(en). The benchmark's passages are far outside the 40 s window the SMURF run
+trained on, and this model was not trained on it at all.
+
+**Cost.** 142 slices, ~190 h of audio. The first six packs (24 slices each, 6 h
+cap) timed out: one CoVoST2 or Europarl direction takes 40-70 min, and the two
+CoVoST2 en->mn/en->ta directions take ~7 h because their target script tokenizes
+byte-wise (~12 s a sample). The final shape is 8 slices per pack (two per GPU)
+with an 8 h cap; the whole row is ~40 GPU-hours, after a 10 h queue wait for the
+first attempt.
+
+**Two harness gaps it found.**
+
+- The fallback language table stopped at EU-24 + ru/uk, so `{src_lang}` for
+  CoVoST2's ar/ja/tr/... made 14 slices fail with "Unsupported language ISO
+  code" instead of running. `SMURF_LANGUAGE_NAMES` now carries the CoVoST2
+  languages outside Europe; the training package's own names still win where it
+  has them.
+- Japanese BLEU needs `sacrebleu[ja]` (`mecab-python3` + `ipadic`), which the
+  shared `smurf-eval` venv does not have and is not writable. Install it into a
+  private target dir and put that on `PYTHONPATH` for the run:
+
+  ```bash
+  uv pip install --target $PROJECT/$USER/pyextras/ja --python $VENV python "sacrebleu[ja]"
+  export PYTHONPATH=$PWD:$PYTHONPATH:$PROJECT/$USER/pyextras/ja
+  ```
+
+MetricX post-hoc scoring is run over the five ST benchmarks
+(`evaluate.py score`); the headline BLEU/WER/accuracy are computed inline.
