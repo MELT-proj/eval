@@ -246,7 +246,7 @@ inline BLEU and the post-hoc MetricX-24 hybrid XXL score (lower is better).
 | fondue-step-20000 | 3.0 % | 9.4 % | 23.6 / 4.57 | 18.1 / 6.69 | 29.1 / 5.89 | 17.8 / 7.51 | 29.8 / 4.87 | 27.0 / 4.28 |
 | cohere-transcribe-03-2026 | 1.9 % | 7.8 % | – | – | – | – | – | – |
 | fondue-step-26000 | 2.9 % | 9.3 % | 23.1 / 4.70 | 18.2 / 6.83 | 28.8 / 5.86 | 18.1 / 7.36 | 29.9 / 4.94 | 27.0 / 4.33 |
-| qwen3-omni-30b-a3b-instruct † | 1.9 % | 9.6 % | 34.4 / – | 27.1 / – | 42.1 / – | 27.2 / – | 38.9 / – | 33.0 / – |
+| qwen3-omni-30b-a3b-instruct † | 1.9 % | 9.6 % | 34.4 / 2.37 | 27.1 / 4.85 | 42.1 / 3.29 | 27.2 / 5.65 | 38.9 / 3.68 | 33.0 / 2.94 |
 
 † Qwen3-Omni's macro is over the slices it can hear, and fewer of them: 6 of
 14 VoxPopuli languages, 6 of 23 FLEURS X->en sources, 10 of 21 CoVoST2 X->en
@@ -308,13 +308,13 @@ rows and is not like-for-like — see the footnote on the table above.
 |---|---|---|---|
 | LibriSpeech validation clean / other | 2 | WER | 1.37 % / 2.47 % |
 | VoxPopuli dev (en de fr es it nl) | 6 | WER | 9.62 % |
-| FLEURS X->en (de es fr it nl pt) | 6 | BLEU | 34.4 |
-| FLEURS en->X (all 23) | 23 | BLEU | 27.1 |
-| CoVoST2 X->en (10 of 21) | 10 | BLEU | 42.1 |
-| CoVoST2 en->X (all 15) | 15 | BLEU | 27.2 |
-| Europarl X->en | 6 | BLEU | 38.9 |
-| Europarl en->X | 8 | BLEU | 33.0 |
-| Europarl, pairs without English | 42 | BLEU | 25.3 |
+| FLEURS X->en (de es fr it nl pt) | 6 | BLEU / MetricX | 34.4 / 2.37 |
+| FLEURS en->X (all 23) | 23 | BLEU / MetricX | 27.1 / 4.85 |
+| CoVoST2 X->en (10 of 21) | 10 | BLEU / MetricX | 42.1 / 3.29 |
+| CoVoST2 en->X (all 15) | 15 | BLEU / MetricX | 27.2 / 5.65 |
+| Europarl X->en | 6 | BLEU / MetricX | 38.9 / 3.68 |
+| Europarl en->X | 8 | BLEU / MetricX | 33.0 / 2.94 |
+| Europarl, pairs without English | 42 | BLEU / MetricX | 25.3 / 4.12 |
 | PolySpeech pa_qt (24 languages) | 24 | accuracy | 0.750, unresolved 0.000 |
 
 PolySpeech is where this row earns its place: 0.750 macro accuracy against
@@ -345,5 +345,6 @@ first attempt.
   export PYTHONPATH=$PWD:$PYTHONPATH:$PROJECT/$USER/pyextras/ja
   ```
 
-MetricX post-hoc scoring is run over the five ST benchmarks
-(`evaluate.py score`); the headline BLEU/WER/accuracy are computed inline.
+MetricX-24 hybrid XXL ran post-hoc over all five ST benchmarks
+(`evaluate.py score`, coverage 1.000, 8-34 min a benchmark); the headline
+BLEU/WER/accuracy are computed inline.
