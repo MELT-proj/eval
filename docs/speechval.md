@@ -144,6 +144,19 @@ both recorded scorers are recomputed together.
 Do not use `scripts/evaluate.py score --rescore` on an ST benchmark: it passes one scorer to
 `--action overwrite`, which deletes the slice's other post-hoc scorer (`corpus_bleu` disappears).
 
+The backfill was run on artemis on 2026-11-23 for all 381 FLEURS logs in the worklog (7 fondue
+checkpoints, Canary, Qwen3-Omni): 141,387 samples, source coverage 1.0 everywhere, 18 SLURM jobs,
+~11 GPU-hours. Every slice's BLEU/chrF/spBLEU is bit-identical to what it was; only MetricX moved.
+The Qwen3-Omni row barely changes (|Δ| < 0.006) because its logs already had the sources — the
+scorer's batch-of-1 inference differs from batch-of-N in bf16, no more.
+
+The one large move is worth knowing about: fondue's `en->mt` slices go from ~5.0 to ~20.0 at six of
+the seven checkpoints (`step-3000` from 10.0 to 11.9). That is not a scoring artefact. Fondue emits
+English for Maltese — the slice's BLEU against the Maltese reference is 0.14 (Canary, which does
+translate: 30.4 BLEU, MetricX 4.54) — and the reference-only MetricX was reporting a low error for an
+untranslated candidate. Any FLEURS MetricX number from before this backfill was measured without a
+source; do not mix the two.
+
 ## Caps
 
 Running the full dev splits (CoVoST2 53.7k samples, VoxPopuli 18k) takes too long, so those two are capped with
