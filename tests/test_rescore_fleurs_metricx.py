@@ -215,3 +215,109 @@ class TestDryRun:
         assert (results / "fleurs-source-coverage.csv").exists()
         assert (results / "metricx-before.csv").exists()
         assert (results / "metricx-before.jsonl").exists()
+
+
+def _sample(sample_id, value=2.0, completion="out", src="Bonjour."):
+    score = {"value": value, "metadata": {"metricx_triple": {"src": src, "mt": completion, "ref": completion}}}
+    return {
+        "id": sample_id,
+        "metadata": {"dataset_id": "fleurs-fr_en-dev"},
+        "output": {"completion": completion} if completion else None,
+        "scores": {"metricx_scorer": score} if value is not None else {},
+    }
+
+
+def _before():
+    return [
+        {
+            "campaign": "speechval-test",
+            "model": "model-a",
+            "benchmark": "fleurs24-st-xen-dev",
+            "slice": "st-fleurs-fr_en-dev",
+            "metricx": 3.0,
+            "metricx_coverage": 1.0,
+            "corpus_bleu": 10.0,
+            "corpus_spbleu": None,
+            "corpus_chrf": None,
+        }
+    ]
+
+
+class TestVerify:
+    def test_accepts_a_correct_log(self, campaign):
+        campaign["log"].write_text(
+            json.dumps(
+                _log(
+                    samples=[_sample("00-000000", 2.0), _sample("00-000001", 4.0)],
+                    metrics={"bleu": 10.0, "metricx": 3.0},
+                    rescored=True,
+                )
+            )
+        )
+        [row] = driver.verify([_ref(campaign)], _before())
+        assert row["metricx_before"] == 3.0
+        assert row["metricx_after"] == pytest.approx(3.0)
+        assert row["delta"] == pytest.approx(0.0)
+        assert row["bleu_before"] == 10.0
+        assert row["bleu_after"] == 10.0
+        assert row["source_coverage"] == 1.0
+
+    def test_rejects_a_log_without_per_sample_values(self, campaign):
+        campaign["log"].write_text(
+            json.dumps(
+                _log(
+                    samples=[_sample("00-000000", 2.0), _sample("00-000001", value=None)],
+                    metrics={"bleu": 10.0, "metricx": 2.0},
+                    rescored=True,
+                )
+            )
+        )
+        with pytest.raises(driver.VerificationError, match="00-000001"):
+            driver.verify([_ref(campaign)], _before())
+
+    def test_rejects_a_lost_bleu(self, campaign):
+        log = _log(samples=[_sample("00-000000", 2.0)], metrics={"bleu": 10.0, "metricx": 2.0}, rescored=True)
+        log["results"]["scores"][0]["metrics"] = {}
+        campaign["log"].write_text(json.dumps(log))
+        with pytest.raises(driver.VerificationError, match="corpus_bleu"):
+            driver.verify([_ref(campaign)], _before())
+
+    def test_rejects_source_coverage_below_one(self, campaign):
+        log = _log(samples=[_sample("00-000000", 2.0)], metrics={"bleu": 10.0, "metricx": 2.0}, rescored=True)
+        log["results"]["scores"][1]["metrics"]["metricx_source_coverage"]["value"] = 0.5
+        campaign["log"].write_text(json.dumps(log))
+        with pytest.raises(driver.VerificationError, match="source coverage"):
+            driver.verify([_ref(campaign)], _before())
+
+    def test_rejects_a_mean_that_is_not_the_sample_mean(self, campaign):
+        log = _log(samples=[_sample("00-000000", 2.0)], metrics={"bleu": 10.0, "metricx": 9.0}, rescored=True)
+        campaign["log"].write_text(json.dumps(log))
+        with pytest.raises(driver.VerificationError, match="mean"):
+            driver.verify([_ref(campaign)], _before())
+
+
+class TestSubmit:
+    def test_sets_the_manifest_env_and_no_scorer(self, campaign, monkeypatch):
+        captured = []
+
+        def fake_run(command, env, log_file=None):
+            captured.append((command, env))
+            return 0, "Submitted batch job 123"
+
+        monkeypatch.setattr(driver, "run_command", fake_run)
+        ids = driver.submit(
+            [[_ref(campaign)]], "artemis", {"fleurs24-st-xen-dev": campaign["set"]}, "/venvs/metrics/activate"
+        )
+        assert ids == ["123"]
+        command, env = captured[0]
+        assert env[driver.SOURCE_MANIFEST_ENV] == str(campaign["set"])
+        assert env["VENV_PATH"] == "/venvs/metrics/activate"
+        assert "--scorer" not in command
+        assert "--action" in command and "overwrite" in command
+
+
+def test_manifest_env_name_matches_the_scorer():
+    """The driver sets the variable the scorer reads; a rename on one side must not go unnoticed."""
+    from melteval.rescore import SOURCE_MANIFEST_ENV
+
+    assert driver.SOURCE_MANIFEST_ENV == SOURCE_MANIFEST_ENV
