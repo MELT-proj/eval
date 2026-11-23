@@ -51,21 +51,32 @@ ASR:
 |---|---|---|
 | `librispeech-test-clean` | `spec: configs/hf/librispeech-hf-test-clean.yaml` (v1's own choice for the test split; HF cache must be pulled from a login shell first — README "Evaluating a HuggingFace benchmark") | `asr` × `librispeech-test-clean`, `time: "02:00:00"` |
 | `librispeech-test-other` | `spec: configs/hf/librispeech-hf-test-other.yaml` | `asr` × `librispeech-test-other`, `time: "02:00:00"` |
-| `voxpopuli-test` | `frozen_set: ${VOXPOPULI_TEST_SET}` from `configs/shar/voxpopuli-test.yaml` | 16 languages, `asr` × `voxpopuli-<lang>` — the test spec's own tags carry **no** `-test` suffix (unlike the dev spec's `voxpopuli-<lang>-dev`), and a slice id must match the frozen set's `dataset_id`; `en` gets `args: [-T, normalizer=english]` |
+| `voxpopuli-test` | `frozen_set: ${VOXPOPULI_SET}` from `configs/shar/voxpopuli-test.yaml` | 16 languages, `asr` × `voxpopuli-<lang>` — the test spec's own tags carry **no** `-test` suffix (unlike the dev spec's `voxpopuli-<lang>-dev`), and a slice id must match the frozen set's `dataset_id`; `en` gets `args: [-T, normalizer=english]` |
 | `mls-test` | `frozen_set: ${MLS_TEST_SET}` from a **new** `configs/shar/mls-test.yaml` (below) | 8 languages (nl en fr de it pl pt es), `asr` × `mls-<lang>`, ids unsuffixed like VoxPopuli's |
-| `fleurs24-asr-test` | `frozen_set: ${FLEURS24_ASR_TEST_SET}` from `configs/shar/fleurs24-asr-test.yaml` | **one pooled slice, `- {task: asr}`**, exactly as v1's `fleurs24-asr`: the spec tags every language `dataset_id: fleurs`, so per-language slices cannot exist; per-language numbers come from the scorer's grouped metrics |
+| `fleurs24-asr-test` | `frozen_set: ${FLEURS24_ASR_SET}` from `configs/shar/fleurs24-asr-test.yaml` | **one pooled slice, `- {task: asr}`**, exactly as v1's `fleurs24-asr`: the spec tags every language `dataset_id: fleurs`, so per-language slices cannot exist; per-language numbers come from the scorer's grouped metrics |
 | `mcif-chunked-asr` | `spec: configs/hf/mcif.yaml` | `chunked_asr` × `mcif-short-fixed-en`, `mcif-short-mixed-en` — the corpus has ASR for target-language `en` only (mcif.yaml header), so these are all the slices that exist |
 
 ST:
 
 | suite benchmark | source | slices |
 |---|---|---|
-| `fleurs24-st-xen-test` | `frozen_set: ${FLEURS24_ST_XEN_TEST_SET}` from `configs/shar/fleurs24-st-xen-test.yaml` | X→en, **25 slices**: the 23 EU locales plus the ru/uk probes — this work un-comments the spec's own ru/uk blocks (`fleurs-ru_en`, `fleurs-uk_en`; the spec header already documents them as intended probes, they were only left commented pending this decision) — each slice with `post_scorers: [melteval/rescore.py@metricx_scorer]`, `post_venv: ${METRICS_VENV_PATH}` |
-| `fleurs24-st-enx-test` | `frozen_set: ${FLEURS24_ST_ENX_TEST_SET}` from `configs/shar/fleurs24-st-enx-test.yaml` | en→X, one slice per target, MetricX post-scorer, same as dev's enx pattern |
+| `fleurs24-st-xen-test` | `frozen_set: ${FLEURS24_ST_XEN_SET}` from `configs/shar/fleurs24-st-xen-test.yaml` (re-frozen from the 25-source spec, see below) | X→en, **25 slices**: the 23 EU locales plus the ru/uk probes — this work un-comments the spec's own ru/uk blocks (`fleurs-ru_en`, `fleurs-uk_en`; the spec header already documents them as intended probes, they were only left commented pending this decision) — each slice with `post_scorers: [melteval/rescore.py@metricx_scorer]`, `post_venv: ${METRICS_VENV_PATH}` |
+| `fleurs24-st-enx-test` | `frozen_set: ${FLEURS24_ST_ENX_SET}` from `configs/shar/fleurs24-st-enx-test.yaml` | en→X, one slice per target, MetricX post-scorer, same as dev's enx pattern |
 | `covost2-test` | `frozen_set: ${COVOST2_SET}` (the same frozen set v1 uses — it already exists) | 21 X→en slices, MetricX post-scorer |
 | `covost2-enx-test` | `frozen_set: ${COVOST2_SET}` | 15 en→X slices, MetricX post-scorer |
 | `europarl-st-test` | `frozen_set: ${EUROPARL_ST_TEST_SET}` from `configs/shar/europarl-st-test.yaml` | all 72 directions among the 9 languages, MetricX post-scorer from `custom.sentence` as in dev |
 | `mcif-chunked-st` | `spec: configs/hf/mcif.yaml` | `chunked_st` × {`mcif-short-fixed-de`, `mcif-short-mixed-de`} and the same for `it` — TRANS targets are de/it/zh and **zh is skipped per user decision, MCIF needs no Chinese** — each with `post_scorers: [melteval/mcif_scoring.py@mcif_official_trans_scorer]` |
+
+Frozen-set env names are the ones `suites/v1.yaml` and
+`docs/jupiter-continuous-eval.md` already document, so a single export serves
+both suites: `VOXPOPULI_SET`, `FLEURS24_ASR_SET`, `FLEURS24_ST_ENX_SET`,
+`COVOST2_SET` and `EUROPARL_ST_TEST_SET` are shared with `suites/v1.yaml`
+as-is, and `MLS_TEST_SET` is new. The one exception is `FLEURS24_ST_XEN_SET`:
+this suite uses the X→en set with all 25 test ids (23 EU + ru/uk), while v1's
+set was frozen from the 23-source version of the same spec — it must be
+(re)frozen from the current 25-source `configs/shar/fleurs24-st-xen-test.yaml`
+before this suite runs, or the two probe slices match no sample and their
+jobs die at dataset build.
 
 SQA/SLU:
 

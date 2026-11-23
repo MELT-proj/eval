@@ -9,6 +9,15 @@
 # Wall clock: only LibriSpeech carries `time:`, because that is all dev/v1 had to calibrate against.
 # VoxPopuli's own spec warns one language needs >6 h on a single GPU: calibrate `time:` per slice
 # before this campaign is scheduled (a wrong guess is mass timeouts or an over-booked queue).
+#
+# Frozen-set env names are the ones v1.yaml and docs/jupiter-continuous-eval.md already document, so
+# one export serves both suites. `VOXPOPULI_SET`, `FLEURS24_ASR_SET`, `COVOST2_SET` and
+# `EUROPARL_ST_TEST_SET` are shared with suites/v1.yaml as-is; `MLS_TEST_SET` is new
+# (configs/shar/mls-test.yaml, frozen for this suite).
+# Exception -- FLEURS24_ST_XEN_SET: this suite uses the X->en set with all 25 test ids (23 EU
+# locales + the ru/uk probes), while v1's set was frozen from the 23-source version of the same
+# spec. Re-freeze it from the current 25-source configs/shar/fleurs24-st-xen-test.yaml before this
+# suite runs, or the two ru/uk slices match no sample and their jobs die at dataset build.
 
 benchmarks:
   # configs/hf/librispeech-hf-test-{clean,other}.yaml (v1's own choice for the test split). The HF cache
@@ -32,7 +41,7 @@ benchmarks:
   # normalizer in every slice; only en overrides it with the English one (numbers are spelled out in
   # its reference).
   - name: voxpopuli-test
-    frozen_set: ${VOXPOPULI_TEST_SET}
+    frozen_set: ${VOXPOPULI_SET}
     needs_instruction: true
     slices:
       - {task: asr, dataset_id: voxpopuli-en, args: [-T, normalizer=english]}
@@ -70,7 +79,7 @@ benchmarks:
   # per-language slices cannot exist: one pooled slice, exactly as v1's `fleurs24-asr` runs it. The
   # scorer's grouped metrics carry the per-language numbers.
   - name: fleurs24-asr-test
-    frozen_set: ${FLEURS24_ASR_TEST_SET}
+    frozen_set: ${FLEURS24_ASR_SET}
     needs_instruction: true
     slices:
       - {task: asr}
@@ -85,7 +94,7 @@ benchmarks:
   # configs/shar/fleurs24-st-xen-test.yaml: X->en, the 23 EU locales plus the ru/uk probes (25 slices,
   # one per dataset_id). MetricX-24 hybrid XXL post-hoc, from the source transcript.
   - name: fleurs24-st-xen-test
-    frozen_set: ${FLEURS24_ST_XEN_TEST_SET}
+    frozen_set: ${FLEURS24_ST_XEN_SET}
     needs_instruction: true
     post_venv: ${METRICS_VENV_PATH}
     slices:
@@ -118,7 +127,7 @@ benchmarks:
   # configs/shar/fleurs24-st-enx-test.yaml: English audio into each EU language (one slice per target).
   # MetricX-24 post-hoc, from the English source.
   - name: fleurs24-st-enx-test
-    frozen_set: ${FLEURS24_ST_ENX_TEST_SET}
+    frozen_set: ${FLEURS24_ST_ENX_SET}
     needs_instruction: true
     post_venv: ${METRICS_VENV_PATH}
     slices:

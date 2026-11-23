@@ -46,7 +46,7 @@
 # flagged on the campaign board with this reasoning; that section is design
 # guidance, not a Settled decision.)
 #
-# Verification (2026-09-15): all 23 sources built with zero
+# Verification (2026-09-15): all 23 EU sources built with zero
 # dropped_no_reference; sample counts, per-language hours and a manual spot
 # check of 20 (audio locale, English reference) pairs are in the board entry
 # and frozen_set.json.
@@ -55,6 +55,8 @@
 # EU-24) were enabled on 2026-11-24, when the speechval-test suite began listing all 25 slices: reference coverage was
 # checked that day on the nyx tree and is complete -- every ru_ru/test and uk_ua/test cut id (775 and 750 cuts) has an
 # entry in configs/refs/fleurs-en-reference-test.json, so nothing drops for a missing English reference.
+# The JUPITER freeze also needs fleurs/ru_ru/test and fleurs/uk_ua/test in that same tree (copy them
+# from nyx if absent): without them a JUPITER freeze fails on two of the 25 sources.
 name: fleurs24-st-xen-test
 seed: 0
 

@@ -16,8 +16,9 @@
 # eight slices and spread them over a node's GPUs. MLS cut ids repeat across
 # languages, so samples are never keyed by corpus id.
 #
-# To inspect a language:
-#   zcat $LOCAL_DATASETS_DIR/mls_sidon/<language>/test/cuts.000000.jsonl.gz | head -1
+# To inspect a language (indexed layout; the plain azeros-style tree keeps
+# `cuts.000000.jsonl.gz` instead -- then `zcat` that):
+#   head -1 $LOCAL_DATASETS_DIR/mls_sidon/<language>/test/cuts.000000.jsonl
 name: mls-test
 seed: 0
 

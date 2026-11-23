@@ -382,11 +382,11 @@ class TestSuite:
         assert by_name["air-bench-chat-speech"]["judge"] == "melt/hf/qwen3_omni"
 
         assert {name: b["frozen_set"] for name, b in by_name.items() if "frozen_set" in b} == {
-            "voxpopuli-test": "${VOXPOPULI_TEST_SET}",
+            "voxpopuli-test": "${VOXPOPULI_SET}",
             "mls-test": "${MLS_TEST_SET}",
-            "fleurs24-asr-test": "${FLEURS24_ASR_TEST_SET}",
-            "fleurs24-st-xen-test": "${FLEURS24_ST_XEN_TEST_SET}",
-            "fleurs24-st-enx-test": "${FLEURS24_ST_ENX_TEST_SET}",
+            "fleurs24-asr-test": "${FLEURS24_ASR_SET}",
+            "fleurs24-st-xen-test": "${FLEURS24_ST_XEN_SET}",
+            "fleurs24-st-enx-test": "${FLEURS24_ST_ENX_SET}",
             "covost2-test": "${COVOST2_SET}",
             "covost2-enx-test": "${COVOST2_SET}",
             "europarl-st-test": "${EUROPARL_ST_TEST_SET}",
@@ -398,6 +398,16 @@ class TestSuite:
             benchmark = by_name[name]
             assert benchmark["post_venv"] == "${METRICS_VENV_PATH}"
             assert all(s["task"] == "st" and s["post_scorers"] == [metricx] for s in benchmark["slices"])
+
+        # MCIF scores through its own official pipeline, in the metrics venv, once, after generation.
+        for name, task, scorer in (
+            ("mcif-chunked-st", "chunked_st", "melteval/mcif_scoring.py@mcif_official_trans_scorer"),
+            ("mcif-sfp", "audio_chat", "melteval/mcif_scoring.py@mcif_official_qa_scorer"),
+        ):
+            benchmark = by_name[name]
+            assert benchmark["post_venv"] == "${METRICS_VENV_PATH}"
+            assert all(s["task"] == task and s["post_scorers"] == [scorer] for s in benchmark["slices"])
+        assert "judge" not in by_name["mcif-sfp"]
 
     def test_speechval_test_suite_slice_ids_match_their_specs(self, tmp_path):
         """A slice id that matches no dataset_id tag dies at dataset build (dead-job guard)."""
