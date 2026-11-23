@@ -345,6 +345,87 @@ class TestSuite:
         suite = evaluate.load_benchmarks("configs/eval/suites/v1.yaml")
         assert config["benchmarks"] == suite
 
+    SPEECHVAL_TEST = "configs/eval/suites/speechval-test.yaml"
+    SPEECHVAL_TEST_NAMES = [
+        "librispeech-test-clean", "librispeech-test-other", "voxpopuli-test", "mls-test",
+        "fleurs24-asr-test", "mcif-chunked-asr", "fleurs24-st-xen-test", "fleurs24-st-enx-test",
+        "covost2-test", "covost2-enx-test", "europarl-st-test", "mcif-chunked-st", "mcif-sfp",
+        "air-bench-chat-speech",
+    ]  # fmt: skip
+    SPEECHVAL_TEST_COUNTS = [1, 1, 16, 8, 1, 2, 25, 23, 21, 15, 72, 4, 3, 1]
+
+    def _speechval_test(self, tmp_path):
+        return evaluate.load_config(self._write(tmp_path, self.SPEECHVAL_TEST), None)["benchmarks"]
+
+    @staticmethod
+    def _dataset_ids(relative):
+        import yaml
+
+        spec = yaml.safe_load((ROOT / relative).read_text(encoding="utf-8"))
+        return {source["tags"]["dataset_id"] for source in spec["input_cfg"]}
+
+    def test_speechval_test_suite_structure(self, tmp_path):
+        benchmarks = self._speechval_test(tmp_path)
+        by_name = {b["name"]: b for b in benchmarks}
+
+        assert [b["name"] for b in benchmarks] == self.SPEECHVAL_TEST_NAMES
+        assert [len(b["slices"]) for b in benchmarks] == self.SPEECHVAL_TEST_COUNTS
+        # Entire test splits: a debug run uses -T limit=N, never a shrunken source.
+        assert not [s for b in benchmarks for s in b["slices"] if "limit" in s]
+
+        without_instruction = {"mcif-chunked-asr", "mcif-chunked-st", "mcif-sfp", "air-bench-chat-speech"}
+        assert not any("needs_instruction" in by_name[name] for name in without_instruction)
+        assert all(by_name[name]["needs_instruction"] is True
+                   for name in by_name if name not in without_instruction)  # fmt: skip
+
+        # audio_chat generates but never scores without a judge (v1's own choice here).
+        assert by_name["air-bench-chat-speech"]["judge"] == "melt/hf/qwen3_omni"
+
+        assert {name: b["frozen_set"] for name, b in by_name.items() if "frozen_set" in b} == {
+            "voxpopuli-test": "${VOXPOPULI_TEST_SET}",
+            "mls-test": "${MLS_TEST_SET}",
+            "fleurs24-asr-test": "${FLEURS24_ASR_TEST_SET}",
+            "fleurs24-st-xen-test": "${FLEURS24_ST_XEN_TEST_SET}",
+            "fleurs24-st-enx-test": "${FLEURS24_ST_ENX_TEST_SET}",
+            "covost2-test": "${COVOST2_SET}",
+            "covost2-enx-test": "${COVOST2_SET}",
+            "europarl-st-test": "${EUROPARL_ST_TEST_SET}",
+        }
+
+        metricx = "melteval/rescore.py@metricx_scorer"
+        for name in ("fleurs24-st-xen-test", "fleurs24-st-enx-test", "covost2-test",
+                     "covost2-enx-test", "europarl-st-test"):  # fmt: skip
+            benchmark = by_name[name]
+            assert benchmark["post_venv"] == "${METRICS_VENV_PATH}"
+            assert all(s["task"] == "st" and s["post_scorers"] == [metricx] for s in benchmark["slices"])
+
+    def test_speechval_test_suite_slice_ids_match_their_specs(self, tmp_path):
+        """A slice id that matches no dataset_id tag dies at dataset build (dead-job guard)."""
+        benchmarks = {b["name"]: b for b in self._speechval_test(tmp_path)}
+
+        for name in ("voxpopuli-test", "mls-test", "fleurs24-st-xen-test",
+                     "fleurs24-st-enx-test", "europarl-st-test"):  # fmt: skip
+            ids = {s["dataset_id"] for s in benchmarks[name]["slices"]}
+            assert ids == self._dataset_ids(f"configs/shar/{name}.yaml")
+
+        covost2 = self._dataset_ids("configs/shar/st-eval-campaign-v1.yaml")
+        xen = {s["dataset_id"] for s in benchmarks["covost2-test"]["slices"]}
+        enx = {s["dataset_id"] for s in benchmarks["covost2-enx-test"]["slices"]}
+        assert xen and enx and not xen & enx
+        assert xen <= {i for i in covost2 if i.endswith("_en")}
+        assert enx <= {i for i in covost2 if i.startswith("covost2-en_")}
+
+        for name, spec in (("librispeech-test-clean", "configs/hf/librispeech-hf-test-clean.yaml"),
+                           ("librispeech-test-other", "configs/hf/librispeech-hf-test-other.yaml")):  # fmt: skip
+            assert {s["dataset_id"] for s in benchmarks[name]["slices"]} == self._dataset_ids(spec)
+
+        mcif = self._dataset_ids("configs/hf/mcif.yaml")
+        for name in ("mcif-chunked-asr", "mcif-chunked-st", "mcif-sfp"):
+            assert {s["dataset_id"] for s in benchmarks[name]["slices"]} <= mcif
+        assert {s["dataset_id"] for s in benchmarks["air-bench-chat-speech"]["slices"]} <= self._dataset_ids(
+            "configs/hf/air-bench.yaml"
+        )
+
 
 class TestResolveJudge:
     def test_a_local_baseline_is_loaded_text_only(self):
