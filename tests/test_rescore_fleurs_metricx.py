@@ -348,3 +348,22 @@ class TestPartialRun:
         driver.main(["--campaign", str(campaign["config"]), "--max-logs", "1", "--wait"])
 
         assert (campaign["out"] / "results" / "metricx-rescore.csv").exists()
+
+
+class TestScorerSet:
+    def test_refuses_a_log_with_an_unexpected_scorer_before_submitting(self, campaign, monkeypatch):
+        """`inspect score` with no --scorer re-runs every recorded scorer, so a third one must abort first."""
+        log = _log(
+            samples=[_sample("00-000000", 2.0)],
+            metrics={"bleu": 10.0, "metricx": 2.0},
+            scorer_names=("st_scorer", "metricx_scorer", "chat_scorer"),
+        )
+        campaign["log"].write_text(json.dumps(log))
+        monkeypatch.setattr(driver.evaluate, "load_site_env", lambda site: None)
+        submitted = []
+        monkeypatch.setattr(driver, "submit", lambda *args, **kwargs: submitted.append(1) or [])
+
+        with pytest.raises(SystemExit, match="scorer set"):
+            driver.main(["--campaign", str(campaign["config"])])
+
+        assert submitted == []

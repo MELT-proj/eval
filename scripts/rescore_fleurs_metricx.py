@@ -144,6 +144,24 @@ def _scorer_names(log: dict) -> set[str]:
     return {scorer.get("name") for scorer in (log.get("eval") or {}).get("scorers") or []}
 
 
+def assert_scorers(refs: list[LogRef]) -> None:
+    """Abort unless every log records exactly the two scorers this backfill rebuilds.
+
+    ``inspect score`` with no ``--scorer`` re-runs every scorer a log recorded. A third one (a judge,
+    another post-hoc metric) would be re-run too — a wasted GPU job at best, a log rewritten into a
+    shape ``verify`` does not expect at worst — so refuse before submitting anything.
+    """
+    bad = []
+    for ref in refs:
+        names = _scorer_names(_load(ref.path))
+        if names != EXPECTED_SCORERS:
+            bad.append(f"{ref.model} {ref.benchmark}/{ref.slice}: {sorted(names)}")
+    if bad:
+        raise SystemExit(
+            f"unexpected scorer set (expected {sorted(EXPECTED_SCORERS)}): " + "; ".join(bad)
+        )
+
+
 def already_rescored(path: Path) -> bool:
     """Whether *path* already carries this driver's new metric."""
     return NEW_METRIC in (_metrics(_load(path)).get("metricx_scorer") or {})
@@ -436,6 +454,7 @@ def main(argv: list[str] | None = None) -> None:
             print(f"{campaign_path}: nothing to score")
             continue
 
+        assert_scorers(refs)
         try:
             rows = coverage_rows(refs, benchmarks)
         except CoverageError as error:
