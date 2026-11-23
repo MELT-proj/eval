@@ -475,7 +475,9 @@ def main(argv: list[str] | None = None) -> None:
         job_ids = submit(groups, args.site, benchmarks, venv)
         if args.wait:
             wait_for_jobs(job_ids)
-            rescored = verify(all_refs, _read_csv(snapshot_path, BEFORE_NUMERIC))
+            # Only what this run submitted: a --max-logs smoke leaves the rest of the campaign unscored,
+            # and verifying those would fail on work it never asked for.
+            rescored = verify(refs, _read_csv(snapshot_path, BEFORE_NUMERIC))
             _write_csv(results / "metricx-rescore.csv", rescored, RESCORE_FIELDS)
             print(f"{campaign_path}: verified {len(rescored)} log(s)")
 

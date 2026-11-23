@@ -321,3 +321,30 @@ def test_manifest_env_name_matches_the_scorer():
     from melteval.rescore import SOURCE_MANIFEST_ENV
 
     assert driver.SOURCE_MANIFEST_ENV == SOURCE_MANIFEST_ENV
+
+
+class TestPartialRun:
+    def test_wait_verifies_only_the_logs_it_submitted(self, campaign, monkeypatch):
+        """A smoke run must not fail because the campaign's other logs are still unscored."""
+        later = campaign["out"] / "logs" / "model-a" / "fleurs24-st-xen-dev" / "st-fleurs-zz_en-dev"
+        later.mkdir(parents=True)
+        (later / "old.json").write_text(json.dumps(_log(samples=[_sample("00-000000", 2.0)], metrics={"bleu": 10.0, "metricx": 2.0})))
+
+        rescored = _log(
+            samples=[_sample("00-000000", 2.0), _sample("00-000001", 4.0)],
+            metrics={"bleu": 10.0, "metricx": 3.0},
+            rescored=True,
+        )
+
+        def fake_submit(groups, *args, **kwargs):
+            # The GPU job rewrites the submitted log; the campaign's other logs stay untouched.
+            campaign["log"].write_text(json.dumps(rescored))
+            return ["1"]
+
+        monkeypatch.setattr(driver.evaluate, "load_site_env", lambda site: None)
+        monkeypatch.setattr(driver, "submit", fake_submit)
+        monkeypatch.setattr(driver, "wait_for_jobs", lambda ids: None)
+
+        driver.main(["--campaign", str(campaign["config"]), "--max-logs", "1", "--wait"])
+
+        assert (campaign["out"] / "results" / "metricx-rescore.csv").exists()
