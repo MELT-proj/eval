@@ -51,8 +51,10 @@
 # check of 20 (audio locale, English reference) pairs are in the board entry
 # and frozen_set.json.
 # JUPITER: the azeros tree has no FLEURS for el_gr, pl_pl, ro_ro, sk_sk, sl_si, sv_se; their test splits were copied from
-# the nyx tree into /e/data1/smurf4eu-data/speech/shar/fleurs, so all 23 sources are active. ru/uk (probes, not EU-24) stay
-# commented out below.
+# the nyx tree into /e/data1/smurf4eu-data/speech/shar/fleurs, so all 23 EU sources are active. ru/uk (probes, not
+# EU-24) were enabled on 2026-11-24, when the speechval-test suite began listing all 25 slices: reference coverage was
+# checked that day on the nyx tree and is complete -- every ru_ru/test and uk_ua/test cut id (775 and 750 cuts) has an
+# entry in configs/refs/fleurs-en-reference-test.json, so nothing drops for a missing English reference.
 name: fleurs24-st-xen-test
 seed: 0
 
@@ -195,15 +197,15 @@ input_cfg:
     reference_map: configs/refs/fleurs-en-reference-test.json
     tags: {task: st, src_lang: mt, tgt_lang: en, dataset_id: fleurs-mt_en}
 
-  #   # ru/uk: not EU-24 languages, added as named probes (see file header).
-  # - type: lhotse_shar
-  #   shar_path: ${LOCAL_DATASETS_DIR}/fleurs/ru_ru/test
-  #   source_text_field: custom.pnc_text
-  #   reference_map: configs/refs/fleurs-en-reference-test.json
-  #   tags: {task: st, src_lang: ru, tgt_lang: en, dataset_id: fleurs-ru_en}
+  # ru/uk: not EU-24 languages, added as named probes (see file header).
+  - type: lhotse_shar
+    shar_path: ${LOCAL_DATASETS_DIR}/fleurs/ru_ru/test
+    source_text_field: custom.pnc_text
+    reference_map: configs/refs/fleurs-en-reference-test.json
+    tags: {task: st, src_lang: ru, tgt_lang: en, dataset_id: fleurs-ru_en}
 
-  # - type: lhotse_shar
-  #   shar_path: ${LOCAL_DATASETS_DIR}/fleurs/uk_ua/test
-  #   source_text_field: custom.pnc_text
-  #   reference_map: configs/refs/fleurs-en-reference-test.json
-  #   tags: {task: st, src_lang: uk, tgt_lang: en, dataset_id: fleurs-uk_en}
+  - type: lhotse_shar
+    shar_path: ${LOCAL_DATASETS_DIR}/fleurs/uk_ua/test
+    source_text_field: custom.pnc_text
+    reference_map: configs/refs/fleurs-en-reference-test.json
+    tags: {task: st, src_lang: uk, tgt_lang: en, dataset_id: fleurs-uk_en}
