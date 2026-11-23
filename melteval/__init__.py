@@ -29,6 +29,11 @@ from melteval.providers.qwen3_omni import Qwen3OmniAPI
 from melteval.providers.router import melt
 from melteval.providers.smurf import SmurfAPI
 from melteval.providers.whisper import WhisperAPI
+
+# Registered here, though they are never run inline: `inspect score` rebuilds a log's scorers by
+# bare name from the registry, so a post-hoc scorer whose module nobody imports cannot be resolved.
+# The module itself is dependency-free at import time (torch/transformers load inside the call).
+from melteval.rescore import comet_scorer, metricx_scorer
 from melteval.scorers import (
     asr_scorer,
     corpus_bleu,
@@ -58,6 +63,7 @@ __all__ = [
     "WhisperAPI",
     "asr",
     "asr_scorer",
+    "comet_scorer",
     "corpus_bleu",
     "corpus_cer",
     "corpus_chrf",
@@ -69,6 +75,7 @@ __all__ = [
     "load_smurf_prompt_spec",
     "melt",
     "melt_prompt",
+    "metricx_scorer",
     "smurf_prompt",
     "speech",
     "st",

@@ -411,3 +411,22 @@ class TestMetricxSourceManifest:
             ],
         )
         assert log.results.scores[0].metrics["metricx_source_coverage"].value == 1.0
+
+
+def test_metricx_scorer_is_registered_by_the_package_import():
+    """The ``inspect_ai`` entry point imports ``melteval``; that alone must register every post-hoc scorer.
+
+    ``inspect score`` with no ``--scorer`` rebuilds a log's scorers by bare name, so a scorer whose
+    module only gets imported by that lookup cannot be found. A fresh interpreter, not this test
+    process (which imports ``melteval.rescore`` at the top), is the only honest check.
+    """
+    import subprocess
+    import sys
+
+    code = (
+        "from inspect_ai._util.registry import registry_lookup\n"
+        "import melteval\n"
+        "assert registry_lookup('scorer', 'st_scorer') is not None\n"
+        "assert registry_lookup('scorer', 'metricx_scorer') is not None, 'metricx_scorer not registered'\n"
+    )
+    subprocess.run([sys.executable, "-c", code], check=True)
