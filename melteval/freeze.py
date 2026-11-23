@@ -113,7 +113,20 @@ def read_sources(
         result = reader.freeze(source_cfg, source_index)
         records.extend(result.records)
 
-        per_source.append({"index": source_index, "source": label, "type": source_type, **result.stats})
+        stats = dict(result.stats)
+        source_text_field = source_cfg.get("source_text_field")
+        if source_text_field:
+            # A field that resolves to nothing scores every ST sample against an empty source, and
+            # MetricX happily reports a number for it. Make that visible instead of silent.
+            stats["source_text_missing"] = sum(1 for record in result.records if not record.source_text)
+            if result.records and stats["source_text_missing"] == len(result.records):
+                logger.warning(
+                    "Source %d (%s): source_text_field %r resolved to nothing for all %d records. "
+                    "MetricX would score this source with an empty source.",
+                    source_index, label, source_text_field, len(result.records),
+                )
+
+        per_source.append({"index": source_index, "source": label, "type": source_type, **stats})
         logger.info(
             "source %d (%s): kept %s of %s cuts, %.2f h",
             source_index, label, result.stats.get("kept"), result.stats.get("read"),

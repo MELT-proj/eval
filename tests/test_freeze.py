@@ -408,3 +408,28 @@ class TestSpeechvalDevSpecs:
 
         suite = yaml.safe_load((self.ROOT / "configs/eval/suites/speechval-dev.yaml").read_text())["benchmarks"]
         assert all("polyspeech" not in bench["name"].lower() for bench in suite)
+
+
+class TestSourceTextCoverage:
+    """A ``source_text_field`` that resolves to nothing is a bug, not an empty corpus."""
+
+    def test_counts_missing_source_text_and_warns_when_all_are_empty(self, tmp_path, fake_reader, caplog):
+        fake_reader.per_source = {0: [_record("a"), _record("b"), _record("c")]}
+        spec = {"name": "t", "input_cfg": [{"type": "fake", "source_text_field": "supervisions.0.text"}]}
+        with caplog.at_level("WARNING"):
+            summary = freeze(spec, tmp_path)
+        assert summary["sources"][0]["source_text_missing"] == 3
+        assert "supervisions.0.text" in caplog.text
+
+    def test_counts_partial_coverage_without_warning(self, tmp_path, fake_reader, caplog):
+        fake_reader.per_source = {0: [_record("a", source_text="hi"), _record("b")]}
+        spec = {"name": "t", "input_cfg": [{"type": "fake", "source_text_field": "custom.text"}]}
+        with caplog.at_level("WARNING"):
+            summary = freeze(spec, tmp_path)
+        assert summary["sources"][0]["source_text_missing"] == 1
+        assert "custom.text" not in caplog.text
+
+    def test_no_key_without_a_source_text_field(self, tmp_path, fake_reader):
+        fake_reader.per_source = {0: [_record("a")]}
+        summary = freeze({"name": "t", "input_cfg": [{"type": "fake"}]}, tmp_path)
+        assert "source_text_missing" not in summary["sources"][0]
