@@ -62,7 +62,11 @@ first. The way out is to pass **no** `--scorer`: inspect then rebuilds every
 scorer recorded in `log.eval.scorers` (verified on a throwaway log — both
 entries come back, with their own metric lists). `-S` is ignored on that path,
 so the manifest reaches `metricx_scorer` through an environment variable
-instead (see §1).
+instead (see §1). This works only if both scorers are in inspect's registry:
+the entry point imports `melteval`, whose `__init__` imported `melteval.scorers`
+but not `melteval.rescore`, so `metricx_scorer` was not registered and the first
+smoke job died on `LookupError: metricx_scorer was not found`. `__init__` now
+imports both; the module is dependency-free at import time.
 
 **A root-level `nan` in `Score.value` is inspect's "unscored" sentinel.** It
 drops the sample from every metric (`_eval/task/results.py:400`), which would
