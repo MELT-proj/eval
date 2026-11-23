@@ -1,0 +1,63 @@
+# MLS test set: the `test` split of the eight MLS languages available locally,
+# extracted from the `mls_sidon` block of configs/shar/asr-eval-campaign-v1.yaml
+# (${LOCAL_DATASETS_DIR}/mls_sidon/<language>/test).
+#
+# Freezing:
+#   export LOCAL_DATASETS_DIR=<shar>
+#   melteval freeze configs/shar/mls-test.yaml -o <frozen>/mls-test
+#   export MLS_TEST_SET=<frozen>/mls-test
+#
+# Reference field: `custom.pnc_text` in every language, the same
+# Librivox-derived, punctuated/cased convention as librispeech in the campaign
+# v1 spec. Shar folder names are full language names upstream; `lang` here is
+# the ISO code.
+#
+# One dataset_id per language (`mls-<lang>`), so a run can split the set into
+# eight slices and spread them over a node's GPUs. MLS cut ids repeat across
+# languages, so samples are never keyed by corpus id.
+#
+# To inspect a language:
+#   zcat $LOCAL_DATASETS_DIR/mls_sidon/<language>/test/cuts.000000.jsonl.gz | head -1
+name: mls-test
+seed: 0
+
+input_cfg:
+  - type: lhotse_shar
+    shar_path: ${LOCAL_DATASETS_DIR}/mls_sidon/dutch/test
+    text_field: custom.pnc_text
+    tags: {task: asr, lang: nl, dataset_id: mls-nl}
+
+  - type: lhotse_shar
+    shar_path: ${LOCAL_DATASETS_DIR}/mls_sidon/english/test
+    text_field: custom.pnc_text
+    tags: {task: asr, lang: en, dataset_id: mls-en}
+
+  - type: lhotse_shar
+    shar_path: ${LOCAL_DATASETS_DIR}/mls_sidon/french/test
+    text_field: custom.pnc_text
+    tags: {task: asr, lang: fr, dataset_id: mls-fr}
+
+  - type: lhotse_shar
+    shar_path: ${LOCAL_DATASETS_DIR}/mls_sidon/german/test
+    text_field: custom.pnc_text
+    tags: {task: asr, lang: de, dataset_id: mls-de}
+
+  - type: lhotse_shar
+    shar_path: ${LOCAL_DATASETS_DIR}/mls_sidon/italian/test
+    text_field: custom.pnc_text
+    tags: {task: asr, lang: it, dataset_id: mls-it}
+
+  - type: lhotse_shar
+    shar_path: ${LOCAL_DATASETS_DIR}/mls_sidon/polish/test
+    text_field: custom.pnc_text
+    tags: {task: asr, lang: pl, dataset_id: mls-pl}
+
+  - type: lhotse_shar
+    shar_path: ${LOCAL_DATASETS_DIR}/mls_sidon/portuguese/test
+    text_field: custom.pnc_text
+    tags: {task: asr, lang: pt, dataset_id: mls-pt}
+
+  - type: lhotse_shar
+    shar_path: ${LOCAL_DATASETS_DIR}/mls_sidon/spanish/test
+    text_field: custom.pnc_text
+    tags: {task: asr, lang: es, dataset_id: mls-es}
