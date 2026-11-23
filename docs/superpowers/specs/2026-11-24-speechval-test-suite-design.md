@@ -67,11 +67,12 @@ ST:
 | `europarl-st-test` | `frozen_set: ${EUROPARL_ST_TEST_SET}` from `configs/shar/europarl-st-test.yaml` | all 72 directions among the 9 languages, MetricX post-scorer from `custom.sentence` as in dev |
 | `mcif-chunked-st` | `spec: configs/hf/mcif.yaml` | `chunked_st` × {`mcif-short-fixed-de`, `mcif-short-mixed-de`} and the same for `it` — TRANS targets are de/it/zh and **zh is skipped per user decision, MCIF needs no Chinese** — each with `post_scorers: [melteval/mcif_scoring.py@mcif_official_trans_scorer]` |
 
-Frozen-set env names are the ones `suites/v1.yaml` and
-`docs/jupiter-continuous-eval.md` already document, so a single export serves
-both suites: `VOXPOPULI_SET`, `FLEURS24_ASR_SET`, `FLEURS24_ST_ENX_SET`,
-`COVOST2_SET` and `EUROPARL_ST_TEST_SET` are shared with `suites/v1.yaml`
-as-is, and `MLS_TEST_SET` is new. The one exception is `FLEURS24_ST_XEN_SET`:
+Frozen-set env names match the repo's existing exports for these artifacts,
+so a single export serves every suite that reads them: `VOXPOPULI_SET`,
+`FLEURS24_ASR_SET`, `FLEURS24_ST_ENX_SET` and `COVOST2_SET` as
+`suites/v1.yaml` uses them, `EUROPARL_ST_TEST_SET` as
+`docs/jupiter-continuous-eval.md` documents it, and `MLS_TEST_SET` is new.
+The one exception is `FLEURS24_ST_XEN_SET`:
 this suite uses the X→en set with all 25 test ids (23 EU + ru/uk), while v1's
 set was frozen from the 23-source version of the same spec — it must be
 (re)frozen from the current 25-source `configs/shar/fleurs24-st-xen-test.yaml`

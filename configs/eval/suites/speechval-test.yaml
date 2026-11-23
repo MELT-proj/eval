@@ -10,10 +10,10 @@
 # VoxPopuli's own spec warns one language needs >6 h on a single GPU: calibrate `time:` per slice
 # before this campaign is scheduled (a wrong guess is mass timeouts or an over-booked queue).
 #
-# Frozen-set env names are the ones v1.yaml and docs/jupiter-continuous-eval.md already document, so
-# one export serves both suites. `VOXPOPULI_SET`, `FLEURS24_ASR_SET`, `COVOST2_SET` and
-# `EUROPARL_ST_TEST_SET` are shared with suites/v1.yaml as-is; `MLS_TEST_SET` is new
-# (configs/shar/mls-test.yaml, frozen for this suite).
+# Frozen-set env names match the repo's existing exports for these artifacts, so one export serves
+# every suite that reads them: `VOXPOPULI_SET`, `FLEURS24_ASR_SET`, `FLEURS24_ST_ENX_SET` and
+# `COVOST2_SET` as `suites/v1.yaml` uses them, `EUROPARL_ST_TEST_SET` as docs/jupiter-continuous-eval.md
+# documents it, and `MLS_TEST_SET` is new (configs/shar/mls-test.yaml, frozen for this suite).
 # Exception -- FLEURS24_ST_XEN_SET: this suite uses the X->en set with all 25 test ids (23 EU
 # locales + the ru/uk probes), while v1's set was frozen from the 23-source version of the same
 # spec. Re-freeze it from the current 25-source configs/shar/fleurs24-st-xen-test.yaml before this
