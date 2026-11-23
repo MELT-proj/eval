@@ -50,8 +50,12 @@ audio, which offline compute nodes cannot fetch.
 
 ```bash
 LOCAL_DATASETS_DIR=/path/to/shar \
-  melteval freeze configs/shar/librispeech-validation.yaml -o <frozen>/librispeech-validation
+  PYTHONPATH=. melteval freeze configs/shar/librispeech-validation.yaml -o <frozen>/librispeech-validation
 ```
+
+`PYTHONPATH=.` is not optional: the artemis venv's editable install of `melteval` points at another
+checkout, so a bare `melteval freeze` can run an older reader and silently write records this one would
+not (`sources[*].source_text_missing` in `frozen_set.json` is how you notice).
 
 ## Freezing (CPU only)
 
@@ -76,14 +80,14 @@ python scripts/index_shar.py $AZEROS_DIR $AZEROS_INDEXED_DIR \
     fleurs/{en_us,es_419,fr_fr,de_de,it_it,nl_nl,pt_br,hu_hu,fi_fi,cs_cz,hr_hr,bg_bg,lv_lv,da_dk,lt_lt,et_ee,ga_ie,mt_mt}/validation  # + el_gr pl_pl ro_ro sk_sk sl_si sv_se: copied from nyx, see above \
     voxpopuli/{en,de,fr,es,pl,it,ro,hu,cs,nl,fi,hr,sk,sl}/validation
 export LOCAL_DATASETS_DIR=$AZEROS_INDEXED_DIR F=/e/data1/smurf4eu-data/speech/frozen-dev
-for s in fleurs24-st-xen-dev-full fleurs24-st-enx-dev voxpopuli-dev; do melteval freeze configs/shar/$s.yaml -o $F/$s; done
+for s in fleurs24-st-xen-dev-full fleurs24-st-enx-dev voxpopuli-dev; do PYTHONPATH=. melteval freeze configs/shar/$s.yaml -o $F/$s; done
 
 # jupiter, CoVoST2 (copied tree, see above)
-LOCAL_DATASETS_DIR=/e/data1/smurf4eu-data/speech/shar melteval freeze configs/shar/st-eval-campaign-v1-dev.yaml -o $F/st-eval-campaign-v1-dev
+LOCAL_DATASETS_DIR=/e/data1/smurf4eu-data/speech/shar PYTHONPATH=. melteval freeze configs/shar/st-eval-campaign-v1-dev.yaml -o $F/st-eval-campaign-v1-dev
 
 # nyx / artemis (same set, for runs there)
 LOCAL_DATASETS_DIR=/mnt/scratch-nyx/giuseppe/melt/melt-data/shar \
-  melteval freeze configs/shar/st-eval-campaign-v1-dev.yaml -o /mnt/scratch-artemis/giuseppe/frozen/speechval-dev/st-eval-campaign-v1-dev
+  PYTHONPATH=. melteval freeze configs/shar/st-eval-campaign-v1-dev.yaml -o /mnt/scratch-artemis/giuseppe/frozen/speechval-dev/st-eval-campaign-v1-dev
 ```
 
 All jupiter frozen sets live in `/e/data1/smurf4eu-data/speech/frozen-dev` (re-frozen on 2026-11-10 from the data1 indexed
@@ -108,8 +112,37 @@ Frozen sets (locators are absolute paths, so they only work on their own machine
 
 Samples (capped sets, see below): VoxPopuli 13034 (1000 each for en, de, fr, es, pl, it, ro, hu, cs, nl; sl 889,
 hr 789, fi 687, sk 669). The freezer drops cuts with empty `text` (VoxPopuli validation has untranscribed cuts: hr
-loses 496 of 1285). FLEURS X->en 8261 (23 directions, source text never empty); FLEURS en->X 8819 (23 directions; see `dropped_no_reference`
-per source, expected); CoVoST2 61452 (36 directions, capped at 2000 each; the jupiter and artemis sets are identical in size).
+loses 496 of 1285). FLEURS X->en 8261 (23 directions, source text present in every record); FLEURS en->X 8819 (23 directions;
+see `dropped_no_reference` per source, expected; source text present too); CoVoST2 61452 (36 directions, capped at 2000 each;
+the jupiter and artemis sets are identical in size).
+
+## MetricX sources
+
+MetricX-24 is reference-based: its input is `source: <src> candidate: <hyp> reference: <ref>`. The three
+ST families are meant to be scored that way, so a FLEURS score is comparable with CoVoST2 and Europarl.
+
+The artemis FLEURS sets were re-frozen on 2026-11-23 to carry their source transcripts: the specs had
+`source_text_field: supervisions.0.text` since 2026-11-10, but the freeze had run through a venv whose
+editable `melteval` pointed at an older checkout without list-index support in `_nested_value`, so every
+record was written with `source_text: null` under the correct `spec_hash`. The rebuilt sets keep the same
+`spec_hash`, `sample_key`, audio, target and `cut_id` — only `source_text` differs — and the previous
+manifest is kept next to them as `manifest.jsonl.prev`. Jupiter's sets already carried the source and,
+checked record by record against the rebuilt artemis ones, are identical.
+
+`metricx_scorer` computes one score per sample (`scores.metricx_scorer.value`, in [0, 25]; `-1.0` for a
+sample with no completion, out of range on purpose — inspect reads a root-level `nan` as "unscored" and
+would drop the sample from every metric). `metricx` is the mean of those values, `metricx_coverage` the
+fraction with an output, and `metricx_source_coverage` the fraction whose input had a non-empty source.
+The per-sample values are what bootstrap CIs are computed over.
+
+Logs scored before the rebuild are filled in by `scripts/rescore_fleurs_metricx.py`, which reads the
+frozen set named by `MELTEVAL_SOURCE_MANIFEST` (the same variable `metricx_scorer` falls back to, because
+`inspect score` drops `-S` when it rebuilds a log's scorers), refuses any slice below 100% source
+coverage, and rewrites each log in one `inspect score --action overwrite` pass with **no** `--scorer`, so
+both recorded scorers are recomputed together.
+
+Do not use `scripts/evaluate.py score --rescore` on an ST benchmark: it passes one scorer to
+`--action overwrite`, which deletes the slice's other post-hoc scorer (`corpus_bleu` disappears).
 
 ## Caps
 
@@ -144,7 +177,7 @@ time. Freeze it where the audio is:
 
 ```bash
 export POLYSPEECH_ROOT=/e/data1/smurf4eu-data/speech/polyspeech-100
-melteval freeze configs/hf/polyspeech-100-pa_qt-200.yaml -o <frozen>/polyspeech-100-pa_qt-200
+PYTHONPATH=. melteval freeze configs/hf/polyspeech-100-pa_qt-200.yaml -o <frozen>/polyspeech-100-pa_qt-200
 python scripts/frozen_length_stats.py <frozen>/polyspeech-100-pa_qt-200 --json <frozen>/polyspeech-100-pa_qt-200/length_stats.json
 ```
 

@@ -86,6 +86,12 @@ forces it.
   a corpus's own ID.
 - **Disk.** Frozen sets reference audio, they do not copy it. Check `df` before
   adding anything that writes audio, caches datasets, or builds an image.
+- **The venv's `melteval` may not be this checkout.** On artemis the editable install resolves to
+  `/mnt/scratch-artemis/giuseppe/eval-mcif/melteval`, so a bare `melteval freeze` can run an older
+  reader and write records this code would not — silently, under a correct `spec_hash`. Freeze with
+  `PYTHONPATH=. melteval freeze …` and check `sources[*].source_text_missing` in `frozen_set.json`.
+  This is how the FLEURS dev sets came out with `source_text: null`: `supervisions.0.text` did not
+  resolve in the older reader, so every MetricX score was reference-only.
 - **Shar layouts.** Both plain (`cuts.*.jsonl.gz`) and indexed
   (`cuts.*.jsonl` + `.idx`) exist. Globbing only the gzipped form reports a
   fully populated source as empty — use `shar_manifest_files`.
