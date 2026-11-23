@@ -674,3 +674,15 @@ class TestPacks:
         assert seen["MELT_GPUS"] == "4"
         assert seen["command"][:2] == ["infra/runners/submit_pack.sh", "jupiter"]
         assert seen["MELT_JOB_TAG"] == f"{evaluate.PACK_PREFIX}{seen['command'][2]}"
+
+
+def test_benchmarks_can_be_a_list_of_suites(tmp_path):
+    """Two suite paths are read in order and concatenated (the dev partition's two suites)."""
+    first = tmp_path / "first.yaml"
+    first.write_text("benchmarks:\n  - {name: LibriSpeech}\n")
+    second = tmp_path / "second.yaml"
+    second.write_text("benchmarks:\n  - {name: PolySpeech}\n")
+    assert [b["name"] for b in evaluate.load_benchmarks([str(first), str(second)])] == [
+        "LibriSpeech",
+        "PolySpeech",
+    ]

@@ -143,10 +143,15 @@ def resolve_model(model: str) -> tuple[str | None, str | None]:
 
 
 def load_benchmarks(value) -> list[dict]:
-    """A config's ``benchmarks``: a list as written, or the path of a suite file holding one.
+    """A config's ``benchmarks``: a list as written, or the path(s) of a suite file.
 
-    A suite path is relative to the repo root, like every other path in a config.
+    A list of paths is read in order and concatenated, which is how a config
+    takes the union of two suites, e.g. the dev partition
+    (``speechval-dev.yaml`` + ``speechval-polyspeech.yaml``). A suite path is
+    relative to the repo root, like every other path in a config.
     """
+    if isinstance(value, list) and value and all(isinstance(item, str) for item in value):
+        return [bench for path in value for bench in load_benchmarks(path)]
     if not isinstance(value, str):
         return value
     path = Path(expand(value) or value)
