@@ -35,10 +35,15 @@ from __future__ import annotations
 
 import json
 import logging
+import os
+import threading
+from dataclasses import dataclass
 from pathlib import Path
 
-from inspect_ai.scorer import Metric, SampleScore, Score, Scorer, Target, metric, scorer # type: ignore
-from inspect_ai.solver import TaskState # type: ignore
+from inspect_ai.scorer import Metric, SampleScore, Score, Scorer, Target, metric, scorer  # type: ignore
+from inspect_ai.solver import TaskState  # type: ignore
+
+from melteval.manifest import EvalRecord, read_manifest, resolve_frozen_set
 
 
 logger = logging.getLogger(__name__)
@@ -63,7 +68,7 @@ def extract_triples(log_path: str | Path) -> tuple[list[dict], dict]:
         so a rescore run that silently scores zero samples is visible as
         exactly that rather than looking like a clean, empty success.
     """
-    from inspect_ai.log import read_eval_log # type: ignore
+    from inspect_ai.log import read_eval_log  # type: ignore
 
     log = read_eval_log(str(log_path), resolve_attachments=True)
     samples = log.samples or []
@@ -149,8 +154,8 @@ def comet() -> Metric:
         triples = [t for t in map(_triple, scores) if t]
         if not triples:
             return float("nan")
-        import torch # type: ignore
-        from comet import download_model, load_from_checkpoint # type: ignore
+        import torch  # type: ignore
+        from comet import download_model, load_from_checkpoint  # type: ignore
 
         model = load_from_checkpoint(download_model(COMET_MODEL))
         output = model.predict(triples, batch_size=16, gpus=1 if torch.cuda.is_available() else 0)
@@ -209,45 +214,115 @@ METRICX_TOKENIZER_REVISION = "63fc6450d80515b48e026b69ef2fbbd426433e84"
 METRICX_MAX_INPUT_LENGTH = 1536
 METRICX_SCORE_TOKEN_ID = 250089
 
+#: Environment variable naming a frozen set whose ``source_text`` should fill in for samples that have
+#: none. ``inspect score`` drops ``-S`` when it rebuilds a log's scorers, so the backfill sets this
+#: instead of passing ``source_manifest=`` to the scorer (docs/speechval.md).
+SOURCE_MANIFEST_ENV = "MELTEVAL_SOURCE_MANIFEST"
+
+
+@dataclass(frozen=True)
+class SourceManifest:
+    """A frozen set's records, indexed by ``(dataset_id, sample_key)``.
+
+    The composite key is required: ``sample_key`` is ``<source_index>-<ordinal>`` and repeats across
+    frozen sets (``00-000000`` is a different sentence in FLEURS X->en and en->X), so a key-only
+    lookup would score every sample against the wrong language's transcript and report a number.
+    """
+
+    path: Path
+    records: dict[tuple[str, str], EvalRecord]
+
+
+def load_source_manifest(path: str | Path) -> SourceManifest:
+    """Read a frozen set (its directory or manifest) into a MetricX source lookup."""
+    manifest = resolve_frozen_set(path)
+    return SourceManifest(
+        path=manifest,
+        records={(record.dataset_id, record.sample_key): record for record in read_manifest(manifest)},
+    )
+
+
+def _resolve_source(state: TaskState, manifest: SourceManifest | None) -> tuple[str, str, bool]:
+    """The source text for *state*: ``(text, origin, has_source)``."""
+    metadata = state.metadata or {}
+    source = metadata.get("source_text")
+    if source:
+        return str(source), "sample", True
+    if manifest is None:
+        return "", "none", False
+    key = (str(metadata.get("dataset_id") or ""), str(state.sample_id))
+    record = manifest.records.get(key)
+    if record is None:
+        return "", "manifest-miss", False
+    if (record.src_lang, record.tgt_lang) != (metadata.get("src_lang"), metadata.get("tgt_lang")):
+        raise ValueError(
+            f"source manifest {manifest.path} has {key} as src_lang={record.src_lang!r}, "
+            f"tgt_lang={record.tgt_lang!r}, but the sample is src_lang={metadata.get('src_lang')!r}, "
+            f"tgt_lang={metadata.get('tgt_lang')!r}: wrong frozen set for this log?"
+        )
+    text = record.source_text or ""
+    return text, "manifest", bool(text)
+
 
 def metricx_input(source: str, hypothesis: str, reference: str) -> str:
     """The reference-based MetricX-24 input string."""
     return f"source: {source} candidate: {hypothesis} reference: {reference}"
 
 
+#: The tokenizer, model, device and pad id, loaded once per process on first use. ``inspect score`` calls
+#: the scorer for many samples, and loading 13B parameters per sample would dominate everything else.
+_MODEL_STATE: tuple | None = None
+#: Serialises model use. Re-entrant so :func:`_load_metricx_model` can be called under it.
+_METRICX_LOCK = threading.RLock()
+
+
+def _load_metricx_model() -> tuple:
+    """Return ``(tokenizer, model, device, pad)``, loading the checkpoint on first use."""
+    global _MODEL_STATE
+    if _MODEL_STATE is None:
+        import torch  # type: ignore
+        import transformers  # type: ignore
+
+        device = "cuda" if torch.cuda.is_available() else "cpu"
+        tokenizer = transformers.AutoTokenizer.from_pretrained(
+            METRICX_TOKENIZER, revision=METRICX_TOKENIZER_REVISION
+        )
+        model = transformers.MT5ForConditionalGeneration.from_pretrained(
+            METRICX_MODEL, revision=METRICX_REVISION, torch_dtype=torch.bfloat16, low_cpu_mem_usage=True
+        )
+        model.to(device).eval()
+        _MODEL_STATE = (tokenizer, model, device, model.config.pad_token_id)
+    return _MODEL_STATE
+
+
 def metricx_predict(inputs: list[str], batch_size: int = 16) -> list[float]:
     """MetricX-24 error scores in [0, 25] (lower is better), parallel to *inputs*; the model is loaded once."""
     import torch  # type: ignore
-    import transformers  # type: ignore
 
-    device = "cuda" if torch.cuda.is_available() else "cpu"
-    tokenizer = transformers.AutoTokenizer.from_pretrained(METRICX_TOKENIZER, revision=METRICX_TOKENIZER_REVISION)
-    model = transformers.MT5ForConditionalGeneration.from_pretrained(
-        METRICX_MODEL, revision=METRICX_REVISION, torch_dtype=torch.bfloat16, low_cpu_mem_usage=True
-    )
-    model.to(device).eval()
-    pad = model.config.pad_token_id
-    ids = [
-        tokenizer(t, max_length=METRICX_MAX_INPUT_LENGTH, truncation=True, padding=False)["input_ids"][:-1]
-        for t in inputs
-    ]
-    scores = [0.0] * len(ids)
-    order = sorted(range(len(ids)), key=lambda i: len(ids[i]))  # by length: little padding, order restored below
-    for start in range(0, len(order), batch_size):
-        chunk = order[start : start + batch_size]
-        width = max(len(ids[i]) for i in chunk)
-        input_ids = torch.tensor([ids[i] + [pad] * (width - len(ids[i])) for i in chunk], device=device)
-        mask = torch.tensor([[1] * len(ids[i]) + [0] * (width - len(ids[i])) for i in chunk], device=device)
-        with torch.inference_mode():
-            logits = model(
-                input_ids=input_ids,
-                attention_mask=mask,
-                decoder_input_ids=torch.zeros((len(chunk), 1), dtype=torch.long, device=device),
-                use_cache=False,
-            ).logits
-        for i, value in zip(chunk, logits[:, 0, METRICX_SCORE_TOKEN_ID].float().clamp(0.0, 25.0).tolist()):
-            scores[i] = value
-    return scores
+    with _METRICX_LOCK:
+        tokenizer, model, device, pad = _load_metricx_model()
+        ids = [
+            tokenizer(t, max_length=METRICX_MAX_INPUT_LENGTH, truncation=True, padding=False)["input_ids"][:-1]
+            for t in inputs
+        ]
+        scores = [0.0] * len(ids)
+        # By length: little padding, order restored below.
+        order = sorted(range(len(ids)), key=lambda i: len(ids[i]))
+        for start in range(0, len(order), batch_size):
+            chunk = order[start : start + batch_size]
+            width = max(len(ids[i]) for i in chunk)
+            input_ids = torch.tensor([ids[i] + [pad] * (width - len(ids[i])) for i in chunk], device=device)
+            mask = torch.tensor([[1] * len(ids[i]) + [0] * (width - len(ids[i])) for i in chunk], device=device)
+            with torch.inference_mode():
+                logits = model(
+                    input_ids=input_ids,
+                    attention_mask=mask,
+                    decoder_input_ids=torch.zeros((len(chunk), 1), dtype=torch.long, device=device),
+                    use_cache=False,
+                ).logits
+            for i, value in zip(chunk, logits[:, 0, METRICX_SCORE_TOKEN_ID].float().clamp(0.0, 25.0).tolist()):
+                scores[i] = value
+        return scores
 
 
 def _metricx_triple(sample_score: SampleScore) -> dict | None:
@@ -255,16 +330,29 @@ def _metricx_triple(sample_score: SampleScore) -> dict | None:
     return (sample_score.score.metadata or {}).get("metricx_triple")
 
 
+#: ``Score.value`` for a sample with nothing to score. Out of MetricX's [0, 25] range so it cannot be
+#: mistaken for a real score. Not ``nan``: inspect reads a root-level float NaN as its "unscored" sentinel
+#: and drops the sample from every metric, which would take unscorable samples out of the coverage
+#: denominators (and report a canary slice with one empty completion as 100% covered).
+UNSCORED = -1.0
+
+
+def _scored(value) -> bool:
+    """Whether *value* is a real MetricX score (a number in [0, 25])."""
+    return isinstance(value, (int, float)) and not isinstance(value, bool) and 0.0 <= value <= 25.0
+
+
 @metric
 def metricx() -> Metric:
-    """System-level MetricX-24 error (mean of segment scores, 0-25, lower is better)."""
+    """System-level MetricX-24 error: the mean of the per-sample scores (0-25, lower is better).
+
+    Unscorable samples (empty completion) carry :data:`UNSCORED` and are left out, exactly as the old
+    batched metric left out samples without a triple.
+    """
 
     def calculate(scores: list[SampleScore]) -> float:
-        triples = [t for t in map(_metricx_triple, scores) if t]
-        if not triples:
-            return float("nan")
-        values = metricx_predict([metricx_input(t["src"], t["mt"], t["ref"]) for t in triples])
-        return sum(values) / len(values)
+        values = [float(s.score.value) for s in scores if _scored(s.score.value)]
+        return sum(values) / len(values) if values else float("nan")
 
     return calculate
 
@@ -279,20 +367,54 @@ def metricx_coverage() -> Metric:
     return calculate
 
 
-@scorer(metrics=[metricx(), metricx_coverage()])
-def metricx_scorer() -> Scorer:
-    """MetricX-24 hybrid XXL, reference-based, from each sample's ``source_text``, completion and target.
+@metric
+def metricx_source_coverage() -> Metric:
+    """Fraction of samples whose MetricX input had a non-empty source.
 
-    Like :func:`comet_scorer`, nothing is computed per sample: the triple goes into ``Score.metadata`` and
-    :func:`metricx` scores the run at once. A sample without a source transcript is still scored, with an empty
-    source (upstream allows it); only an empty completion is skipped.
+    Counted over all samples, including ones with no completion: an empty output is
+    :func:`metricx_coverage`'s concern, a missing source is this one's.
     """
 
+    def calculate(scores: list[SampleScore]) -> float:
+        if not scores:
+            return 0.0
+        return sum(bool((s.score.metadata or {}).get("metricx_source_ok")) for s in scores) / len(scores)
+
+    return calculate
+
+
+@scorer(metrics=[metricx(), metricx_coverage(), metricx_source_coverage()])
+def metricx_scorer(source_manifest: str | None = None) -> Scorer:
+    """MetricX-24 hybrid XXL, reference-based, scored per sample from source, completion and target.
+
+    The source is the sample's ``source_text`` when it has one. ``source_manifest`` — or, failing
+    that, ``$MELTEVAL_SOURCE_MANIFEST`` — names a frozen set to look it up in, keyed by
+    ``(dataset_id, sample_key)``; that is how logs frozen before the source field existed are scored
+    with full triples. The per-sample score lands in ``Score.value`` (:data:`UNSCORED` when there is no
+    output) and the triple stays in ``Score.metadata``, so :func:`metricx` can take the mean without a
+    second model pass.
+    """
+    manifest_path = source_manifest or os.environ.get(SOURCE_MANIFEST_ENV)
+    manifest = load_source_manifest(manifest_path) if manifest_path else None
+
     async def score(state: TaskState, target: Target) -> Score:
-        source = (state.metadata or {}).get("source_text") or ""
+        source, origin, has_source = _resolve_source(state, manifest)
         hypothesis = state.output.completion if state.output else ""
         usable = bool(hypothesis and hypothesis.strip())
-        triple = {"src": source, "mt": hypothesis, "ref": target.text} if usable else None
-        return Score(value={}, answer=hypothesis, metadata={"metricx_triple": triple})
+        triple = None
+        value = UNSCORED
+        if usable:
+            triple = {"src": source, "mt": hypothesis, "ref": target.text}
+            value = metricx_predict([metricx_input(source, hypothesis, target.text)])[0]
+        return Score(
+            value=value,
+            answer=hypothesis,
+            metadata={
+                "metricx_triple": triple,
+                "metricx_source": origin,
+                "metricx_source_ok": has_source,
+                "metricx_manifest": str(manifest.path) if manifest else None,
+            },
+        )
 
     return score

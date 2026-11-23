@@ -226,7 +226,7 @@ class TestCometScorerThroughRealInspect:
 class TestMetricxScorerThroughRealInspect:
     """``metricx_scorer`` under a real ``inspect_ai.eval()``, with the model replaced by a recorder."""
 
-    def test_scores_the_corpus_with_the_reference_based_input(self, tmp_path, monkeypatch):
+    def test_per_sample_values_mean_and_source_coverage(self, tmp_path, monkeypatch):
         from inspect_ai import Task
         from inspect_ai import eval as inspect_eval
         from inspect_ai.dataset import MemoryDataset, Sample
@@ -234,7 +234,7 @@ class TestMetricxScorerThroughRealInspect:
         import melteval.rescore as rescore
 
         seen = []
-        monkeypatch.setattr(rescore, "metricx_predict", lambda inputs: seen.append(inputs) or [2.0, 4.0, 6.0])
+        monkeypatch.setattr(rescore, "metricx_predict", lambda inputs: seen.extend(inputs) or [2.0])
         dataset = MemoryDataset(
             [
                 Sample(input="x", target="Pani Przewodnicząca.", id="a", metadata={"source_text": "Madame la Présidente."}),
@@ -256,13 +256,158 @@ class TestMetricxScorerThroughRealInspect:
         )
         assert log.status == "success"
         metrics = log.results.scores[0].metrics
-        assert metrics["metricx"].value == pytest.approx(4.0)
+        assert metrics["metricx"].value == pytest.approx(2.0)
         assert metrics["metricx_coverage"].value == pytest.approx(3 / 4)
-        [inputs] = seen
-        assert sorted(inputs) == sorted(
+        assert metrics["metricx_source_coverage"].value == pytest.approx(3 / 4)
+        assert len(seen) == 3
+        assert sorted(seen) == sorted(
             [
                 "source: Madame la Présidente. candidate: Pani Przewodnicząca. reference: Pani Przewodnicząca.",
                 "source:  candidate: Guten Tag. reference: Guten Tag.",
                 "source: Au revoir. candidate: Tschüss. reference: Tschüss.",
             ]
         )
+        values = {s.id: s.scores["metricx_scorer"].value for s in log.samples}
+        assert values["a"] == pytest.approx(2.0)
+        assert values["d"] == -1.0  # no completion: the out-of-range UNSCORED sentinel
+
+
+class TestMetricxSourceManifest:
+    """A frozen-set manifest fills the source where the sample metadata has none."""
+
+    def _manifest(self, tmp_path, records):
+        from melteval.manifest import MANIFEST_NAME
+
+        path = tmp_path / "set"
+        path.mkdir()
+        with open(path / MANIFEST_NAME, "w") as fh:
+            fh.writelines(r.to_json() + "\n" for r in records)
+        return str(path)
+
+    def _record(self, key, dataset_id, source_text, src_lang="fr", tgt_lang="en"):
+        from melteval.manifest import AudioLocator, EvalRecord
+
+        return EvalRecord(
+            sample_key=key,
+            task="st",
+            target="ref",
+            audio=AudioLocator(kind="shar", params={}),
+            lang=tgt_lang,
+            src_lang=src_lang,
+            tgt_lang=tgt_lang,
+            dataset_id=dataset_id,
+            source_text=source_text,
+        )
+
+    def _run(self, tmp_path, monkeypatch, scorer, samples):
+        from inspect_ai import Task
+        from inspect_ai import eval as inspect_eval
+        from inspect_ai.dataset import MemoryDataset
+
+        import melteval.rescore as rescore
+
+        monkeypatch.setattr(rescore, "metricx_predict", lambda inputs: [1.0])
+        outputs = [ModelOutput.from_content(model="mockllm/model", content="out") for _ in samples]
+        [log] = inspect_eval(
+            Task(dataset=MemoryDataset(samples), scorer=scorer),
+            model="mockllm/model",
+            model_args={"custom_outputs": outputs},
+            display="none",
+            log_dir=str(tmp_path),
+        )
+        return log
+
+    def test_manifest_fills_a_missing_source(self, tmp_path, monkeypatch):
+        from inspect_ai.dataset import Sample
+
+        import melteval.rescore as rescore
+
+        manifest = self._manifest(tmp_path, [self._record("00-000000", "fleurs-fr_en-dev", "Bonjour.")])
+        scorer = rescore.metricx_scorer(source_manifest=manifest)
+        log = self._run(
+            tmp_path,
+            monkeypatch,
+            scorer,
+            [
+                Sample(
+                    input="x",
+                    target="ref",
+                    id="00-000000",
+                    metadata={"dataset_id": "fleurs-fr_en-dev", "src_lang": "fr", "tgt_lang": "en"},
+                )
+            ],
+        )
+        assert log.results.scores[0].metrics["metricx_source_coverage"].value == 1.0
+        meta = log.samples[0].scores["metricx_scorer"].metadata
+        assert meta["metricx_triple"]["src"] == "Bonjour."
+        assert meta["metricx_source"] == "manifest"
+
+    def test_same_key_under_another_dataset_is_not_used(self, tmp_path, monkeypatch):
+        from inspect_ai.dataset import Sample
+
+        import melteval.rescore as rescore
+
+        manifest = self._manifest(tmp_path, [self._record("00-000000", "fleurs-es_en-dev", "Hola.")])
+        scorer = rescore.metricx_scorer(source_manifest=manifest)
+        log = self._run(
+            tmp_path,
+            monkeypatch,
+            scorer,
+            [
+                Sample(
+                    input="x",
+                    target="ref",
+                    id="00-000000",
+                    metadata={"dataset_id": "fleurs-fr_en-dev", "src_lang": "fr", "tgt_lang": "en"},
+                )
+            ],
+        )
+        assert log.results.scores[0].metrics["metricx_source_coverage"].value == 0.0
+
+    def test_manifest_language_mismatch_fails_the_eval(self, tmp_path, monkeypatch):
+        from inspect_ai.dataset import Sample
+
+        import melteval.rescore as rescore
+
+        manifest = self._manifest(
+            tmp_path, [self._record("00-000000", "fleurs-fr_en-dev", "Bonjour.", src_lang="de")]
+        )
+        scorer = rescore.metricx_scorer(source_manifest=manifest)
+        log = self._run(
+            tmp_path,
+            monkeypatch,
+            scorer,
+            [
+                Sample(
+                    input="x",
+                    target="ref",
+                    id="00-000000",
+                    metadata={"dataset_id": "fleurs-fr_en-dev", "src_lang": "fr", "tgt_lang": "en"},
+                )
+            ],
+        )
+        assert log.status == "error"
+        assert "src_lang" in str(log.error.message)
+
+    def test_env_var_is_the_fallback(self, tmp_path, monkeypatch):
+        from inspect_ai.dataset import Sample
+
+        import melteval.rescore as rescore
+
+        manifest = self._manifest(tmp_path, [self._record("00-000000", "fleurs-fr_en-dev", "Bonjour.")])
+        monkeypatch.setenv(rescore.SOURCE_MANIFEST_ENV, manifest)
+        scorer = rescore.metricx_scorer()
+        log = self._run(
+            tmp_path,
+            monkeypatch,
+            scorer,
+            [
+                Sample(
+                    input="x",
+                    target="ref",
+                    id="00-000000",
+                    metadata={"dataset_id": "fleurs-fr_en-dev", "src_lang": "fr", "tgt_lang": "en"},
+                )
+            ],
+        )
+        assert log.results.scores[0].metrics["metricx_source_coverage"].value == 1.0
