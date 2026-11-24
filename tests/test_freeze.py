@@ -339,11 +339,13 @@ class TestSpeechvalDevSpecs:
             assert by_name[names[0]] == {f"covost2-{x}_en{suffix}" for x in self.COVOST_XEN}
             assert by_name[names[1]] == {f"covost2-en_{x}{suffix}" for x in self.COVOST_ENX}
 
-    def test_fleurs_xen_test_has_all_23_locales(self, monkeypatch):
+    def test_fleurs_xen_test_mirrors_the_dev_full_spec_on_the_eu_locales(self, monkeypatch):
+        """The 23 EU sources the dev suite runs reappear in the test spec; ru/uk are test-only probes."""
         sources = self._load("fleurs24-st-xen-test.yaml", monkeypatch)
         dev = self._load("fleurs24-st-xen-dev-full.yaml", monkeypatch)
-        assert len(sources) == 23
-        assert {s["tags"]["dataset_id"] + "-dev" for s in sources} == {s["tags"]["dataset_id"] for s in dev}
+        test_ids = {s["tags"]["dataset_id"] for s in sources}
+        assert len(dev) == 23
+        assert {s["tags"]["dataset_id"].removesuffix("-dev") for s in dev} <= test_ids
 
     @pytest.mark.parametrize("c", ["clean", "other"])
     def test_librispeech_validation_mirrors_test(self, c):
@@ -433,3 +435,44 @@ class TestSourceTextCoverage:
         fake_reader.per_source = {0: [_record("a")]}
         summary = freeze({"name": "t", "input_cfg": [{"type": "fake"}]}, tmp_path)
         assert "source_text_missing" not in summary["sources"][0]
+
+
+class TestSourceSpecs:
+    """The standalone test-split source specs, whose dataset_ids the test suite slices must match."""
+
+    def test_mls_test_spec(self):
+        """Eight MLS languages, one `mls-<lang>` dataset_id each, scored on custom.pnc_text."""
+        import yaml
+
+        path = Path(__file__).parent.parent / "configs" / "shar" / "mls-test.yaml"
+        spec = yaml.safe_load(path.read_text())
+        assert spec["name"] == "mls-test"
+        sources = spec["input_cfg"]
+        assert len(sources) == 8
+        assert {s["type"] for s in sources} == {"lhotse_shar"}
+        langs = ["nl", "en", "fr", "de", "it", "pl", "pt", "es"]
+        assert {s["tags"]["dataset_id"] for s in sources} == {f"mls-{lang}" for lang in langs}
+        for source in sources:
+            assert source["text_field"] == "custom.pnc_text"
+            assert source["shar_path"].endswith("/test")
+            assert source["tags"]["dataset_id"] == "mls-" + source["tags"]["lang"]
+
+    def test_fleurs_xen_test_spec(self):
+        """Twenty-three EU locales plus the ru/uk probes, all X->en ST under one dataset_id each."""
+        import yaml
+
+        path = Path(__file__).parent.parent / "configs" / "shar" / "fleurs24-st-xen-test.yaml"
+        spec = yaml.safe_load(path.read_text())
+        assert spec["name"] == "fleurs24-st-xen-test"
+        sources = spec["input_cfg"]
+        assert len(sources) == 25
+        dataset_ids = [s["tags"]["dataset_id"] for s in sources]
+        assert len(set(dataset_ids)) == 25
+        assert {"fleurs-ru_en", "fleurs-uk_en"} <= set(dataset_ids)
+        for source in sources:
+            assert source["type"] == "lhotse_shar"
+            assert source["reference_map"] == "configs/refs/fleurs-en-reference-test.json"
+            assert source["tags"]["task"] == "st"
+            assert source["tags"]["tgt_lang"] == "en"
+            assert source["tags"]["dataset_id"] == "fleurs-" + source["tags"]["src_lang"] + "_en"
+            assert source["shar_path"].endswith("/test")

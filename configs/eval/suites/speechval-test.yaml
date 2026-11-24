@@ -1,0 +1,322 @@
+# speechval TEST suite: the test half of the validation/test split -- speechval-dev.yaml's mirror.
+# Shared by configs in configs/eval/ (`benchmarks: <this file>`); a config that runs part of it uses `skip`.
+#
+# Entire test splits only: no slice carries a `limit`, and no source is capped. A debug run passes
+# `-T limit=N` against the same frozen set instead of a shrunken source.
+#
+# VoiceBench, AdvBench and RedVox have no source yet; their stubs are commented at the end.
+#
+# Wall clock: only LibriSpeech carries `time:`, because that is all dev/v1 had to calibrate against.
+# VoxPopuli's own spec warns one language needs >6 h on a single GPU: calibrate `time:` per slice
+# before this campaign is scheduled (a wrong guess is mass timeouts or an over-booked queue).
+#
+# Frozen-set env names match the repo's existing exports for these artifacts, so one export serves
+# every suite that reads them: `VOXPOPULI_SET`, `FLEURS24_ASR_SET`, `FLEURS24_ST_ENX_SET` and
+# `COVOST2_SET` as `suites/v1.yaml` uses them, `EUROPARL_ST_TEST_SET` as docs/jupiter-continuous-eval.md
+# documents it, and `MLS_TEST_SET` is new (configs/shar/mls-test.yaml, frozen for this suite).
+# Exception -- FLEURS24_ST_XEN_SET: this suite uses the X->en set with all 25 test ids (23 EU
+# locales + the ru/uk probes), while v1's set was frozen from the 23-source version of the same
+# spec. Re-freeze it from the current 25-source configs/shar/fleurs24-st-xen-test.yaml before this
+# suite runs, or the two ru/uk slices match no sample and their jobs die at dataset build.
+
+benchmarks:
+  # configs/hf/librispeech-hf-test-{clean,other}.yaml (v1's own choice for the test split). The HF cache
+  # must be pulled from a login shell first -- compute nodes run HF_HUB_OFFLINE=1; README.md,
+  # "Evaluating a HuggingFace benchmark".
+  - name: librispeech-test-clean
+    spec: configs/hf/librispeech-hf-test-clean.yaml
+    needs_instruction: true
+    slices:
+      # `time`: SLURM wall clock; Qwen3-Omni needs ~1h15 here, past the 1h10 default cap.
+      - {task: asr, dataset_id: librispeech-test-clean, time: "02:00:00"}
+
+  - name: librispeech-test-other
+    spec: configs/hf/librispeech-hf-test-other.yaml
+    needs_instruction: true
+    slices:
+      - {task: asr, dataset_id: librispeech-test-other, time: "02:00:00"}
+
+  # configs/shar/voxpopuli-test.yaml. Slice ids are the spec's own dataset_id tags, unsuffixed
+  # (`voxpopuli-<lang>`, not `voxpopuli-<lang>-test`). WER/CER use the language-agnostic `basic`
+  # normalizer in every slice; only en overrides it with the English one (numbers are spelled out in
+  # its reference).
+  - name: voxpopuli-test
+    frozen_set: ${VOXPOPULI_SET}
+    needs_instruction: true
+    slices:
+      - {task: asr, dataset_id: voxpopuli-en, args: [-T, normalizer=english]}
+      - {task: asr, dataset_id: voxpopuli-de}
+      - {task: asr, dataset_id: voxpopuli-fr}
+      - {task: asr, dataset_id: voxpopuli-es}
+      - {task: asr, dataset_id: voxpopuli-it}
+      - {task: asr, dataset_id: voxpopuli-pl}
+      - {task: asr, dataset_id: voxpopuli-ro}
+      - {task: asr, dataset_id: voxpopuli-hu}
+      - {task: asr, dataset_id: voxpopuli-cs}
+      - {task: asr, dataset_id: voxpopuli-nl}
+      - {task: asr, dataset_id: voxpopuli-fi}
+      - {task: asr, dataset_id: voxpopuli-hr}
+      - {task: asr, dataset_id: voxpopuli-sk}
+      - {task: asr, dataset_id: voxpopuli-sl}
+      - {task: asr, dataset_id: voxpopuli-et}
+      - {task: asr, dataset_id: voxpopuli-lt}
+
+  # configs/shar/mls-test.yaml: one dataset_id per language, unsuffixed like VoxPopuli's.
+  - name: mls-test
+    frozen_set: ${MLS_TEST_SET}
+    needs_instruction: true
+    slices:
+      - {task: asr, dataset_id: mls-nl}
+      - {task: asr, dataset_id: mls-en}
+      - {task: asr, dataset_id: mls-fr}
+      - {task: asr, dataset_id: mls-de}
+      - {task: asr, dataset_id: mls-it}
+      - {task: asr, dataset_id: mls-pl}
+      - {task: asr, dataset_id: mls-pt}
+      - {task: asr, dataset_id: mls-es}
+
+  # configs/shar/fleurs24-asr-test.yaml tags every language with the one flat `dataset_id: fleurs`, so
+  # per-language slices cannot exist: one pooled slice, exactly as v1's `fleurs24-asr` runs it. The
+  # scorer's grouped metrics carry the per-language numbers.
+  - name: fleurs24-asr-test
+    frozen_set: ${FLEURS24_ASR_SET}
+    needs_instruction: true
+    slices:
+      - {task: asr}
+
+  # configs/hf/mcif.yaml, read live. ASR exists for target `en` only.
+  - name: mcif-chunked-asr
+    spec: configs/hf/mcif.yaml
+    slices:
+      - {task: chunked_asr, dataset_id: mcif-short-fixed-en}
+      - {task: chunked_asr, dataset_id: mcif-short-mixed-en}
+
+  # configs/shar/fleurs24-st-xen-test.yaml: X->en, the 23 EU locales plus the ru/uk probes (25 slices,
+  # one per dataset_id). MetricX-24 hybrid XXL post-hoc, from the source transcript.
+  - name: fleurs24-st-xen-test
+    frozen_set: ${FLEURS24_ST_XEN_SET}
+    needs_instruction: true
+    post_venv: ${METRICS_VENV_PATH}
+    slices:
+      - {task: st, dataset_id: fleurs-es_en, post_scorers: [melteval/rescore.py@metricx_scorer]}
+      - {task: st, dataset_id: fleurs-fr_en, post_scorers: [melteval/rescore.py@metricx_scorer]}
+      - {task: st, dataset_id: fleurs-de_en, post_scorers: [melteval/rescore.py@metricx_scorer]}
+      - {task: st, dataset_id: fleurs-it_en, post_scorers: [melteval/rescore.py@metricx_scorer]}
+      - {task: st, dataset_id: fleurs-nl_en, post_scorers: [melteval/rescore.py@metricx_scorer]}
+      - {task: st, dataset_id: fleurs-pt_en, post_scorers: [melteval/rescore.py@metricx_scorer]}
+      - {task: st, dataset_id: fleurs-pl_en, post_scorers: [melteval/rescore.py@metricx_scorer]}
+      - {task: st, dataset_id: fleurs-hu_en, post_scorers: [melteval/rescore.py@metricx_scorer]}
+      - {task: st, dataset_id: fleurs-fi_en, post_scorers: [melteval/rescore.py@metricx_scorer]}
+      - {task: st, dataset_id: fleurs-cs_en, post_scorers: [melteval/rescore.py@metricx_scorer]}
+      - {task: st, dataset_id: fleurs-ro_en, post_scorers: [melteval/rescore.py@metricx_scorer]}
+      - {task: st, dataset_id: fleurs-sv_en, post_scorers: [melteval/rescore.py@metricx_scorer]}
+      - {task: st, dataset_id: fleurs-hr_en, post_scorers: [melteval/rescore.py@metricx_scorer]}
+      - {task: st, dataset_id: fleurs-sk_en, post_scorers: [melteval/rescore.py@metricx_scorer]}
+      - {task: st, dataset_id: fleurs-bg_en, post_scorers: [melteval/rescore.py@metricx_scorer]}
+      - {task: st, dataset_id: fleurs-lv_en, post_scorers: [melteval/rescore.py@metricx_scorer]}
+      - {task: st, dataset_id: fleurs-da_en, post_scorers: [melteval/rescore.py@metricx_scorer]}
+      - {task: st, dataset_id: fleurs-lt_en, post_scorers: [melteval/rescore.py@metricx_scorer]}
+      - {task: st, dataset_id: fleurs-el_en, post_scorers: [melteval/rescore.py@metricx_scorer]}
+      - {task: st, dataset_id: fleurs-et_en, post_scorers: [melteval/rescore.py@metricx_scorer]}
+      - {task: st, dataset_id: fleurs-sl_en, post_scorers: [melteval/rescore.py@metricx_scorer]}
+      - {task: st, dataset_id: fleurs-ga_en, post_scorers: [melteval/rescore.py@metricx_scorer]}
+      - {task: st, dataset_id: fleurs-mt_en, post_scorers: [melteval/rescore.py@metricx_scorer]}
+      - {task: st, dataset_id: fleurs-ru_en, post_scorers: [melteval/rescore.py@metricx_scorer]}
+      - {task: st, dataset_id: fleurs-uk_en, post_scorers: [melteval/rescore.py@metricx_scorer]}
+
+  # configs/shar/fleurs24-st-enx-test.yaml: English audio into each EU language (one slice per target).
+  # MetricX-24 post-hoc, from the English source.
+  - name: fleurs24-st-enx-test
+    frozen_set: ${FLEURS24_ST_ENX_SET}
+    needs_instruction: true
+    post_venv: ${METRICS_VENV_PATH}
+    slices:
+      - {task: st, dataset_id: fleurs-en_bg, post_scorers: [melteval/rescore.py@metricx_scorer]}
+      - {task: st, dataset_id: fleurs-en_cs, post_scorers: [melteval/rescore.py@metricx_scorer]}
+      - {task: st, dataset_id: fleurs-en_da, post_scorers: [melteval/rescore.py@metricx_scorer]}
+      - {task: st, dataset_id: fleurs-en_de, post_scorers: [melteval/rescore.py@metricx_scorer]}
+      - {task: st, dataset_id: fleurs-en_el, post_scorers: [melteval/rescore.py@metricx_scorer]}
+      - {task: st, dataset_id: fleurs-en_es, post_scorers: [melteval/rescore.py@metricx_scorer]}
+      - {task: st, dataset_id: fleurs-en_et, post_scorers: [melteval/rescore.py@metricx_scorer]}
+      - {task: st, dataset_id: fleurs-en_fi, post_scorers: [melteval/rescore.py@metricx_scorer]}
+      - {task: st, dataset_id: fleurs-en_fr, post_scorers: [melteval/rescore.py@metricx_scorer]}
+      - {task: st, dataset_id: fleurs-en_ga, post_scorers: [melteval/rescore.py@metricx_scorer]}
+      - {task: st, dataset_id: fleurs-en_hr, post_scorers: [melteval/rescore.py@metricx_scorer]}
+      - {task: st, dataset_id: fleurs-en_hu, post_scorers: [melteval/rescore.py@metricx_scorer]}
+      - {task: st, dataset_id: fleurs-en_it, post_scorers: [melteval/rescore.py@metricx_scorer]}
+      - {task: st, dataset_id: fleurs-en_lt, post_scorers: [melteval/rescore.py@metricx_scorer]}
+      - {task: st, dataset_id: fleurs-en_lv, post_scorers: [melteval/rescore.py@metricx_scorer]}
+      - {task: st, dataset_id: fleurs-en_mt, post_scorers: [melteval/rescore.py@metricx_scorer]}
+      - {task: st, dataset_id: fleurs-en_nl, post_scorers: [melteval/rescore.py@metricx_scorer]}
+      - {task: st, dataset_id: fleurs-en_pl, post_scorers: [melteval/rescore.py@metricx_scorer]}
+      - {task: st, dataset_id: fleurs-en_pt, post_scorers: [melteval/rescore.py@metricx_scorer]}
+      - {task: st, dataset_id: fleurs-en_ro, post_scorers: [melteval/rescore.py@metricx_scorer]}
+      - {task: st, dataset_id: fleurs-en_sk, post_scorers: [melteval/rescore.py@metricx_scorer]}
+      - {task: st, dataset_id: fleurs-en_sl, post_scorers: [melteval/rescore.py@metricx_scorer]}
+      - {task: st, dataset_id: fleurs-en_sv, post_scorers: [melteval/rescore.py@metricx_scorer]}
+
+  # configs/shar/st-eval-campaign-v1.yaml: CoVoST2 test (the frozen set v1 already uses). One benchmark
+  # per direction of travel so the 15 en->X slices can be run apart from the 21 X->en ones. MetricX-24
+  # hybrid XXL post-hoc.
+  - name: covost2-test
+    frozen_set: ${COVOST2_SET}
+    needs_instruction: true
+    post_venv: ${METRICS_VENV_PATH}
+    slices:
+      - {task: st, dataset_id: covost2-ar_en, post_scorers: [melteval/rescore.py@metricx_scorer]}
+      - {task: st, dataset_id: covost2-ca_en, post_scorers: [melteval/rescore.py@metricx_scorer]}
+      - {task: st, dataset_id: covost2-cy_en, post_scorers: [melteval/rescore.py@metricx_scorer]}
+      - {task: st, dataset_id: covost2-de_en, post_scorers: [melteval/rescore.py@metricx_scorer]}
+      - {task: st, dataset_id: covost2-es_en, post_scorers: [melteval/rescore.py@metricx_scorer]}
+      - {task: st, dataset_id: covost2-et_en, post_scorers: [melteval/rescore.py@metricx_scorer]}
+      - {task: st, dataset_id: covost2-fa_en, post_scorers: [melteval/rescore.py@metricx_scorer]}
+      - {task: st, dataset_id: covost2-fr_en, post_scorers: [melteval/rescore.py@metricx_scorer]}
+      - {task: st, dataset_id: covost2-id_en, post_scorers: [melteval/rescore.py@metricx_scorer]}
+      - {task: st, dataset_id: covost2-it_en, post_scorers: [melteval/rescore.py@metricx_scorer]}
+      - {task: st, dataset_id: covost2-ja_en, post_scorers: [melteval/rescore.py@metricx_scorer]}
+      - {task: st, dataset_id: covost2-lv_en, post_scorers: [melteval/rescore.py@metricx_scorer]}
+      - {task: st, dataset_id: covost2-mn_en, post_scorers: [melteval/rescore.py@metricx_scorer]}
+      - {task: st, dataset_id: covost2-nl_en, post_scorers: [melteval/rescore.py@metricx_scorer]}
+      - {task: st, dataset_id: covost2-pt_en, post_scorers: [melteval/rescore.py@metricx_scorer]}
+      - {task: st, dataset_id: covost2-ru_en, post_scorers: [melteval/rescore.py@metricx_scorer]}
+      - {task: st, dataset_id: covost2-sl_en, post_scorers: [melteval/rescore.py@metricx_scorer]}
+      - {task: st, dataset_id: covost2-sv_en, post_scorers: [melteval/rescore.py@metricx_scorer]}
+      - {task: st, dataset_id: covost2-ta_en, post_scorers: [melteval/rescore.py@metricx_scorer]}
+      - {task: st, dataset_id: covost2-tr_en, post_scorers: [melteval/rescore.py@metricx_scorer]}
+      - {task: st, dataset_id: covost2-zh_en, post_scorers: [melteval/rescore.py@metricx_scorer]}
+
+  - name: covost2-enx-test
+    frozen_set: ${COVOST2_SET}
+    needs_instruction: true
+    post_venv: ${METRICS_VENV_PATH}
+    slices:
+      - {task: st, dataset_id: covost2-en_ar, post_scorers: [melteval/rescore.py@metricx_scorer]}
+      - {task: st, dataset_id: covost2-en_ca, post_scorers: [melteval/rescore.py@metricx_scorer]}
+      - {task: st, dataset_id: covost2-en_cy, post_scorers: [melteval/rescore.py@metricx_scorer]}
+      - {task: st, dataset_id: covost2-en_de, post_scorers: [melteval/rescore.py@metricx_scorer]}
+      - {task: st, dataset_id: covost2-en_et, post_scorers: [melteval/rescore.py@metricx_scorer]}
+      - {task: st, dataset_id: covost2-en_fa, post_scorers: [melteval/rescore.py@metricx_scorer]}
+      - {task: st, dataset_id: covost2-en_id, post_scorers: [melteval/rescore.py@metricx_scorer]}
+      - {task: st, dataset_id: covost2-en_ja, post_scorers: [melteval/rescore.py@metricx_scorer]}
+      - {task: st, dataset_id: covost2-en_lv, post_scorers: [melteval/rescore.py@metricx_scorer]}
+      - {task: st, dataset_id: covost2-en_mn, post_scorers: [melteval/rescore.py@metricx_scorer]}
+      - {task: st, dataset_id: covost2-en_sl, post_scorers: [melteval/rescore.py@metricx_scorer]}
+      - {task: st, dataset_id: covost2-en_sv, post_scorers: [melteval/rescore.py@metricx_scorer]}
+      - {task: st, dataset_id: covost2-en_ta, post_scorers: [melteval/rescore.py@metricx_scorer]}
+      - {task: st, dataset_id: covost2-en_tr, post_scorers: [melteval/rescore.py@metricx_scorer]}
+      - {task: st, dataset_id: covost2-en_zh, post_scorers: [melteval/rescore.py@metricx_scorer]}
+
+  # configs/shar/europarl-st-test.yaml: EuroparlST, the 72 ordered directions among
+  # en/fr/de/es/it/pt/pl/ro/nl. MetricX-24 hybrid XXL (reference-based) post-hoc, from custom.sentence
+  # (the source transcript).
+  - name: europarl-st-test
+    frozen_set: ${EUROPARL_ST_TEST_SET}
+    needs_instruction: true
+    post_venv: ${METRICS_VENV_PATH}
+    slices:
+      - {task: st, dataset_id: europarl-st-fr_de, post_scorers: [melteval/rescore.py@metricx_scorer]}
+      - {task: st, dataset_id: europarl-st-fr_es, post_scorers: [melteval/rescore.py@metricx_scorer]}
+      - {task: st, dataset_id: europarl-st-fr_it, post_scorers: [melteval/rescore.py@metricx_scorer]}
+      - {task: st, dataset_id: europarl-st-fr_pt, post_scorers: [melteval/rescore.py@metricx_scorer]}
+      - {task: st, dataset_id: europarl-st-fr_pl, post_scorers: [melteval/rescore.py@metricx_scorer]}
+      - {task: st, dataset_id: europarl-st-fr_ro, post_scorers: [melteval/rescore.py@metricx_scorer]}
+      - {task: st, dataset_id: europarl-st-fr_nl, post_scorers: [melteval/rescore.py@metricx_scorer]}
+      - {task: st, dataset_id: europarl-st-de_fr, post_scorers: [melteval/rescore.py@metricx_scorer]}
+      - {task: st, dataset_id: europarl-st-de_es, post_scorers: [melteval/rescore.py@metricx_scorer]}
+      - {task: st, dataset_id: europarl-st-de_it, post_scorers: [melteval/rescore.py@metricx_scorer]}
+      - {task: st, dataset_id: europarl-st-de_pt, post_scorers: [melteval/rescore.py@metricx_scorer]}
+      - {task: st, dataset_id: europarl-st-de_pl, post_scorers: [melteval/rescore.py@metricx_scorer]}
+      - {task: st, dataset_id: europarl-st-de_ro, post_scorers: [melteval/rescore.py@metricx_scorer]}
+      - {task: st, dataset_id: europarl-st-de_nl, post_scorers: [melteval/rescore.py@metricx_scorer]}
+      - {task: st, dataset_id: europarl-st-es_fr, post_scorers: [melteval/rescore.py@metricx_scorer]}
+      - {task: st, dataset_id: europarl-st-es_de, post_scorers: [melteval/rescore.py@metricx_scorer]}
+      - {task: st, dataset_id: europarl-st-es_it, post_scorers: [melteval/rescore.py@metricx_scorer]}
+      - {task: st, dataset_id: europarl-st-es_pt, post_scorers: [melteval/rescore.py@metricx_scorer]}
+      - {task: st, dataset_id: europarl-st-es_pl, post_scorers: [melteval/rescore.py@metricx_scorer]}
+      - {task: st, dataset_id: europarl-st-es_ro, post_scorers: [melteval/rescore.py@metricx_scorer]}
+      - {task: st, dataset_id: europarl-st-es_nl, post_scorers: [melteval/rescore.py@metricx_scorer]}
+      - {task: st, dataset_id: europarl-st-it_fr, post_scorers: [melteval/rescore.py@metricx_scorer]}
+      - {task: st, dataset_id: europarl-st-it_de, post_scorers: [melteval/rescore.py@metricx_scorer]}
+      - {task: st, dataset_id: europarl-st-it_es, post_scorers: [melteval/rescore.py@metricx_scorer]}
+      - {task: st, dataset_id: europarl-st-it_pt, post_scorers: [melteval/rescore.py@metricx_scorer]}
+      - {task: st, dataset_id: europarl-st-it_pl, post_scorers: [melteval/rescore.py@metricx_scorer]}
+      - {task: st, dataset_id: europarl-st-it_ro, post_scorers: [melteval/rescore.py@metricx_scorer]}
+      - {task: st, dataset_id: europarl-st-it_nl, post_scorers: [melteval/rescore.py@metricx_scorer]}
+      - {task: st, dataset_id: europarl-st-pt_fr, post_scorers: [melteval/rescore.py@metricx_scorer]}
+      - {task: st, dataset_id: europarl-st-pt_de, post_scorers: [melteval/rescore.py@metricx_scorer]}
+      - {task: st, dataset_id: europarl-st-pt_es, post_scorers: [melteval/rescore.py@metricx_scorer]}
+      - {task: st, dataset_id: europarl-st-pt_it, post_scorers: [melteval/rescore.py@metricx_scorer]}
+      - {task: st, dataset_id: europarl-st-pt_pl, post_scorers: [melteval/rescore.py@metricx_scorer]}
+      - {task: st, dataset_id: europarl-st-pt_ro, post_scorers: [melteval/rescore.py@metricx_scorer]}
+      - {task: st, dataset_id: europarl-st-pt_nl, post_scorers: [melteval/rescore.py@metricx_scorer]}
+      - {task: st, dataset_id: europarl-st-pl_fr, post_scorers: [melteval/rescore.py@metricx_scorer]}
+      - {task: st, dataset_id: europarl-st-pl_de, post_scorers: [melteval/rescore.py@metricx_scorer]}
+      - {task: st, dataset_id: europarl-st-pl_es, post_scorers: [melteval/rescore.py@metricx_scorer]}
+      - {task: st, dataset_id: europarl-st-pl_it, post_scorers: [melteval/rescore.py@metricx_scorer]}
+      - {task: st, dataset_id: europarl-st-pl_pt, post_scorers: [melteval/rescore.py@metricx_scorer]}
+      - {task: st, dataset_id: europarl-st-pl_ro, post_scorers: [melteval/rescore.py@metricx_scorer]}
+      - {task: st, dataset_id: europarl-st-pl_nl, post_scorers: [melteval/rescore.py@metricx_scorer]}
+      - {task: st, dataset_id: europarl-st-ro_fr, post_scorers: [melteval/rescore.py@metricx_scorer]}
+      - {task: st, dataset_id: europarl-st-ro_de, post_scorers: [melteval/rescore.py@metricx_scorer]}
+      - {task: st, dataset_id: europarl-st-ro_es, post_scorers: [melteval/rescore.py@metricx_scorer]}
+      - {task: st, dataset_id: europarl-st-ro_it, post_scorers: [melteval/rescore.py@metricx_scorer]}
+      - {task: st, dataset_id: europarl-st-ro_pt, post_scorers: [melteval/rescore.py@metricx_scorer]}
+      - {task: st, dataset_id: europarl-st-ro_pl, post_scorers: [melteval/rescore.py@metricx_scorer]}
+      - {task: st, dataset_id: europarl-st-ro_nl, post_scorers: [melteval/rescore.py@metricx_scorer]}
+      - {task: st, dataset_id: europarl-st-nl_fr, post_scorers: [melteval/rescore.py@metricx_scorer]}
+      - {task: st, dataset_id: europarl-st-nl_de, post_scorers: [melteval/rescore.py@metricx_scorer]}
+      - {task: st, dataset_id: europarl-st-nl_es, post_scorers: [melteval/rescore.py@metricx_scorer]}
+      - {task: st, dataset_id: europarl-st-nl_it, post_scorers: [melteval/rescore.py@metricx_scorer]}
+      - {task: st, dataset_id: europarl-st-nl_pt, post_scorers: [melteval/rescore.py@metricx_scorer]}
+      - {task: st, dataset_id: europarl-st-nl_pl, post_scorers: [melteval/rescore.py@metricx_scorer]}
+      - {task: st, dataset_id: europarl-st-nl_ro, post_scorers: [melteval/rescore.py@metricx_scorer]}
+      - {task: st, dataset_id: europarl-st-en_fr, post_scorers: [melteval/rescore.py@metricx_scorer]}
+      - {task: st, dataset_id: europarl-st-en_de, post_scorers: [melteval/rescore.py@metricx_scorer]}
+      - {task: st, dataset_id: europarl-st-en_es, post_scorers: [melteval/rescore.py@metricx_scorer]}
+      - {task: st, dataset_id: europarl-st-en_it, post_scorers: [melteval/rescore.py@metricx_scorer]}
+      - {task: st, dataset_id: europarl-st-en_pt, post_scorers: [melteval/rescore.py@metricx_scorer]}
+      - {task: st, dataset_id: europarl-st-en_pl, post_scorers: [melteval/rescore.py@metricx_scorer]}
+      - {task: st, dataset_id: europarl-st-en_ro, post_scorers: [melteval/rescore.py@metricx_scorer]}
+      - {task: st, dataset_id: europarl-st-en_nl, post_scorers: [melteval/rescore.py@metricx_scorer]}
+      - {task: st, dataset_id: europarl-st-fr_en, post_scorers: [melteval/rescore.py@metricx_scorer]}
+      - {task: st, dataset_id: europarl-st-de_en, post_scorers: [melteval/rescore.py@metricx_scorer]}
+      - {task: st, dataset_id: europarl-st-es_en, post_scorers: [melteval/rescore.py@metricx_scorer]}
+      - {task: st, dataset_id: europarl-st-it_en, post_scorers: [melteval/rescore.py@metricx_scorer]}
+      - {task: st, dataset_id: europarl-st-pt_en, post_scorers: [melteval/rescore.py@metricx_scorer]}
+      - {task: st, dataset_id: europarl-st-pl_en, post_scorers: [melteval/rescore.py@metricx_scorer]}
+      - {task: st, dataset_id: europarl-st-ro_en, post_scorers: [melteval/rescore.py@metricx_scorer]}
+      - {task: st, dataset_id: europarl-st-nl_en, post_scorers: [melteval/rescore.py@metricx_scorer]}
+
+  # configs/hf/mcif.yaml, short track only. TRANS targets are de/it (zh skipped by decision); COMET-22
+  # DA after mweralign re-segmentation, MCIF's own pipeline (mcif-bench 2.0), run by `evaluate.py score`.
+  - name: mcif-chunked-st
+    spec: configs/hf/mcif.yaml
+    post_venv: ${METRICS_VENV_PATH}
+    slices:
+      - {task: chunked_st, dataset_id: mcif-short-fixed-de, post_scorers: [melteval/mcif_scoring.py@mcif_official_trans_scorer]}
+      - {task: chunked_st, dataset_id: mcif-short-fixed-it, post_scorers: [melteval/mcif_scoring.py@mcif_official_trans_scorer]}
+      - {task: chunked_st, dataset_id: mcif-short-mixed-de, post_scorers: [melteval/mcif_scoring.py@mcif_official_trans_scorer]}
+      - {task: chunked_st, dataset_id: mcif-short-mixed-it, post_scorers: [melteval/mcif_scoring.py@mcif_official_trans_scorer]}
+
+  # Short fixed-prompt QA (SQA), 220 questions per language; zh skipped by decision. Scored after
+  # generation with MCIF's official BERTScore; no judge model.
+  - name: mcif-sfp
+    spec: configs/hf/mcif.yaml
+    post_venv: ${METRICS_VENV_PATH}
+    slices:
+      - {task: audio_chat, dataset_id: mcif-short-fixed-en, post_scorers: [melteval/mcif_scoring.py@mcif_official_qa_scorer]}
+      - {task: audio_chat, dataset_id: mcif-short-fixed-de, post_scorers: [melteval/mcif_scoring.py@mcif_official_qa_scorer]}
+      - {task: audio_chat, dataset_id: mcif-short-fixed-it, post_scorers: [melteval/mcif_scoring.py@mcif_official_qa_scorer]}
+
+  # configs/hf/air-bench.yaml, the Chat speech subset only. audio_chat generates but never scores
+  # without a judge; `melt/hf/qwen3_omni` is v1's own choice (melteval's rubric, not AIR-Bench's).
+  - name: air-bench-chat-speech
+    spec: configs/hf/air-bench.yaml
+    judge: melt/hf/qwen3_omni
+    slices:
+      - {task: audio_chat, dataset_id: air-bench-chat-speech}
+
+  # Safety benchmarks: no source yet, so these are stubs, not loadable entries.
+  # - name: voicebench       # test-only, partial coverage; source TBD
+  # - name: advbench         # audio jailbreak set; source TBD
+  # - name: redvox           # audio safety corpus; source TBD
