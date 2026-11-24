@@ -46,6 +46,7 @@ JUDGE_TASKS = {
     "voicebench_open",
     "voicebench_qa",
     "voicebench_refusal",
+    "redvox",
 }
 
 #: The scorer ``score`` applies when a benchmark names a judge but no scorers.

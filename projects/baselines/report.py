@@ -65,6 +65,17 @@ HEADLINE = {
         "ifeval_loose_instruction",
     ],
     "voicebench_bbh": ["bbh_accuracy"],
+    "redvox": [
+        "safety_safe_rate",
+        "safety_unsafe_rate",
+        "safety_controversial_rate",
+        "refusal_rate",
+        "relatedness_rate",
+        "judge_coverage",
+        "safe_*",
+        "unsafe_*",
+        "refused_*",
+    ],
 }
 
 #: Value written for a slice that ran but has no scores yet.

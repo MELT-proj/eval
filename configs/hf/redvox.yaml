@@ -1,0 +1,172 @@
+# RedVox: multilingual red-teaming, 5 languages x 4 audio types = 20 sources.
+#
+# Read live; audio is gated and referenced lazily as {lang}/{audio}. The
+# reader downloads each WAV on demand (see melteval/readers/redvox.py).
+#
+# `speech` rows carry the harmful statement in the audio and the question in
+# `user_text`; `silence`/`noise_a`/`noise_b` carry the request in `user_text`
+# and use the audio as background. The judge query is built per row.
+name: redvox
+seed: 0
+revision: &revision fca218d440f6b8ed4508bea2eee6b4fb5a913e22
+
+input_cfg:
+  - type: redvox
+    repo: FBK-MT/RedVox
+    name: en
+    split: test
+    revision: *revision
+    audio_type: speech
+    tags: {task: redvox, lang: en, dataset_id: redvox-en-speech}
+
+  - type: redvox
+    repo: FBK-MT/RedVox
+    name: en
+    split: test
+    revision: *revision
+    audio_type: silence
+    tags: {task: redvox, lang: en, dataset_id: redvox-en-silence}
+
+  - type: redvox
+    repo: FBK-MT/RedVox
+    name: en
+    split: test
+    revision: *revision
+    audio_type: noise_a
+    tags: {task: redvox, lang: en, dataset_id: redvox-en-noise_a}
+
+  - type: redvox
+    repo: FBK-MT/RedVox
+    name: en
+    split: test
+    revision: *revision
+    audio_type: noise_b
+    tags: {task: redvox, lang: en, dataset_id: redvox-en-noise_b}
+
+  - type: redvox
+    repo: FBK-MT/RedVox
+    name: de
+    split: test
+    revision: *revision
+    audio_type: speech
+    tags: {task: redvox, lang: de, dataset_id: redvox-de-speech}
+
+  - type: redvox
+    repo: FBK-MT/RedVox
+    name: de
+    split: test
+    revision: *revision
+    audio_type: silence
+    tags: {task: redvox, lang: de, dataset_id: redvox-de-silence}
+
+  - type: redvox
+    repo: FBK-MT/RedVox
+    name: de
+    split: test
+    revision: *revision
+    audio_type: noise_a
+    tags: {task: redvox, lang: de, dataset_id: redvox-de-noise_a}
+
+  - type: redvox
+    repo: FBK-MT/RedVox
+    name: de
+    split: test
+    revision: *revision
+    audio_type: noise_b
+    tags: {task: redvox, lang: de, dataset_id: redvox-de-noise_b}
+
+  - type: redvox
+    repo: FBK-MT/RedVox
+    name: es
+    split: test
+    revision: *revision
+    audio_type: speech
+    tags: {task: redvox, lang: es, dataset_id: redvox-es-speech}
+
+  - type: redvox
+    repo: FBK-MT/RedVox
+    name: es
+    split: test
+    revision: *revision
+    audio_type: silence
+    tags: {task: redvox, lang: es, dataset_id: redvox-es-silence}
+
+  - type: redvox
+    repo: FBK-MT/RedVox
+    name: es
+    split: test
+    revision: *revision
+    audio_type: noise_a
+    tags: {task: redvox, lang: es, dataset_id: redvox-es-noise_a}
+
+  - type: redvox
+    repo: FBK-MT/RedVox
+    name: es
+    split: test
+    revision: *revision
+    audio_type: noise_b
+    tags: {task: redvox, lang: es, dataset_id: redvox-es-noise_b}
+
+  - type: redvox
+    repo: FBK-MT/RedVox
+    name: fr
+    split: test
+    revision: *revision
+    audio_type: speech
+    tags: {task: redvox, lang: fr, dataset_id: redvox-fr-speech}
+
+  - type: redvox
+    repo: FBK-MT/RedVox
+    name: fr
+    split: test
+    revision: *revision
+    audio_type: silence
+    tags: {task: redvox, lang: fr, dataset_id: redvox-fr-silence}
+
+  - type: redvox
+    repo: FBK-MT/RedVox
+    name: fr
+    split: test
+    revision: *revision
+    audio_type: noise_a
+    tags: {task: redvox, lang: fr, dataset_id: redvox-fr-noise_a}
+
+  - type: redvox
+    repo: FBK-MT/RedVox
+    name: fr
+    split: test
+    revision: *revision
+    audio_type: noise_b
+    tags: {task: redvox, lang: fr, dataset_id: redvox-fr-noise_b}
+
+  - type: redvox
+    repo: FBK-MT/RedVox
+    name: it
+    split: test
+    revision: *revision
+    audio_type: speech
+    tags: {task: redvox, lang: it, dataset_id: redvox-it-speech}
+
+  - type: redvox
+    repo: FBK-MT/RedVox
+    name: it
+    split: test
+    revision: *revision
+    audio_type: silence
+    tags: {task: redvox, lang: it, dataset_id: redvox-it-silence}
+
+  - type: redvox
+    repo: FBK-MT/RedVox
+    name: it
+    split: test
+    revision: *revision
+    audio_type: noise_a
+    tags: {task: redvox, lang: it, dataset_id: redvox-it-noise_a}
+
+  - type: redvox
+    repo: FBK-MT/RedVox
+    name: it
+    split: test
+    revision: *revision
+    audio_type: noise_b
+    tags: {task: redvox, lang: it, dataset_id: redvox-it-noise_b}
