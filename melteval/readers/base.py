@@ -137,6 +137,7 @@ def _load_builtin_readers() -> None:
             "melteval.readers.hf",
             "melteval.readers.mcif",
             "melteval.readers.polyspeech",
+            "melteval.readers.redvox",
         ):
             try:
                 __import__(module)

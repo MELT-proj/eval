@@ -28,6 +28,10 @@ def test_voicebench_judge_tasks_are_post_hoc():
     assert {"voicebench_open", "voicebench_qa", "voicebench_refusal"} <= evaluate.JUDGE_TASKS
 
 
+def test_redvox_is_a_post_hoc_judge_task():
+    assert "redvox" in evaluate.JUDGE_TASKS
+
+
 def _config(tmp_path, **overrides):
     """A config over real specs in the repo, a fake MELT checkpoint and a fake SMURF one."""
     (tmp_path / "runs" / "melt-run").mkdir(parents=True)
@@ -756,3 +760,21 @@ def test_voicebench_campaigns_take_the_checkpoint_from_the_environment():
         assert len(config["models"]) == 1
         assert config["models"][0]["name"] == "smurf"
         assert config["models"][0]["model"] == "smurf/${SMURF_CHECKPOINT}"
+
+
+def test_redvox_spec_has_twenty_sources():
+    import yaml
+
+    spec = yaml.safe_load((ROOT / "configs/hf/redvox.yaml").read_text())
+    sources = spec["input_cfg"]
+    assert len(sources) == 20
+    assert all(source["type"] == "redvox" for source in sources)
+    assert len({source["tags"]["dataset_id"] for source in sources}) == 20
+    assert {source["audio_type"] for source in sources} == {"speech", "silence", "noise_a", "noise_b"}
+
+
+def test_redvox_full_has_twenty_slices():
+    import yaml
+
+    config = yaml.safe_load((ROOT / "configs/eval/redvox-full.yaml").read_text())
+    assert sum(len(benchmark["slices"]) for benchmark in config["benchmarks"]) == 20

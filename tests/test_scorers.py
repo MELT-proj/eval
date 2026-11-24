@@ -741,6 +741,7 @@ class TestRegistry:
             "voicebench_mcq",
             "voicebench_ifeval",
             "voicebench_bbh",
+            "redvox",
         }
 
     def test_a_graded_task_without_a_judge_still_builds(self):
@@ -766,6 +767,10 @@ class TestRegistry:
         )
         assert score.value == {"score": 5.0, "parsed": 1}
         assert len(calls) == 2
+
+    def test_redvox_is_a_judge_task_with_a_budget(self):
+        assert default_scorer("redvox") is not None
+        assert default_max_tokens("redvox") == 1024
 
     def test_no_task_filter_falls_back_to_a_plumbing_check(self):
         """Not a real metric -- just proves the default_scorer() doesn't need

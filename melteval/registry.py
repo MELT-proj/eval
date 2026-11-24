@@ -31,6 +31,7 @@ from melteval.scorers import (
     mcq_scorer,
     open_judge_scorer,
     qa_judge_scorer,
+    redvox_judge_scorer,
     refusal_judge_scorer,
     st_scorer,
     st_scorer_no_spbleu,
@@ -45,6 +46,7 @@ JUDGE_TASK_SCORERS: dict[str, Callable[..., Scorer]] = {
     "voicebench_open": open_judge_scorer,
     "voicebench_qa": qa_judge_scorer,
     "voicebench_refusal": refusal_judge_scorer,
+    "redvox": redvox_judge_scorer,
 }
 
 TASK_SCORERS: dict[str, Callable[..., Scorer]] = {
@@ -78,6 +80,7 @@ TASK_MAX_TOKENS: dict[str, int] = {
     "voicebench_mcq": 512,
     "voicebench_ifeval": 1024,
     "voicebench_bbh": 1024,
+    "redvox": 1024,
 }
 
 

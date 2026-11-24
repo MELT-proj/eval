@@ -1,0 +1,60 @@
+# RedVox full campaign: all 20 slices (5 languages x 4 audio types).
+#
+#   export SMURF_CHECKPOINT=/absolute/path/to/step=NNNNNN.ckpt
+#   export SMURF_VENV_PATH=/path/to/smurf-eval/bin/activate
+#   export JUDGE_CLIENT_VENV=/path/to/judge-client/bin/activate
+#   export JUDGE_SERVER_VENV=/path/to/vllm-server/bin/activate
+#   export HF_TOKEN="$(cat ~/.cache/huggingface/token)"
+#   export HF_HOME=/path/to/hf-cache
+#   export HF_DATASETS_CACHE=/path/to/hf-cache/datasets
+#   export XDG_DATA_HOME=/path/to/.local/share
+#   export EVAL_ROOT=/path/to/eval-runs
+#   export NLTK_DATA=/path/to/nltk_data
+#   export JUDGE_MAX_MODEL_LEN=8192
+#
+#   python scripts/prefetch_redvox.py
+#   python scripts/evaluate.py plan  configs/eval/redvox-full.yaml --site artemis
+#   python scripts/evaluate.py run   configs/eval/redvox-full.yaml --site artemis --wait
+#   python scripts/evaluate.py score configs/eval/redvox-full.yaml --site artemis --wait
+#
+# The judge is the official RedVox prompt with five per-language exemplars,
+# run on Qwen3-8B.
+name: redvox-full
+output_dir: ${EVAL_ROOT}/redvox-full
+
+models:
+  - name: smurf
+    model: smurf/${SMURF_CHECKPOINT}
+    venv: ${SMURF_VENV_PATH}
+    args: [-M, batch_size=8, -M, map_location=cpu]
+    model_config_override: configs/smurf/eurollm_override_config.yaml
+
+benchmarks:
+  - name: redvox
+    spec: configs/hf/redvox.yaml
+    needs_instruction: false
+    judge: vllm/Qwen/Qwen3-8B
+    judge_venv: ${JUDGE_CLIENT_VENV}
+    judge_server_venv: ${JUDGE_SERVER_VENV}
+    scorers: [melteval/scorers.py@redvox_judge_scorer]
+    slices:
+      - {task: redvox, dataset_id: redvox-en-speech}
+      - {task: redvox, dataset_id: redvox-de-speech}
+      - {task: redvox, dataset_id: redvox-es-speech}
+      - {task: redvox, dataset_id: redvox-fr-speech}
+      - {task: redvox, dataset_id: redvox-it-speech}
+      - {task: redvox, dataset_id: redvox-en-silence}
+      - {task: redvox, dataset_id: redvox-de-silence}
+      - {task: redvox, dataset_id: redvox-es-silence}
+      - {task: redvox, dataset_id: redvox-fr-silence}
+      - {task: redvox, dataset_id: redvox-it-silence}
+      - {task: redvox, dataset_id: redvox-en-noise_a}
+      - {task: redvox, dataset_id: redvox-de-noise_a}
+      - {task: redvox, dataset_id: redvox-es-noise_a}
+      - {task: redvox, dataset_id: redvox-fr-noise_a}
+      - {task: redvox, dataset_id: redvox-it-noise_a}
+      - {task: redvox, dataset_id: redvox-en-noise_b}
+      - {task: redvox, dataset_id: redvox-de-noise_b}
+      - {task: redvox, dataset_id: redvox-es-noise_b}
+      - {task: redvox, dataset_id: redvox-fr-noise_b}
+      - {task: redvox, dataset_id: redvox-it-noise_b}
